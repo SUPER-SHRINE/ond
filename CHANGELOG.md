@@ -2,9 +2,9 @@
 
 このファイルには、Ondの利用者に影響する主な変更を記録する。
 
-## [Unreleased]
+## 未リリース
 
-## [0.1.3] - リリース準備中
+## 0.1.3 - 未リリース
 
 ### Added
 
@@ -15,7 +15,7 @@
 
 - Windows／Linux配布archiveとLanguage Server、全workspace packageのversionを0.1.3へ更新。
 
-## [0.1.2] - リリース準備中
+## 0.1.2 - 移行前の履歴
 
 ### Added
 
@@ -28,7 +28,7 @@
 - 同じReleaseの再実行では同一hashのassetを再利用し、異なるassetの上書きを停止する。
 - native smoke testでLSPが返すversionをworkspace versionと照合する。
 
-## [0.1.1] - リリース準備中
+## 0.1.1 - 移行前の履歴
 
 ### Added
 
@@ -42,7 +42,7 @@
 - Git tagとworkspace version、mainへの到達性を検証してからreleaseを作成。
 
 
-## [0.1.0] - 2026-10-03
+## 0.1.0 - 移行前の履歴
 
 最初の開発者向けリリース。
 
@@ -70,8 +70,4 @@
 - ROM生成、asset配置、実行環境はEnbuなどの機種SDKから提供する。
 - 差分buildのcache garbage collectionは未実装である。
 
-[Unreleased]: https://github.com/SUPER-SHRINE/ond/compare/0.1.3...HEAD
-[0.1.3]: https://github.com/SUPER-SHRINE/ond/compare/0.1.2...0.1.3
-[0.1.0]: https://github.com/SUPER-SHRINE/ond/releases/tag/0.1.0
-[0.1.1]: https://github.com/SUPER-SHRINE/ond/compare/0.1.0...0.1.1
-[0.1.2]: https://github.com/SUPER-SHRINE/ond/compare/0.1.1...0.1.2
+0.1.0〜0.1.2の変更記録は移行前の履歴から引き継いだものです。対応するtagとReleaseはこのrepositoryへ移行していません。0.1.3も未リリースです。
