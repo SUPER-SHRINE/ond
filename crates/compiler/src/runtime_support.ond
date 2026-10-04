@@ -1,0 +1,648 @@
+package runtime
+
+const SignMask: u32 = 0x8000_0000 as u32
+const ExpMask: u32 = 0x7F80_0000 as u32
+const FracMask: u32 = 0x007F_FFFF as u32
+const HiddenBit: u32 = 0x0080_0000 as u32
+const CanonicalNaN: u32 = 0x7FC0_0000 as u32
+const RoundHiddenBit: u32 = 0x0400_0000 as u32
+const RoundCarryBit: u32 = 0x0800_0000 as u32
+const ExpInfNan: u32 = 0xFF as u32
+const Bias: i32 = 127 as i32
+const MinNormalExp: i32 = 0 - 126
+const MaxNormalExp: i32 = 127 as i32
+
+func __ond_f32_add(left: u32, right: u32) -> u32 {
+    if __sf_is_nan(left) {
+        return CanonicalNaN
+    }
+    if __sf_is_nan(right) {
+        return CanonicalNaN
+    }
+
+    var leftSign: u32 = left & SignMask
+    var rightSign: u32 = right & SignMask
+
+    if __sf_is_inf(left) {
+        if __sf_is_inf(right) {
+            if leftSign != rightSign {
+                return CanonicalNaN
+            }
+        }
+        return leftSign | ExpMask
+    }
+    if __sf_is_inf(right) {
+        return rightSign | ExpMask
+    }
+
+    if __sf_is_zero(left) {
+        if __sf_is_zero(right) {
+            if leftSign == rightSign {
+                return left
+            }
+            return 0 as u32
+        }
+        return right
+    }
+    if __sf_is_zero(right) {
+        return left
+    }
+
+    var leftExp: i32
+    var leftMant: u32
+    leftExp, leftMant = __sf_decode_finite(left)
+
+    var rightExp: i32
+    var rightMant: u32
+    rightExp, rightMant = __sf_decode_finite(right)
+
+    var leftSig: u32 = leftMant << (3 as u32)
+    var rightSig: u32 = rightMant << (3 as u32)
+
+    if leftExp < rightExp {
+        var tempExp: i32 = leftExp
+        leftExp = rightExp
+        rightExp = tempExp
+
+        var tempSig: u32 = leftSig
+        leftSig = rightSig
+        rightSig = tempSig
+
+        var tempSign: u32 = leftSign
+        leftSign = rightSign
+        rightSign = tempSign
+    }
+
+    var shift: u32 = (leftExp - rightExp) as u32
+    rightSig = __sf_shift_right_jam(rightSig, shift)
+
+    if leftSign == rightSign {
+        var sum: u32 = leftSig + rightSig
+        if sum >= RoundCarryBit {
+            sum = __sf_shift_right_jam(sum, 1 as u32)
+            leftExp = leftExp + (1 as i32)
+        }
+        return __sf_round_pack(leftSign, leftExp, sum)
+    }
+
+    if leftSig == rightSig {
+        return 0 as u32
+    }
+
+    var resultSign: u32 = leftSign
+    var diff: u32 = leftSig
+    if leftSig < rightSig {
+        resultSign = rightSign
+        diff = rightSig - leftSig
+    } else {
+        diff = leftSig - rightSig
+    }
+
+    for diff < RoundHiddenBit {
+        diff = diff << (1 as u32)
+        leftExp = leftExp - (1 as i32)
+    }
+
+    return __sf_round_pack(resultSign, leftExp, diff)
+}
+
+func __ond_f32_sub(left: u32, right: u32) -> u32 {
+    return __ond_f32_add(left, __ond_f32_neg(right))
+}
+
+func __ond_f32_mul(left: u32, right: u32) -> u32 {
+    if __sf_is_nan(left) {
+        return CanonicalNaN
+    }
+    if __sf_is_nan(right) {
+        return CanonicalNaN
+    }
+
+    var sign: u32 = (left ^ right) & SignMask
+
+    if __sf_is_inf(left) {
+        if __sf_is_zero(right) {
+            return CanonicalNaN
+        }
+        return sign | ExpMask
+    }
+    if __sf_is_inf(right) {
+        if __sf_is_zero(left) {
+            return CanonicalNaN
+        }
+        return sign | ExpMask
+    }
+
+    if __sf_is_zero(left) || __sf_is_zero(right) {
+        return sign
+    }
+
+    var leftExp: i32
+    var leftMant: u32
+    leftExp, leftMant = __sf_decode_finite(left)
+
+    var rightExp: i32
+    var rightMant: u32
+    rightExp, rightMant = __sf_decode_finite(right)
+
+    var exp: i32 = leftExp + rightExp
+
+    var hi: u32
+    var lo: u32
+    hi, lo = __sf_mul_u32_wide(leftMant, rightMant)
+
+    var sig: u32
+    if (hi & (1 as u32 << (15 as u32))) != 0 as u32 {
+        sig = __sf_shift_right_jam64_to_u32(hi, lo, 21 as u32)
+        exp = exp + (1 as i32)
+    } else {
+        sig = __sf_shift_right_jam64_to_u32(hi, lo, 20 as u32)
+    }
+
+    return __sf_round_pack(sign, exp, sig)
+}
+
+func __ond_f32_div(left: u32, right: u32) -> u32 {
+    if __sf_is_nan(left) {
+        return CanonicalNaN
+    }
+    if __sf_is_nan(right) {
+        return CanonicalNaN
+    }
+
+    var sign: u32 = (left ^ right) & SignMask
+
+    if __sf_is_inf(left) {
+        if __sf_is_inf(right) {
+            return CanonicalNaN
+        }
+        return sign | ExpMask
+    }
+    if __sf_is_inf(right) {
+        return sign
+    }
+
+    if __sf_is_zero(right) {
+        if __sf_is_zero(left) {
+            return CanonicalNaN
+        }
+        return sign | ExpMask
+    }
+    if __sf_is_zero(left) {
+        return sign
+    }
+
+    var leftExp: i32
+    var leftMant: u32
+    leftExp, leftMant = __sf_decode_finite(left)
+
+    var rightExp: i32
+    var rightMant: u32
+    rightExp, rightMant = __sf_decode_finite(right)
+
+    var exp: i32 = leftExp - rightExp
+    var shift: u32 = 26 as u32
+    if leftMant < rightMant {
+        exp = exp - (1 as i32)
+        shift = 27 as u32
+    }
+
+    var numHi: u32
+    var numLo: u32
+    numHi, numLo = __sf_shl_u64_from_u32(leftMant, shift)
+
+    var quotient: u32
+    var remainder: u32
+    quotient, remainder = __sf_div_u64_by_u32(numHi, numLo, rightMant)
+    if remainder != 0 as u32 {
+        quotient = quotient | (1 as u32)
+    }
+
+    return __sf_round_pack(sign, exp, quotient)
+}
+
+func __ond_f32_eq(left: u32, right: u32) -> u32 {
+    if __sf_is_nan(left) {
+        return 0 as u32
+    }
+    if __sf_is_nan(right) {
+        return 0 as u32
+    }
+    if __sf_is_zero(left) {
+        if __sf_is_zero(right) {
+            return 1 as u32
+        }
+    }
+    if left == right {
+        return 1 as u32
+    }
+    return 0 as u32
+}
+
+func __ond_f32_ne(left: u32, right: u32) -> u32 {
+    if __ond_f32_eq(left, right) != 0 as u32 {
+        return 0 as u32
+    }
+    return 1 as u32
+}
+
+func __ond_f32_lt(left: u32, right: u32) -> u32 {
+    if __sf_is_nan(left) {
+        return 0 as u32
+    }
+    if __sf_is_nan(right) {
+        return 0 as u32
+    }
+    if __sf_is_zero(left) {
+        if __sf_is_zero(right) {
+            return 0 as u32
+        }
+    }
+
+    var leftSign: u32 = left & SignMask
+    var rightSign: u32 = right & SignMask
+    if leftSign != rightSign {
+        if leftSign != 0 as u32 {
+            return 1 as u32
+        }
+        return 0 as u32
+    }
+
+    if left == right {
+        return 0 as u32
+    }
+
+    if leftSign == 0 as u32 {
+        if left < right {
+            return 1 as u32
+        }
+        return 0 as u32
+    }
+
+    if left > right {
+        return 1 as u32
+    }
+    return 0 as u32
+}
+
+func __ond_f32_le(left: u32, right: u32) -> u32 {
+    if __ond_f32_lt(left, right) != 0 as u32 {
+        return 1 as u32
+    }
+    return __ond_f32_eq(left, right)
+}
+
+func __ond_f32_gt(left: u32, right: u32) -> u32 {
+    return __ond_f32_lt(right, left)
+}
+
+func __ond_f32_ge(left: u32, right: u32) -> u32 {
+    return __ond_f32_le(right, left)
+}
+
+func __ond_f32_from_u32(value: u32) -> u32 {
+    if value == 0 as u32 {
+        return 0 as u32
+    }
+
+    var msb: u32 = __sf_highest_bit(value)
+    var exp: u32 = msb + (127 as u32)
+
+    if msb <= 23 as u32 {
+        var frac: u32 = (value << ((23 as u32) - msb)) & FracMask
+        return (exp << (23 as u32)) | frac
+    }
+
+    var shift: u32 = msb - (23 as u32)
+    var mant: u32 = value >> shift
+    var roundBits: u32 = value & ((1 as u32 << shift) - (1 as u32))
+    var half: u32 = 1 as u32
+    if shift > 1 as u32 {
+        half = half << (shift - (1 as u32))
+    }
+
+    if roundBits > half {
+        mant = mant + (1 as u32)
+    } else {
+        if roundBits == half {
+            if (mant & (1 as u32)) != 0 as u32 {
+                mant = mant + (1 as u32)
+            }
+        }
+    }
+
+    if mant == (1 as u32 << (24 as u32)) {
+        mant = mant >> (1 as u32)
+        exp = exp + (1 as u32)
+    }
+
+    return (exp << (23 as u32)) | (mant & FracMask)
+}
+
+func __ond_f32_from_i32(value: i32) -> u32 {
+    if value == 0 as i32 {
+        return 0 as u32
+    }
+
+    if value < 0 as i32 {
+        var magnitude: u32 = __sf_negate_u32(value as u32)
+        return SignMask | __ond_f32_from_u32(magnitude)
+    }
+
+    return __ond_f32_from_u32(value as u32)
+}
+
+func __ond_f32_to_u32(value: u32) -> u32 {
+    if __sf_is_nan(value) {
+        return __sf_invalid()
+    }
+    if __sf_is_inf(value) {
+        return __sf_invalid()
+    }
+    if __sf_is_zero(value) {
+        return 0 as u32
+    }
+    var expField: u32 = __sf_exp_field(value)
+    if expField == 0 as u32 {
+        return 0 as u32
+    }
+
+    var exp: i32 = (expField as i32) - Bias
+    if exp < 0 as i32 {
+        return 0 as u32
+    }
+    if exp > 31 as i32 {
+        return __sf_invalid()
+    }
+    if (value & SignMask) != 0 as u32 {
+        return __sf_invalid()
+    }
+
+    var mant: u32 = HiddenBit | (value & FracMask)
+    if exp >= 23 as i32 {
+        return mant << ((exp - (23 as i32)) as u32)
+    }
+    return mant >> (((23 as i32) - exp) as u32)
+}
+
+func __ond_f32_to_i32(value: u32) -> u32 {
+    if __sf_is_nan(value) {
+        return __sf_invalid()
+    }
+    if __sf_is_inf(value) {
+        return __sf_invalid()
+    }
+    if __sf_is_zero(value) {
+        return 0 as u32
+    }
+
+    var expField: u32 = __sf_exp_field(value)
+    if expField == 0 as u32 {
+        return 0 as u32
+    }
+
+    var exp: i32 = (expField as i32) - Bias
+    if exp < 0 as i32 {
+        return 0 as u32
+    }
+    if exp > 31 as i32 {
+        return __sf_invalid()
+    }
+
+    var mant: u32 = HiddenBit | (value & FracMask)
+    var magnitude: u32 = 0 as u32
+    if exp >= 23 as i32 {
+        magnitude = mant << ((exp - (23 as i32)) as u32)
+    } else {
+        magnitude = mant >> (((23 as i32) - exp) as u32)
+    }
+
+    if (value & SignMask) == 0 as u32 {
+        if magnitude > 0x7FFF_FFFF as u32 {
+            return __sf_invalid()
+        }
+        return magnitude
+    }
+
+    if magnitude > 0x8000_0000 as u32 {
+        return __sf_invalid()
+    }
+    if magnitude == 0x8000_0000 as u32 {
+        return magnitude
+    }
+    return __sf_negate_u32(magnitude)
+}
+
+func __ond_f32_neg(value: u32) -> u32 {
+    if __sf_is_nan(value) {
+        return CanonicalNaN
+    }
+    return value ^ SignMask
+}
+
+func __sf_is_nan(value: u32) -> bool {
+    return __sf_exp_field(value) == ExpInfNan && (value & FracMask) != 0 as u32
+}
+
+func __sf_is_inf(value: u32) -> bool {
+    return __sf_exp_field(value) == ExpInfNan && (value & FracMask) == 0 as u32
+}
+
+func __sf_is_zero(value: u32) -> bool {
+    return (value & 0x7FFF_FFFF as u32) == 0 as u32
+}
+
+func __sf_exp_field(value: u32) -> u32 {
+    return (value >> (23 as u32)) & (0xFF as u32)
+}
+
+func __sf_decode_finite(value: u32) -> (i32, u32) {
+    var expField: u32 = __sf_exp_field(value)
+    var frac: u32 = value & FracMask
+    if expField == 0 as u32 {
+        return __sf_normalize_subnormal(frac)
+    }
+    return (expField as i32) - Bias, HiddenBit | frac
+}
+
+func __sf_normalize_subnormal(frac: u32) -> (i32, u32) {
+    var exp: i32 = MinNormalExp
+    var mant: u32 = frac
+    for mant < HiddenBit {
+        mant = mant << (1 as u32)
+        exp = exp - (1 as i32)
+    }
+    return exp, mant
+}
+
+func __sf_shift_right_jam(value: u32, dist: u32) -> u32 {
+    if dist == 0 as u32 {
+        return value
+    }
+    if dist < 32 as u32 {
+        var shifted: u32 = value >> dist
+        var mask: u32 = (1 as u32 << dist) - (1 as u32)
+        if (value & mask) != 0 as u32 {
+            shifted = shifted | (1 as u32)
+        }
+        return shifted
+    }
+    if value != 0 as u32 {
+        return 1 as u32
+    }
+    return 0 as u32
+}
+
+func __sf_round_pack(sign: u32, exp: i32, sig: u32) -> u32 {
+    if sig == 0 as u32 {
+        return sign
+    }
+
+    var localExp: i32 = exp
+    var localSig: u32 = sig
+    if localExp < MinNormalExp {
+        var shift: u32 = (MinNormalExp - localExp) as u32
+        localSig = __sf_shift_right_jam(localSig, shift)
+        localExp = MinNormalExp
+    }
+
+    var roundBits: u32 = localSig & (7 as u32)
+    var mant: u32 = localSig >> (3 as u32)
+    if roundBits > 4 as u32 {
+        mant = mant + (1 as u32)
+    } else {
+        if roundBits == 4 as u32 {
+            if (mant & (1 as u32)) != 0 as u32 {
+                mant = mant + (1 as u32)
+            }
+        }
+    }
+
+    if mant >= (1 as u32 << (24 as u32)) {
+        mant = mant >> (1 as u32)
+        localExp = localExp + (1 as i32)
+    }
+
+    if localExp > MaxNormalExp {
+        return sign | ExpMask
+    }
+
+    if localExp == MinNormalExp {
+        if mant < HiddenBit {
+            return sign | mant
+        }
+    }
+
+    return sign | (((localExp + Bias) as u32) << (23 as u32)) | (mant & FracMask)
+}
+
+func __sf_highest_bit(value: u32) -> u32 {
+    var index: u32 = 31 as u32
+    for {
+        if (value & (1 as u32 << index)) != 0 as u32 {
+            return index
+        }
+        if index == 0 as u32 {
+            return 0 as u32
+        }
+        index = index - (1 as u32)
+    }
+}
+
+func __sf_mul_u32_wide(left: u32, right: u32) -> (u32, u32) {
+    var leftLow: u32 = left & (0xFFFF as u32)
+    var leftHigh: u32 = left >> (16 as u32)
+    var rightLow: u32 = right & (0xFFFF as u32)
+    var rightHigh: u32 = right >> (16 as u32)
+
+    var p00: u32 = leftLow * rightLow
+    var p01: u32 = leftLow * rightHigh
+    var p10: u32 = leftHigh * rightLow
+    var p11: u32 = leftHigh * rightHigh
+
+    var middle: u32 = (p00 >> (16 as u32)) + (p01 & (0xFFFF as u32)) + (p10 & (0xFFFF as u32))
+    var lo: u32 = (p00 & (0xFFFF as u32)) | (middle << (16 as u32))
+    var hi: u32 = p11 + (p01 >> (16 as u32)) + (p10 >> (16 as u32)) + (middle >> (16 as u32))
+    return hi, lo
+}
+
+func __sf_shift_right_jam64_to_u32(hi: u32, lo: u32, dist: u32) -> u32 {
+    if dist == 0 as u32 {
+        return lo
+    }
+    if dist < 32 as u32 {
+        var shiftedResult: u32 = (hi << ((32 as u32) - dist)) | (lo >> dist)
+        var lowMask: u32 = (1 as u32 << dist) - (1 as u32)
+        if (lo & lowMask) != 0 as u32 {
+            shiftedResult = shiftedResult | (1 as u32)
+        }
+        return shiftedResult
+    }
+    if dist == 32 as u32 {
+        if lo != 0 as u32 {
+            return hi | (1 as u32)
+        }
+        return hi
+    }
+    if dist < 64 as u32 {
+        var shift: u32 = dist - (32 as u32)
+        var tailResult: u32 = hi >> shift
+        if shift > 0 as u32 {
+            var highMask: u32 = (1 as u32 << shift) - (1 as u32)
+            if (hi & highMask) != 0 as u32 {
+                tailResult = tailResult | (1 as u32)
+            }
+        }
+        if lo != 0 as u32 {
+            tailResult = tailResult | (1 as u32)
+        }
+        return tailResult
+    }
+    if hi != 0 as u32 || lo != 0 as u32 {
+        return 1 as u32
+    }
+    return 0 as u32
+}
+
+func __sf_shl_u64_from_u32(value: u32, shift: u32) -> (u32, u32) {
+    if shift == 0 as u32 {
+        return 0 as u32, value
+    }
+    if shift < 32 as u32 {
+        return value >> ((32 as u32) - shift), value << shift
+    }
+    if shift == 32 as u32 {
+        return value, 0 as u32
+    }
+    return value << (shift - (32 as u32)), 0 as u32
+}
+
+func __sf_div_u64_by_u32(hi: u32, lo: u32, divisor: u32) -> (u32, u32) {
+    var quotient: u32 = 0 as u32
+    var remainder: u32 = hi
+    var current: u32 = lo
+    var index: u32 = 0 as u32
+    for index < 32 as u32 {
+        remainder = remainder << (1 as u32)
+        if (current & SignMask) != 0 as u32 {
+            remainder = remainder | (1 as u32)
+        }
+        current = current << (1 as u32)
+        quotient = quotient << (1 as u32)
+        if remainder >= divisor {
+            remainder = remainder - divisor
+            quotient = quotient | (1 as u32)
+        }
+        index = index + (1 as u32)
+    }
+    return quotient, remainder
+}
+
+func __sf_negate_u32(value: u32) -> u32 {
+    return (value ^ (0xFFFF_FFFF as u32)) + (1 as u32)
+}
+
+func __sf_invalid() -> u32 {
+    var zero: u32 = 0 as u32
+    return (1 as u32) / zero
+}

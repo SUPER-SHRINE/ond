@@ -1,0 +1,18 @@
+package main
+
+func main() {
+    var answer: u32 = sumTo(10 as u32)
+    _ = answer
+}
+
+func sumTo(limit: u32) -> u32 {
+    var total: u32 = 0
+    var current: u32 = 1
+
+    for current <= limit {
+        total += current
+        current++
+    }
+
+    return total
+}

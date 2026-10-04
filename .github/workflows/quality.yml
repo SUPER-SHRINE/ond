@@ -1,0 +1,40 @@
+name: 品質検査
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: ${{ matrix.os }} / Rust 1.91.1
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Rust 1.91.1を準備
+        shell: pwsh
+        run: rustup toolchain install 1.91.1 --profile minimal --component rustfmt,clippy
+
+      - name: Full品質検査
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/quality.ps1 -Profile Full
+
+      - name: リリースsmoke test
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/release-smoke.ps1 -Profile Release
+
+      - name: 実配布archiveの文書収録を検証
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/test-release-package.ps1

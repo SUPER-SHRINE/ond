@@ -1,0 +1,94 @@
+name: Ondリリース
+
+on:
+  push:
+    tags:
+      - "*.*.*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.target }}配布物
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: windows-x86_64
+          - os: ubuntu-22.04
+            target: linux-x86_64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Release tagを検証
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          if ($tag -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
+              throw "Invalid release tag: $tag"
+          }
+          $manifest = Get-Content -Raw Cargo.toml
+          if ($manifest -notmatch '(?ms)^\[workspace\.package\].*?^version\s*=\s*"([^"]+)"' -or $Matches[1] -ne $tag) {
+              throw 'Release tag does not match Cargo.toml.'
+          }
+          if (-not (Test-Path "docs/releases/$tag-notes.md")) { throw 'Release notes are missing.' }
+          git merge-base --is-ancestor $env:GITHUB_SHA refs/remotes/origin/main
+          if ($LASTEXITCODE -ne 0) { throw 'Release tag must be contained in main.' }
+
+      - name: Rust 1.91.1を準備
+        shell: pwsh
+        run: rustup toolchain install 1.91.1 --profile minimal --component rustfmt,clippy
+
+      - name: Full品質検査
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/quality.ps1 -Profile Full
+
+      - name: Release buildとsmoke test
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/release-smoke.ps1 -Profile Release
+
+      - name: 配布archiveとSHA-256を作成
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/package-release.ps1 -Version $env:GITHUB_REF_NAME
+
+      - name: 配布物を保存
+        uses: actions/upload-artifact@v4
+        with:
+          name: ond-${{ matrix.target }}
+          path: target/packages/*
+          if-no-files-found: error
+
+  release:
+    name: GitHub Releaseを作成
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ond-*
+          merge-multiple: true
+          path: release-assets
+      - name: 両targetの配布物を検証してmanifestを生成
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File tools/release-manifest.ps1 -Mode Generate -Version $env:GITHUB_REF_NAME -Commit $env:GITHUB_SHA -AssetDirectory release-assets
+          if ($LASTEXITCODE -ne 0) { throw 'Manifest generation failed.' }
+          pwsh -NoProfile -File tools/release-manifest.ps1 -Mode Verify -Version $env:GITHUB_REF_NAME -Commit $env:GITHUB_SHA -AssetDirectory release-assets
+          if ($LASTEXITCODE -ne 0) { throw 'Manifest verification failed.' }
+      - name: GitHub Releaseへ同一候補のみ追加
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: pwsh -NoProfile -File tools/publish-release.ps1 -Version $env:GITHUB_REF_NAME -Commit $env:GITHUB_SHA -AssetDirectory release-assets

@@ -1,0 +1,19 @@
+[workspace]
+members = [
+    "crates/interface",
+    "crates/protocol",
+    "crates/cli",
+    "crates/compiler-core",
+    "crates/compiler",
+    "crates/language-server",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.3"
+edition = "2024"
+rust-version = "1.91.1"
+license = "MIT"
+repository = "https://github.com/SUPER-SHRINE/ond"
+readme = "README.md"
+publish = false

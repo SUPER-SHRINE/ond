@@ -1,0 +1,34 @@
+// Included in the compiler-owned runtime package. No / or % bootstrap dependency.
+func __ond_udivrem(a:u32,b:u32)->(u32,u32) {
+    if b==0 { return __sf_invalid(),0 }
+    var q:u32
+    var r:u32
+    for i:=0; i<32; i=i+1 {
+        var carry=r>>31
+        r=(r<<1)|(a>>31)
+        a=a<<1
+        q=q<<1
+        if carry!=0 || r>=b { r=r-b; q=q|1 }
+    }
+    return q,r
+}
+func __ond_udiv(a:u32,b:u32)->u32 { var q,r=__ond_udivrem(a,b); return q }
+func __ond_urem(a:u32,b:u32)->u32 { var q,r=__ond_udivrem(a,b); return r }
+func __ond_idiv(a:i32,b:i32)->u32 {
+    var ua=a as u32
+    var ub=b as u32
+    if a<0 { ua=0-ua }
+    if b<0 { ub=0-ub }
+    var q,r=__ond_udivrem(ua,ub)
+    if (a<0)!=(b<0) { q=0-q }
+    return q
+}
+func __ond_irem(a:i32,b:i32)->u32 {
+    var ua=a as u32
+    var ub=b as u32
+    if a<0 { ua=0-ua }
+    if b<0 { ub=0-ub }
+    var q,r=__ond_udivrem(ua,ub)
+    if a<0 { r=0-r }
+    return r
+}

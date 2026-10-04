@@ -1,0 +1,61 @@
+// Included in runtime. Linker-owned heap state is passed explicitly by the backend.
+// Headers contain total block bytes (multiple of four) and bit 0 = allocated.
+func __ond_alloc(n:u32,base:u32,bottom:u32,state:u32)->u32 {
+    if n==0 || n>4294967288 { return 0 }
+    var need=((n+3)&4294967292)+4
+    var cursor=load32(state)
+    if cursor==0 { cursor=base; store32(state,cursor) }
+    var at=base
+    for at<cursor {
+        var header=load32(at)
+        var size=header&4294967292
+        if (header&1)==0 && size>=need {
+            if size-need>=8 {
+                store32(at,need|1)
+                store32(at+need,size-need)
+            } else { store32(at,size|1) }
+            return at+4
+        }
+        at=at+size
+    }
+    if cursor>bottom || need>bottom-cursor { return 0 }
+    store32(cursor,need|1)
+    store32(state,cursor+need)
+    return cursor+4
+}
+func __ond_free(p:u32,base:u32,state:u32) {
+    if p==0 { return }
+    var cursor=load32(state)
+    var at=base
+    var prev:u32
+    for at<cursor {
+        var header=load32(at)
+        var size=header&4294967292
+        if at+4==p {
+            store32(at,size)
+            var next=at+size
+            if next<cursor {
+                var after=load32(next)
+                if (after&1)==0 { size=size+(after&4294967292); store32(at,size) }
+            }
+            if prev!=0 {
+                var before=load32(prev)
+                if (before&1)==0 { size=size+(before&4294967292); at=prev; store32(at,size) }
+            }
+            if at+size==cursor { store32(state,at) }
+            return
+        }
+        prev=at
+        at=at+size
+    }
+}
+func __ond_new(n:u32,base:u32,bottom:u32,state:u32)->u32 {
+    var payload=n
+    if payload==0 { payload=1 }
+    var p=__ond_alloc(payload,base,bottom,state)
+    if p==0 { return 0 }
+    var bytes=p as *u8
+    var i:u32
+    for i<n { bytes[i]=0; i=i+1 }
+    return p
+}

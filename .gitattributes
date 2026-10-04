@@ -1,0 +1,4 @@
+/THIRD-PARTY-NOTICES.txt text eol=lf
+/COPYRIGHT-library.html text eol=lf
+# Keep the upstream generated report byte-for-byte; it contains intentional source whitespace.
+/COPYRIGHT-library.html whitespace=-blank-at-eol

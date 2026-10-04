@@ -1,0 +1,23 @@
+[package]
+name = "ond-compiler-core"
+description = "Target-independent frontend, HIR, MIR, and diagnostics for Ond"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+readme.workspace = true
+publish.workspace = true
+
+[lib]
+name = "ond_compiler_core"
+path = "src/lib.rs"
+
+[features]
+conformance-fixtures = []
+
+[dependencies]
+ond-interface = { path = "../interface" }
+num-bigint = "0.4"
+num-traits = "0.2"
+unicode-general-category = "1.1"

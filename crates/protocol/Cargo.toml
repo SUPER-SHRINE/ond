@@ -1,0 +1,18 @@
+[package]
+name = "ond-protocol"
+description = "Serializable Object, LinkedImage, and build protocol types for Ond"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+readme.workspace = true
+publish.workspace = true
+
+[dependencies]
+ond-interface = { path = "../interface" }
+serde = { version = "1", features = ["derive"] }
+base64 = "0.22"
+
+[dev-dependencies]
+serde_json = "1"

@@ -1,0 +1,181 @@
+{
+  "schema_version": 1,
+  "generated_at_utc": "2026-09-22T05:52:53.3992150+00:00",
+  "rustc": "rustc 1.91.1 (ed61e7d7e 2025-11-07)",
+  "warnings": [
+    {
+      "code": "clippy::clone_on_copy",
+      "file": "crates/compiler-core/src/mir/validate.rs",
+      "message": "using `clone` on type `TypeId` which implements the `Copy` trait",
+      "count": 2
+    },
+    {
+      "code": "clippy::clone_on_copy",
+      "file": "crates/compiler/src/test_support/mod.rs",
+      "message": "using `clone` on type `ProjectConfig` which implements the `Copy` trait",
+      "count": 1
+    },
+    {
+      "code": "clippy::collapsible_if",
+      "file": "crates/cli/src/main.rs",
+      "message": "this `if` statement can be collapsed",
+      "count": 2
+    },
+    {
+      "code": "clippy::collapsible_if",
+      "file": "crates/compiler-core/src/conformance/runner.rs",
+      "message": "this `if` statement can be collapsed",
+      "count": 1
+    },
+    {
+      "code": "clippy::collapsible_if",
+      "file": "crates/compiler-core/src/memory_tests.rs",
+      "message": "this `if` statement can be collapsed",
+      "count": 1
+    },
+    {
+      "code": "clippy::collapsible_if",
+      "file": "crates/compiler-core/src/mir/validate_globals.rs",
+      "message": "this `if` statement can be collapsed",
+      "count": 6
+    },
+    {
+      "code": "clippy::collapsible_if",
+      "file": "crates/compiler-core/src/mir/validate_operations.rs",
+      "message": "this `if` statement can be collapsed",
+      "count": 2
+    },
+    {
+      "code": "clippy::collapsible_if",
+      "file": "crates/compiler-core/src/mir/validate.rs",
+      "message": "this `if` statement can be collapsed",
+      "count": 22
+    },
+    {
+      "code": "clippy::collapsible_if",
+      "file": "crates/compiler-core/src/ond/parser.rs",
+      "message": "this `if` statement can be collapsed",
+      "count": 2
+    },
+    {
+      "code": "clippy::collapsible_if",
+      "file": "crates/compiler-core/src/pipeline/hir/body/calls.rs",
+      "message": "this `if` statement can be collapsed",
+      "count": 2
+    },
+    {
+      "code": "clippy::collapsible_if",
+      "file": "crates/compiler-core/src/pipeline/hir/body/expressions.rs",
+      "message": "this `if` statement can be collapsed",
+      "count": 4
+    },
+    {
+      "code": "clippy::collapsible_if",
+      "file": "crates/compiler-core/src/pipeline/hir/body/memory.rs",
+      "message": "this `if` statement can be collapsed",
+      "count": 4
+    },
+    {
+      "code": "clippy::collapsible_if",
+      "file": "crates/compiler-core/src/pipeline/hir/body/values.rs",
+      "message": "this `if` statement can be collapsed",
+      "count": 2
+    },
+    {
+      "code": "clippy::collapsible_if",
+      "file": "crates/compiler-core/src/project.rs",
+      "message": "this `if` statement can be collapsed",
+      "count": 2
+    },
+    {
+      "code": "clippy::collapsible_if",
+      "file": "crates/compiler/src/mir_backend/function.rs",
+      "message": "this `if` statement can be collapsed",
+      "count": 2
+    },
+    {
+      "code": "clippy::collapsible_if",
+      "file": "crates/language-server/src/completion.rs",
+      "message": "this `if` statement can be collapsed",
+      "count": 4
+    },
+    {
+      "code": "clippy::collapsible_if",
+      "file": "crates/language-server/src/hover_reference.rs",
+      "message": "this `if` statement can be collapsed",
+      "count": 4
+    },
+    {
+      "code": "clippy::collapsible_if",
+      "file": "crates/language-server/src/semantic_tokens.rs",
+      "message": "this `if` statement can be collapsed",
+      "count": 2
+    },
+    {
+      "code": "clippy::collapsible_if",
+      "file": "crates/language-server/src/state.rs",
+      "message": "this `if` statement can be collapsed",
+      "count": 2
+    },
+    {
+      "code": "clippy::manual_is_multiple_of",
+      "file": "crates/compiler/src/linker/mod.rs",
+      "message": "manual implementation of `.is_multiple_of()`",
+      "count": 4
+    },
+    {
+      "code": "clippy::manual_is_multiple_of",
+      "file": "crates/compiler/src/linker/thunks.rs",
+      "message": "manual implementation of `.is_multiple_of()`",
+      "count": 2
+    },
+    {
+      "code": "clippy::map_flatten",
+      "file": "crates/language-server/src/main.rs",
+      "message": "called `map(..).flatten()` on `Iterator`",
+      "count": 1
+    },
+    {
+      "code": "clippy::needless_option_as_deref",
+      "file": "crates/language-server/src/state.rs",
+      "message": "derefed type is same as origin",
+      "count": 2
+    },
+    {
+      "code": "clippy::question_mark",
+      "file": "crates/language-server/src/hover.rs",
+      "message": "this `let...else` may be rewritten with the `?` operator",
+      "count": 2
+    },
+    {
+      "code": "clippy::single_match",
+      "file": "crates/compiler-core/src/mir/validate_guards.rs",
+      "message": "you seem to be trying to use `match` for destructuring a single pattern. Consider using `if let`",
+      "count": 2
+    },
+    {
+      "code": "clippy::to_digit_is_some",
+      "file": "crates/compiler-core/src/numeric_literal.rs",
+      "message": "use of `.to_digit(..).is_some()`",
+      "count": 2
+    },
+    {
+      "code": "clippy::too_many_arguments",
+      "file": "crates/compiler-core/src/conformance/numeric/runtime.rs",
+      "message": "this function has too many arguments (8/7)",
+      "count": 1
+    },
+    {
+      "code": "clippy::too_many_arguments",
+      "file": "crates/language-server/src/hover_reference.rs",
+      "message": "this function has too many arguments (8/7)",
+      "count": 2
+    },
+    {
+      "code": "clippy::type_complexity",
+      "file": "crates/compiler/src/linker/tests.rs",
+      "message": "very complex type used. Consider factoring parts into `type` definitions",
+      "count": 1
+    }
+  ]
+}

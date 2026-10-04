@@ -1,0 +1,21 @@
+[package]
+name = "ond-lsp"
+description = "Language Server Protocol implementation for Ond"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+readme.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "ond-lsp"
+path = "src/main.rs"
+
+[dependencies]
+compiler = { package = "ond-compiler-core", path = "../compiler-core" }
+ond-cli = { path = "../cli" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+url = "2"

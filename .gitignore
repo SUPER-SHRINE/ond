@@ -1,0 +1,31 @@
+/target/
+/examples/**/target/
+*.rs.bk
+*.pdb
+editors/vscode-ond/node_modules/
+editors/vscode-ond/dist/
+.idea/
+
+# Local-only configuration and operating-system artifacts.
+.env
+.env.*
+!.env.example
+# Private keys and local credential files.
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+credentials.json
+secrets.json
+*credentials*.json
+*secret*.json
+*.log
+.DS_Store
+Thumbs.db
+
+# Local state for the autonomous quality loop. Workflow definitions and
+# durable decisions stay tracked; run logs and issue queues do not.
+/.ond-quality/
+/.ond/
