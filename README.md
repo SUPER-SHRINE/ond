@@ -5,10 +5,12 @@ VS Code拡張、ROMビルダー、Enbu CLIは別repositoryで管理します。
 
 ## リリース状態
 
-Ond 0.1.3はリリース準備中です。配布manifestと同梱ライセンス情報は
+Ond 0.1.3は未リリースです。GitHub Releaseと配布物はまだありません。配布manifestと同梱ライセンス情報は
 [0.1.3のリリースノート](docs/releases/0.1.3-notes.md)を参照してください。
 
-Ond 0.1.1は開発者向けのパッチリリースです。言語、ABI、MIRの意味論、
+0.1.0〜0.1.2の変更記録は移行前の履歴から引き継いだものです。対応するtagとReleaseはこのrepositoryへ移行していません。
+
+言語、ABI、MIRの意味論、
 Object／LinkedImage形式、Rust公開APIはまだ安定しておらず、0.2.0までに互換性を損なう変更が
 入る可能性があります。0.1系列では、文書化された標準経路の再現性と重大な不具合の修正を
 優先します。
@@ -25,7 +27,7 @@ Ondを使ってプログラムを書く場合は、[Ond言語マニュアル](do
 
 ## 入手方法
 
-GitHub ReleasesではWindows x64向けの`ond.exe`と`ond-lsp.exe`をZIPで、
+Release公開後はWindows x64向けの`ond.exe`と`ond-lsp.exe`をZIPで、
 Linux x86_64向けの`ond`と`ond-lsp`をtar.gzで配布します。
 同時に公開するSHA-256ファイルで内容を確認できます。Linuxでは`tar -xzf`で実行権限を保持して展開します。
 0.1系列の各Rust packageはcrates.ioへ公開しません。
