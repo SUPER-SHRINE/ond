@@ -13,6 +13,7 @@
 | [マシン構築とアプリ開発フロー](machine-workflow.md) | 部品選びから配布・保存までの操作と必要機能 |
 | [デバイス製品のパッケージ](device-package.md) | 仕様と実装を持つ製品の最小構成、共有、仕様本文の必須同梱 |
 | [デバイスの組立境界](device-assembly.md) | ボードとパーツの責務、接続profile、生成・接続・実行・破棄 |
+| [F01 ゲートAの最小契約と適合試験案](f01-gate-a-contract.md) | graphics・window・load・起動終了・時間・snapshotの採用候補、要件ID、共通試験、第二実装への引渡し条件 |
 
 ## 設計上の方針
 
