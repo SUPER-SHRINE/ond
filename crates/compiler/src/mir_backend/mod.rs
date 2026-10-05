@@ -14,6 +14,8 @@ mod global_tests;
 mod globals;
 #[cfg(test)]
 mod heap_tests;
+#[cfg(test)]
+mod host_probe_tests;
 pub mod layout;
 mod memory;
 #[cfg(test)]
