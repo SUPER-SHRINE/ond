@@ -37,9 +37,6 @@ function Test-DescriptorMutation {
     }
     finally { [IO.File]::WriteAllBytes($path, $backup) }
 }
-# 期待する6文書は本番の許可リストを参照せず固定する。
-$designPaths = @('docs/design/README.md', 'docs/design/device-assembly.md', 'docs/design/device-package.md',
-    'docs/design/machine-experience.md', 'docs/design/machine-roadmap.md', 'docs/design/machine-workflow.md')
 $noticePath = 'THIRD-PARTY-NOTICES.txt'
 $copyrightPath = 'COPYRIGHT-library.html'
 function New-FixtureArchive {
@@ -65,8 +62,8 @@ try {
         $suffix = if ($linux) { '' } else { '.exe' }
         $extension = if ($linux) { 'tar.gz' } else { 'zip' }
         $legacyPaths = @("ond$suffix", "ond-lsp$suffix", 'README.md', 'CHANGELOG.md', 'LICENSE.md')
-        $paths = $legacyPaths + $designPaths + @($noticePath, $copyrightPath)
-        foreach ($name in $paths + @('unexpected.md', 'machine-roadmap.md', 'docs/design/extra.md')) {
+        $paths = $legacyPaths + @($noticePath, $copyrightPath)
+        foreach ($name in $paths + @('unexpected.md', 'machine-roadmap.md', 'docs/design/extra.md', 'docs/design/README.md')) {
             $file = Join-Path $staging $name
             New-Item -ItemType Directory -Force -Path (Split-Path $file -Parent) | Out-Null
             if ($name -ceq $noticePath -or $name -ceq $copyrightPath) {
@@ -79,9 +76,9 @@ try {
         $legacyHash = Get-ArchiveBinaryHash $badArchive $target "ond-lsp$suffix" '0.1.1'
         if ($legacyHash -cne (Get-FileHash (Join-Path $staging "ond-lsp$suffix") -Algorithm SHA256).Hash.ToLowerInvariant()) { throw 'Legacy LSP hash mismatch.' }
         $script:testCount++
-        Assert-Rejected "$target new release without design docs" { Get-ArchiveBinaryHash $badArchive $target "ond-lsp$suffix" $version }
-        New-FixtureArchive $badArchive $target ($paths | Where-Object { $_ -cne $noticePath })
         Assert-Rejected "$target new release without third-party notices" { Get-ArchiveBinaryHash $badArchive $target "ond-lsp$suffix" $version }
+        New-FixtureArchive $badArchive $target ($paths | Where-Object { $_ -cne $noticePath })
+        Assert-Rejected "$target new release missing one third-party notice" { Get-ArchiveBinaryHash $badArchive $target "ond-lsp$suffix" $version }
         New-FixtureArchive $badArchive $target ($paths | Where-Object { $_ -cne $copyrightPath })
         Assert-Rejected "$target new release without Rust copyright report" { Get-ArchiveBinaryHash $badArchive $target "ond-lsp$suffix" $version }
         foreach ($notice in @($noticePath, $copyrightPath)) {
@@ -97,16 +94,10 @@ try {
             }
             finally { [IO.File]::WriteAllBytes($noticeFixture, $noticeBackup) }
         }
-        foreach ($missing in $designPaths) {
-            New-FixtureArchive $badArchive $target @($paths | Where-Object { $_ -cne $missing })
-            Assert-Rejected "$target missing $missing" { Get-ArchiveBinaryHash $badArchive $target "ond-lsp$suffix" $version }
-        }
         foreach ($extra in @('unexpected.md', 'docs/design/extra.md', 'docs/design/README.md')) {
             New-FixtureArchive $badArchive $target ($paths + $extra)
             Assert-Rejected "$target extra or duplicate $extra" { Get-ArchiveBinaryHash $badArchive $target "ond-lsp$suffix" $version }
         }
-        New-FixtureArchive $badArchive $target (@($paths | Where-Object { $_ -cne 'docs/design/machine-roadmap.md' }) + 'machine-roadmap.md')
-        Assert-Rejected "$target flattened design path" { Get-ArchiveBinaryHash $badArchive $target "ond-lsp$suffix" $version }
         New-FixtureArchive $badArchive $target $paths
         Assert-Rejected "$target legacy with extra docs" { Get-ArchiveBinaryHash $badArchive $target "ond-lsp$suffix" '0.1.1' }
         $archive = Join-Path $assets "ond-$version-$target.$extension"

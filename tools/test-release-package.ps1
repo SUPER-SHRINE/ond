@@ -1,5 +1,5 @@
 #requires -Version 7.0
-# native Release binaryの包装と、設計文書本文のbyte一致を公開せず検査する。
+# native Release binaryの包装と、第三者ライセンス情報のbyte一致を公開せず検査する。
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
@@ -19,13 +19,6 @@ try {
         & tar -xzf $archive -C $root
         if ($LASTEXITCODE -ne 0) { throw 'Could not extract test archive.' }
     }
-    foreach ($name in @('README.md', 'device-assembly.md', 'device-package.md',
-                       'machine-experience.md', 'machine-roadmap.md', 'machine-workflow.md')) {
-        $path = "docs/design/$name"
-        $sourceHash = (Get-FileHash -LiteralPath (Join-Path $repoRoot $path) -Algorithm SHA256).Hash
-        $archiveHash = (Get-FileHash -LiteralPath (Join-Path $root $path) -Algorithm SHA256).Hash
-        if ($sourceHash -cne $archiveHash) { throw "Archived design document differs: $path" }
-    }
     $noticePath = Join-Path $root 'THIRD-PARTY-NOTICES.txt'
     if (-not (Test-Path -LiteralPath $noticePath)) { throw 'Archive is missing third-party notices.' }
     $sourceNoticeHash = (Get-FileHash -LiteralPath (Join-Path $repoRoot 'THIRD-PARTY-NOTICES.txt') -Algorithm SHA256).Hash
@@ -36,6 +29,6 @@ try {
     $sourceCopyrightHash = (Get-FileHash -LiteralPath (Join-Path $repoRoot 'COPYRIGHT-library.html') -Algorithm SHA256).Hash
     $archiveCopyrightHash = (Get-FileHash -LiteralPath $copyrightPath -Algorithm SHA256).Hash
     if ($sourceCopyrightHash -cne $archiveCopyrightHash) { throw 'Archived Rust standard-library copyright report differs from source bytes.' }
-    Write-Host "Native release archive verified: $target; design documents and both third-party notice files match source bytes."
+    Write-Host "Native release archive verified: $target; both third-party notice files match source bytes."
 }
 finally { Remove-Item -LiteralPath $root -Recurse -Force }
