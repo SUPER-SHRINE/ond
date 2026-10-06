@@ -1,7 +1,6 @@
 # Ond
 
 Ond言語仕様、compiler-core、Kagura backend／リンカ、独立コンパイラCLI、Language Serverを収録します。
-VS Code拡張、ROMビルダー、Enbu CLIは別repositoryで管理します。
 
 ## リリース状態
 
@@ -21,8 +20,6 @@ macOS、ARM64、Alpine/muslは対象外です。Kagura Rust参照実装は0.1.0�
 
 Ondを使ってプログラムを書く場合は、[Ond言語マニュアル](docs/manual/README.md)から読み始めてください。
 
-今後のマシン機能については、[設計文書とロードマップ](docs/design/README.md)を参照してください。
-これは未実装の機能を含む非規範設計案であり、現行機能やABIの確定を意味しません。
 厳密な構文・意味論・target契約は[規範仕様](specs/README.md)にあります。
 
 ## 入手方法

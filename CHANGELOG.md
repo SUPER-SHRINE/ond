@@ -14,6 +14,7 @@
 ### Changed
 
 - Windows／Linux配布archiveとLanguage Server、全workspace packageのversionを0.1.3へ更新。
+- machine／device管理の将来設計文書をGakudenへ移管し、Ondの配布archiveから除外。
 
 ## 0.1.2 - 移行前の履歴
 
