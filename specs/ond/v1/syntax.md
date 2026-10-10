@@ -1,10 +1,12 @@
 # Ond Syntax v1
+<!-- ond-spec-id: syntax/v1 -->
 
 本書は `ond` v1 の字句規則、scope、構文、operator precedence を定義する。型、メモリ管理、組み込み関数、初期化順序などの意味規則は [Ond Language v1](./language.md) に従う。
 
 記載していない構文は v1 ではサポートしない。
 
 ## 1. Source Form
+<!-- ond-spec-id: syntax/source-form -->
 
 - source file は UTF-8 text とする。
 - 改行は `LF` または `CRLF` を許可する。意味上はすべて `LF` として扱う。
@@ -24,6 +26,7 @@
 - source先頭のUTF-8 BOMは無視する。途中のBOMとsourceに直接含まれるNULはエラーとする。文字列のescapeによるNULやU+FEFFの表現は許可する。
 
 ## 2. Semicolons and Line Breaking
+<!-- ond-spec-id: syntax/semicolons-and-line-breaking -->
 
 Ond の文法は semicolon 付きで定義し、source では自動挿入する。
 
@@ -33,6 +36,7 @@ Ond の文法は semicolon 付きで定義し、source では自動挿入する�
 - 明示的な行継続記号は持たない。改行したい場合は、semicolon が挿入されない位置で改行する。
 
 ## 3. Packages and Imports
+<!-- ond-spec-id: syntax/packages-and-imports -->
 
 各 file は先頭に 1 個の package clause を持つ。
 
@@ -51,6 +55,7 @@ package-qualified name は `packageName.ExportedName` とする。
 - package-qualified name は package value ではなく、import 先 package の top-level declaration を指す構文である。
 
 ## 4. Scope and Shadowing
+<!-- ond-spec-id: syntax/scope-and-shadowing -->
 
 - package-level declaration は package scope に属し、同一 package 内の全 file から見える。
 - import 名の scope は宣言した file に限る。同じ package の別 file でも、使用する package は各 file で import する。
@@ -71,6 +76,7 @@ package-qualified name は `packageName.ExportedName` とする。
 - 組み込み名 `alloc`, `free`, `len`, `trap`, `sizeof`, `alignof`, `load32`, `store32`, `thisFile`, `thisLine`, `new` は binding として宣言できない。struct field 名など binding を作らない位置では使用できる。`str` は通常の識別子である。
 
 ## 5. Operator Precedence
+<!-- ond-spec-id: syntax/operator-precedence -->
 
 高い方から低い方へ、expression の優先順位は次の通りとする。
 
@@ -88,6 +94,7 @@ package-qualified name は `packageName.ExportedName` とする。
 - `as` は postfix conversion で、`x + y as u32` は `x + (y as u32)` と解釈する。
 
 ## 6. EBNF
+<!-- ond-spec-id: syntax/grammar -->
 
 次の EBNF で構文を定義する。`";"` は semicolon insertion 後の token を表す。
 
@@ -207,6 +214,7 @@ CallExpr      = PrimaryExpr Arguments .
 - `InterfaceType` は `TypeSpec` の直下で名前付き型としてだけ宣言できる。無名interface型は構文上parseできても意味検査で拒否する。
 
 ## 7. Grammar Notes
+<!-- ond-spec-id: syntax/grammar-notes -->
 
 - `ForStmt` の `for Block` は無条件 loop を表す。
 - `DeferStmt` は `for` の body または別の `DeferStmt` の block に構文上包含されてはならない。

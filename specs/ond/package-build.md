@@ -1,6 +1,8 @@
 # パッケージ成果物・独立コンパイラ契約
+<!-- ond-spec-id: build/package-artifact-contract -->
 
 ## 責務
+<!-- ond-spec-id: build/responsibilities -->
 
 - compiler-core: source → 型付きHIR → target-neutral MIR。MIRは内部APIであり保存形式にしない。
 - compiler: MIR → Kagura Object、runtime helper供給、リンカ。
@@ -14,6 +16,7 @@ compiler/core依存は既存のin-process回帰テスト用dev-dependenciesに�
 `ond build`／`ond assets`は復活させない。
 
 ## 実装済みの単位と制約
+<!-- ond-spec-id: build/implemented-units-and-constraints -->
 
 1パッケージにつき1個の `.ondpkg`（UTF-8 JSON）を生成する。全パッケージを
 1つのObjectBundleに格納しない。コンパイル結果のmanifestが各ファイルを参照し、
@@ -32,6 +35,7 @@ compiler/core依存は既存のin-process回帰テスト用dev-dependenciesに�
 project-global TypeIdをそのまま永続化しない。
 
 ## コマンド
+<!-- ond-spec-id: build/commands -->
 
 `cargo build -p ond-cli --bin ond` で `target/debug/ond.exe` を生成する。
 要求・応答JSONラッパーは廃止。操作は引数、入力はファイル、stdinは入力ファイルの代替にする。
@@ -45,6 +49,7 @@ ond compile . -o - | ond link - --ram 0x10002000:0x03FFE000 --stack 1MiB --retur
 ```
 
 ### ond compile
+<!-- ond-spec-id: build/compile-command -->
 
 `ond compile [project] [-o FILE|-] [--library-dir DIR]... [--cache-dir DIR] [-v]`
 
@@ -84,6 +89,7 @@ ond compile . -o - | ond link - --ram 0x10002000:0x03FFE000 --stack 1MiB --retur
 - compileのstdinは使用しない。sourceをstdinから単独コンパイルするモードは提供しない。
 
 ### ond link
+<!-- ond-spec-id: build/link-command -->
 
 `ond link FILE|- --ram BASE:SIZE --stack SIZE --return-to ADDRESS [--read-only BASE:SIZE] [-o FILE|-]`
 
@@ -100,6 +106,7 @@ ond compile . -o - | ond link - --ram 0x10002000:0x03FFE000 --stack 1MiB --retur
 - compilerは共通startupを作り、要求されたruntime helperを一度だけ供給してリンクする。
 
 ### 入出力と失敗時
+<!-- ond-spec-id: build/io-and-failure -->
 
 -o -はstdout。通常ファイル出力は同一ディレクトリの一時ファイルからrenameで公開する。
 compile/linkが失敗しても指定先の以前の成果物を上書きしない。
@@ -113,6 +120,7 @@ SDKは一意な専用一時ディレクトリへ生成ソースを書き、--lib
 SDKはcompileのstdoutからmanifestを受け取り、そのmanifestだけをlinkのstdinに渡す。
 
 ## 成果物とキャッシュ
+<!-- ond-spec-id: build/artifacts-and-cache -->
 
 PackageArtifactのフィールドはcontract、compiler_id、package、build_id、
 dependencies（パッケージpath→build_id）、imports（ソース順）、
@@ -147,6 +155,7 @@ Enbuカートリッジヘッダにversionを追加するものではない。
 debug sidecarのrange、fault分類、unwind規則は[Ond Debug Metadata v1](./debug-metadata.md)に従う。
 
 ## 検証
+<!-- ond-spec-id: build/verification -->
 
 driverの単体／プロセステストで次を検証する:
 
@@ -158,6 +167,7 @@ driverの単体／プロセステストで次を検証する:
 - ファイルと実際のパイプでcompile → link、終了コード、Base64セクション、異常時のstdout分離・既存出力保持
 
 ## 公開情報（revision 3）
+<!-- ond-spec-id: build/public-metadata-revision-3 -->
 
 `interface`はpackage、types（型定義の配列）、exports（公開名→宣言）からなる。
 Objectとは独立したtarget-neutralデータで、本文・機械レイアウト・一時的なTypeId/PackageId/Spanを含めない。
