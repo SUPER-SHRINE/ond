@@ -142,6 +142,7 @@ $succeeded = $false
 
 try {
     Invoke-QualityStep -Name "release-manifest-fixtures" -FileName "pwsh" -Arguments @("-NoProfile", "-File", (Join-Path $script:RepoRoot "tools/test-release-manifest.ps1")) -LogPath (Join-Path $runRoot "release-manifest.log") | Out-Null
+    Invoke-QualityStep -Name "spec-semantic-ids" -FileName "pwsh" -Arguments @("-NoProfile", "-File", (Join-Path $script:RepoRoot "tools/test-spec-ids.ps1")) -LogPath (Join-Path $runRoot "spec-semantic-ids.log") | Out-Null
     Invoke-QualityStep -Name "cargo-fmt" -Arguments @("fmt", "--all", "--", "--check") -LogPath (Join-Path $runRoot "fmt.log") | Out-Null
     Invoke-QualityStep -Name "cargo-test" -Arguments @("test", "--workspace", "--locked", "--quiet") -LogPath (Join-Path $runRoot "test.log") | Out-Null
 

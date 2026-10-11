@@ -1,8 +1,10 @@
 # Ond Debug Metadata v1
+<!-- ond-spec-id: debug-metadata/v1 -->
 
 本書は、Ond compilerが生成するdebug sidecarと、Kagura VMが任意で利用できるfault表示・stack trace情報を定義する。debug metadataは実行時ABIへ追加の引数、shadow stack、debug frameを導入しない。
 
 ## 1. 成果物
+<!-- ond-spec-id: debug-metadata/artifacts -->
 
 `ond link -o game.ondimage`は次の2ファイルを生成する。
 
@@ -12,6 +14,7 @@
 両者の`build_id`は一致しなければならない。VMは一致しないsidecarを使用してはならない。`-o -`ではstdoutを単一のLinkedImage JSONに保つためsidecarを生成しない。
 
 ## 2. sourceとfault range
+<!-- ond-spec-id: debug-metadata/source-and-fault-range -->
 
 sidecarのrangeは`[start, end)`の最終load addressで表す。各rangeはfunction symbol、任意のsource path・1始まりline/column、operationを持つ。
 
@@ -22,6 +25,7 @@ VMはCPU fault時のPCを含む最も狭いrangeを参照できる。bus/alignme
 `ExplicitTrap`だけは`message`を持つ。`trap "reason"`のliteralはdebug metadataへだけ格納し、LinkedImageのText/Rodata/Data/Bssへ格納しない。他のoperationの表示文言はVMが選べる。
 
 ## 3. functionとunwind
+<!-- ond-spec-id: debug-metadata/function-and-unwind -->
 
 function entryは`address`、`size`、symbol、source、frame size、return-address slot、およびunwind rowを持つ。rowはそのaddress以降で有効な次の状態を表す。
 
@@ -34,6 +38,7 @@ VMはfault PCを含むfunctionを探し、PC以下で最大addressのrowを選�
 unwind tableは実行時memoryへ配置されない。release buildでもsidecarを保存すればtraceでき、sidecarを配布しなければ実行imageのmemory使用量は増えない。
 
 ## 4. VM実装の責務
+<!-- ond-spec-id: debug-metadata/vm-responsibilities -->
 
 debug表示はKagura規格の必須機能ではない。対応するVMは最低限、次を行うことが望ましい。
 

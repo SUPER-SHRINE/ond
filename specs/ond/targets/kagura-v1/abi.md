@@ -1,8 +1,10 @@
 # Ond ABI for Kagura v1
+<!-- ond-spec-id: targets/kagura-v1/abi -->
 
 本書は Ond for Kagura v1 の関数呼び出し規約を定義する。値の memory layout は [Ond for Kagura Machine Profile v1](./machine.md) に従う。
 
 ## 1. Registers
+<!-- ond-spec-id: targets/kagura-v1/abi-registers -->
 
 | Register | Role | Preservation |
 | --- | --- | --- |
@@ -21,6 +23,7 @@ Objectの`CallSlot`/`JumpSlot`によるlinker thunkは`r12`だけを変更し、
 形式・予約領域・return経路は[backend契約 §11](./mir-backend.md#11-長距離分岐とobjectの中継slot)を参照する。
 
 ## 2. Call Boundary
+<!-- ond-spec-id: targets/kagura-v1/abi-call-boundary -->
 
 - stack は full descending とする。
 - call 直前と callee entry の `r14` は 8-byte aligned とする。
@@ -30,6 +33,7 @@ Objectの`CallSlot`/`JumpSlot`によるlinker thunkは`r12`だけを変更し、
 - stack object の alignment は `min(natural_alignment, 4)` とする。
 
 ## 3. Value Classification
+<!-- ond-spec-id: targets/kagura-v1/abi-value-classification -->
 
 | Class | Values | ABI words |
 | --- | --- | ---: |
@@ -43,6 +47,7 @@ Indirect argument では caller が値を caller-owned temporary へコピーし
 interfaceのmemory valueはdata pointer、vtable pointerの順の2 word aggregateである。interface methodのvtable entryは4-byte function pointerで、呼出し時はdata pointerを消去型`*u8`の第1引数として渡し、残りをsource methodの引数順に続ける。concrete pointer型との違いはABI上はいずれもDirect-1 pointerであり、entry function内では元のreceiver型として扱う。
 
 ## 4. Arguments
+<!-- ond-spec-id: targets/kagura-v1/abi-arguments -->
 
 source-level argument を宣言順に ABI word 列へ変換する。
 
@@ -54,6 +59,7 @@ source-level argument を宣言順に ABI word 列へ変換する。
 memory return を使う関数では、return area の pointer を先頭の hidden argument word とする。user argument はその後ろへ続ける。
 
 ## 5. Return Values
+<!-- ond-spec-id: targets/kagura-v1/abi-return-values -->
 
 戻り値を宣言順に ABI word 列へ変換する。
 
@@ -65,6 +71,7 @@ return area は戻り値を field とする record として配置する。Direc
 狭いDirect-1のslotも配置alignmentは元の型に従うため、word境界とは限らない（例: `([1]u8, u8, u16, i32)` はoffset 0/1/6/12）。狭いslotの値は型幅で読み書きし、未使用の上位byteは0として書く。未整列のLDW/STWを発行しない。ゼロサイズのIndirect fieldはrecord内でsize=0を維持し、return area全体の物理予約は最低1 byteとする。
 
 ## 6. Stack Frame
+<!-- ond-spec-id: targets/kagura-v1/abi-stack-frame -->
 
 callee は `CFA` より低い address に、8-byte の倍数の frame を確保する。
 
@@ -94,15 +101,18 @@ low address
 `frame_size == 0` の関数は stack 操作と overflow check を省略できる。
 
 ## 7. Stack Overflow
+<!-- ond-spec-id: targets/kagura-v1/abi-stack-overflow -->
 
 frame を確保する関数は、減算の underflow または `new_sp < STACK_BOTTOM` を検出したら、呼び出しを追加せずその場でCPU trapを実行する。
 
 debug sidecarの対応rangeには`StackOverflow`を記録する。この経路は追加のstackを使わず、returnしない。
 
 ## 8. Bounds Error
+<!-- ond-spec-id: targets/kagura-v1/abi-bounds-error -->
 
 bounds checkの失敗は呼び出しを追加せず、その場でCPU trapを実行する。追加のstack frameやheap allocationに依存せず、debug sidecarの対応rangeには`BoundsCheck`を記録する。
 
 ## 9. Function Pointer
+<!-- ond-spec-id: targets/kagura-v1/abi-function-pointer -->
 
 function pointer は 4-byte aligned な 32-bit entry address とする。間接 call は `CALLR register, 0` を使い、direct call と同じ ABI に従う。

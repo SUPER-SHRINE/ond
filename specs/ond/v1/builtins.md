@@ -1,4 +1,5 @@
 # Ond Built-in Functions v1
+<!-- ond-spec-id: builtins/v1 -->
 
 本書は、`ond` compiler が v1 時点で組み込みとして扱う関数と、その周辺の特別構文をまとめる。
 
@@ -10,8 +11,10 @@
 組み込み名は binding として予約され、同名の local / const / global / function は宣言できない。
 
 ## 1. 一覧
+<!-- ond-spec-id: builtins/index -->
 
 ### 組み込み関数
+<!-- ond-spec-id: builtins/functions -->
 
 | Name | Signature                                                         | Summary |
 | --- |-------------------------------------------------------------------| --- |
@@ -23,6 +26,7 @@
 | `thisLine` | `thisLine() -> u32` | 現在のsource行番号を返す |
 
 ### 組み込み構文
+<!-- ond-spec-id: builtins/syntax -->
 
 | Name | Form | Summary |
 | --- | --- | --- |
@@ -32,6 +36,7 @@
 | `trap` | `trap "reason"` | 理由をdebug metadataへ記録し、回復不能なCPU trapで停止する |
 
 ## 2. `alloc`
+<!-- ond-spec-id: builtins/alloc -->
 
 ```ond
 var ptr: *Actor = alloc[Actor](4 as u32)
@@ -48,6 +53,7 @@ var ptr: *Actor = alloc[Actor](4 as u32)
 複数の同型要素を持つ連続領域の確保に使う。`alloc[u8]`とすればraw byte bufferとして使える。
 
 ## 3. `free`
+<!-- ond-spec-id: builtins/free -->
 
 ```ond
 free(ptr)
@@ -62,8 +68,10 @@ free(nil)
 未定義動作の詳細を隠したい場面でも、少なくとも二重解放や不正 pointer の扱いは仕様で保証されていない前提で使う。
 
 ## 4. `len`
+<!-- ond-spec-id: builtins/len -->
 
 ### 4.1 配列に対する `len`
+<!-- ond-spec-id: builtins/len-arrays -->
 
 ```ond
 var size: u32 = len(buffer)
@@ -79,6 +87,7 @@ var size: u32 = len(buffer)
 配列以外では完全一致する `operator len` を呼び出す。一致する宣言がなければ compile error とする。
 
 ## 5. `load32`
+<!-- ond-spec-id: builtins/load32 -->
 
 ```ond
 var status: u32 = load32(DeviceStatusReg)
@@ -91,6 +100,7 @@ var status: u32 = load32(DeviceStatusReg)
 MMIO register や raw memory を 32-bit 単位で読む用途を想定している。
 
 ## 6. `store32`
+<!-- ond-spec-id: builtins/store32 -->
 
 ```ond
 store32(DeviceCommandReg, DeviceCmdStart)
@@ -105,6 +115,7 @@ store32(DeviceDestinationReg, dest as u32)
 MMIO register や raw memory を 32-bit 単位で書く用途を想定している。
 
 ## 7. `new`
+<!-- ond-spec-id: builtins/new -->
 
 ```ond
 var ptr: *[4]u8 = new([4]u8)
@@ -120,6 +131,7 @@ var ptr: *[4]u8 = new([4]u8)
 `alloc[T]`は未初期化の`T`を複数個格納する領域、`new(T)`はzero初期化した`T`を1個格納する領域の確保に使う。
 
 ## 8. `thisFile`
+<!-- ond-spec-id: builtins/this-file -->
 
 ```ond
 report(thisFile(), thisLine())
@@ -136,12 +148,14 @@ report(thisFile(), thisLine())
 例えばproject rootの`main.ond`では`"main.ond\000"`相当、package `graphics/draw`の`render.ond`では`"graphics/draw/render.ond\000"`相当のstorageを指す。
 
 ## 9. `thisLine`
+<!-- ond-spec-id: builtins/this-line -->
 
 - 引数は取らない
 - `thisLine()` 自身の先頭tokenが置かれた、1始まりのsource行番号を`u32`で返す
 - 外側のcallや、現在の関数を呼び出した箇所の行番号には遡らない
 
 ## 10. `trap`
+<!-- ond-spec-id: builtins/trap -->
 
 ```ond
 trap "player index is out of range"
@@ -156,10 +170,12 @@ trap `raw reason`
 - `trap()` は存在しない。
 
 ## 11. 名前解決上の注意
+<!-- ond-spec-id: builtins/name-resolution -->
 
 組み込み名は lexical binding として宣言できない。field 名など binding を作らない member 名には使用できる。
 
 ## 12. よくある compile error
+<!-- ond-spec-id: builtins/compile-errors -->
 
 - `alloc(...)` は引数 1 個のみ
 - `free(...)` は引数 1 個のみ
@@ -173,6 +189,7 @@ trap `raw reason`
 - `trap` の直後にはUTF-8として有効なstring literalを置く
 
 ## 13. 関連仕様
+<!-- ond-spec-id: builtins/related-specifications -->
 
 - [Ond Language v1](./language.md)
 - [Ond Debug Metadata v1](../debug-metadata.md)

@@ -1,4 +1,5 @@
 # Ond Language v1
+<!-- ond-spec-id: language/v1 -->
 
 Comment syntax for v1: `//` starts a line comment and `/* ... */` starts and ends a block comment. Comments are ignored like whitespace, block comments do not nest, and an unterminated block comment is a compile error.
 
@@ -7,6 +8,7 @@ Comment syntax for v1: `//` starts a line comment and `/* ... */` starts and end
 本書に記載した機能だけを v1 の言語機能とする。字句規則、scope、grammar、operator precedence は [Ond Syntax v1](./syntax.md) に従う。
 
 ## 1. ソースとパッケージ
+<!-- ond-spec-id: language/source-and-packages -->
 
 - `ond.toml` がある directory を project root とする。
 - project root 自体を `main` package とし、project root には `main.ond` が必須である。
@@ -21,6 +23,7 @@ Comment syntax for v1: `//` starts a line comment and `/* ... */` starts and end
 - 識別子の先頭が ASCII 大文字なら他パッケージへ公開し、それ以外は所属パッケージ内だけへ公開する。
 
 ## 2. 宣言
+<!-- ond-spec-id: language/declarations -->
 
 再代入可能な束縛は `var`、定数は `const` で宣言する。
 
@@ -52,6 +55,7 @@ a, b = pair()
 ```
 
 ## 3. 型
+<!-- ond-spec-id: type-system/types -->
 
 v1 は次の型を持つ。
 
@@ -76,6 +80,7 @@ v1 は次の型を持つ。
 - struct field の先頭が ASCII 大文字なら他 package から参照でき、それ以外は宣言 package 内だけから参照できる。
 
 ### 3.1 型parameter
+<!-- ond-spec-id: type-system/type-parameters -->
 
 型とtop-level関数は、明示的な型parameterを持てる。generic型のmethodは、receiverの型argument位置でmethod内の型parameterを宣言する。
 
@@ -107,6 +112,7 @@ box := Box[u32]{value: Identity[u32](7)}
 - generic型のunderlying typeを具体化して初めて判明するエラーは、その適用型を要求した箇所を主位置、失敗したgeneric型定義を関連位置として報告する。
 
 ### 型同一性
+<!-- ond-spec-id: type-system/type-identity -->
 
 - 型の同一性はソース位置や記述ファイルに依存しない。
 - defined typeは各宣言に固有の型であり、構造が一致しても別の宣言の型とは同一にならない。
@@ -130,6 +136,7 @@ box := Box[u32]{value: Identity[u32](7)}
 Kagura target における型のサイズ、alignment、zero value は [Ond for Kagura Machine Profile v1](../targets/kagura-v1/machine.md) に従う。
 
 ## 4. `nil` とポインタ
+<!-- ond-spec-id: type-system/nil-and-pointers -->
 
 - `nil` は任意の `*T`、function pointer、interface に代入できる。
 - `nil` は整数、配列、structには代入できない。
@@ -144,6 +151,7 @@ Kagura target における型のサイズ、alignment、zero value は [Ond for 
 `*T` は領域を所有せず、確保も解放も行わない。参照外しの実行規則は target の raw pointer 規則に従う。
 
 ## 5. 配列と struct
+<!-- ond-spec-id: type-system/arrays-and-structs -->
 
 - `[N]T` は長さ `N` の固定長配列である。
 - 配列の長さはコンパイル時定数でなければならない。
@@ -176,6 +184,7 @@ inferred := [...]u32{10, 20, 30}
 - composite literal は addressable ではなく、`&T{...}` は compile error とする。
 
 ### 5.1 Method
+<!-- ond-spec-id: type-system/methods -->
 
 methodはnamed typeに結び付いた通常関数の糖衣構文である。
 
@@ -198,6 +207,7 @@ func (box: *Box[Element]) Set(value: Element) { box.value = value }
 - `receiver.Method(arguments...)` はreceiverを1回評価した後、argumentsを左から右へ1回ずつ評価する。実装はreceiverを第1引数とする一意な内部関数へloweringする。
 
 ### 5.2 Interface
+<!-- ond-spec-id: type-system/interfaces -->
 
 interfaceはmethod集合を表す名前付きnominal typeである。
 
@@ -225,6 +235,7 @@ type List[T] interface {
 - method signatureはinterface型（自分自身を含む）をparameter・returnに使用できる。interfaceをstruct field、配列要素、global、local、parameter、returnとして使用できる。
 
 ## 6. 式
+<!-- ond-spec-id: expressions/overview -->
 
 v1 は次の式を持つ。operand の型が適合しない式はコンパイルエラーとする。
 
@@ -243,6 +254,7 @@ v1 は次の式を持つ。operand の型が適合しない式はコンパイル
 `&&` と `||` は左から評価し、結果が確定したら右辺を評価しない。それ以外の operand と関数 argument は左から右へ評価する。
 
 ### Integer Arithmetic
+<!-- ond-spec-id: expressions/integer-arithmetic -->
 
 幅 `N` bit の integer に対する runtime 演算は、[ISO/IEC 10967-1:2012](https://www.iso.org/standard/51317.html) の modulo integer model に従う。
 
@@ -265,6 +277,7 @@ v1 は次の式を持つ。operand の型が適合しない式はコンパイル
 runtime shift は [WebAssembly integer semantics](https://webassembly.github.io/spec/core/exec/numerics.html) と同じ規則とする。
 
 ### Integer Constant Arithmetic
+<!-- ond-spec-id: expressions/integer-constant-arithmetic -->
 
 - 整数定数式の算術計算は数学的な正確値で行い、runtime のような暗黙の wrap はしない。宣言・代入・引数・return・明示変換などで要求される整数型に結果を表現できない場合は compile error とする。
 - 中間計算を compiler 実装上の固定幅整数（例: i128）の幅で制限しない。これは言語に新しい整数型を追加することではなく、literal の既定型・型文脈・operand の型一致規則は維持する。
@@ -281,6 +294,7 @@ const C: u8 = 250 + 10   // 260はu8で表現できないためcompile error
 定数式としての意味は最適化の有無に依存しない。runtime 式を最適化で定数畳み込みする場合は、元のruntime式のwrap・fault規則を保持する。`f32` の定数演算は以下のbinary32規則に従い、整数の正確値計算とは区別する。
 
 ### Floating-Point Arithmetic
+<!-- ond-spec-id: expressions/floating-point-arithmetic -->
 
 - `f32` は IEEE 754 binary32 とする。
 - 丸めモードは roundTiesToEven に固定し、動的変更はできない。
@@ -292,6 +306,7 @@ const C: u8 = 250 + 10   // 260はu8で表現できないためcompile error
 - compile-time の `f32` 定数評価は runtime と同じ結果 bit pattern を生成しなければならない。
 
 ## 7. 文字列リテラル
+<!-- ond-spec-id: literals/strings -->
 
 文字列リテラルはbyte配列値の糖衣構文であり、専用の文字列型やviewを作らない。
 
@@ -314,6 +329,7 @@ const C: u8 = 250 + 10   // 260はu8で表現できないためcompile error
 `str`は予約語でも組み込み型名でも組み込み関数名でもないため、通常の識別子として宣言できる。文字列・slice相当の型が必要なら、pointerや配列と長さを通常のstructおよびlibraryで組み合わせる。
 
 ## 8. 文と制御構文
+<!-- ond-spec-id: statements/control-flow -->
 
 - 文末の semicolon は書かず、改行で区切る。
 - block は `{}` で囲む。
@@ -326,6 +342,7 @@ const C: u8 = 250 + 10   // 260はu8で表現できないためcompile error
 - `trap "reason"`は回復不能なCPU trapで現在の実行を終了する。理由はruntimeの文字列値ではなくdebug metadataであり、文はreturnしない。
 
 ### 8.1 `defer`
+<!-- ond-spec-id: statements/defer -->
 
 `defer` は、文へ到達した関数 invocation の終了処理を block で登録する。
 
@@ -358,6 +375,7 @@ func process() -> i32 {
 - defer block 内で呼んだ関数の戻り値を無視またはblock内で処理できるが、外側の関数へerrorを伝播する制御構文は持たない。失敗を呼び出し元へ返す必要がある終了処理は、通常の処理として明示的に実行する。
 
 ## 9. 関数
+<!-- ond-spec-id: functions/declarations-and-calls -->
 
 関数はトップレベルで宣言する。
 
@@ -392,6 +410,7 @@ var namedCallback: func(value: i32) -> i32 = update
 Kagura target の関数呼び出し規約は [Ond ABI for Kagura v1](../targets/kagura-v1/abi.md) に従う。
 
 ### 9.1 User-defined operators
+<!-- ond-spec-id: functions/user-defined-operators -->
 
 - top-level の `operator` 宣言だけが overload を持つ。通常の関数、method、interface method は overload しない。
 - 対象は unary `+` / `-`、binary `+` / `-` / `*` / `/` / `%`、`[]`、`[]=`、`len` とする。比較・論理・bit operator は対象外とする。
@@ -408,6 +427,7 @@ Kagura target の関数呼び出し規約は [Ond ABI for Kagura v1](../targets/
 - 推論後のparameter型列に対して通常operatorと同じ完全一致規則を適用し、型argument列ごとに静的関数へ具体化する。generic operatorと非generic operator、または複数のgeneric operatorが同じoperand型列に一致した場合、優先順位を設けず曖昧としてcompile errorにする。
 
 ## 10. メモリ管理
+<!-- ond-spec-id: runtime/memory-management -->
 
 - address を取得した local variable の storage はその関数 invocation の stack frame、package-level variable の storage は startup segment に置く。compiler は escaping local variable を暗黙に heap へ移さない。
 - heap allocation は組み込みの `new(T)` または `alloc[T](count)` でだけ明示的に行う。
@@ -421,6 +441,7 @@ Kagura target の関数呼び出し規約は [Ond ABI for Kagura v1](../targets/
 bounds checkの失敗は追加のstack frameやheap allocationに依存しない。具体的なfault命令とdebug metadataはtarget仕様に従う。
 
 ## 11. 初期化とエントリ
+<!-- ond-spec-id: runtime/initialization-and-entry -->
 
 - package-level `var` は initializer を省略した zero value、または compile-time constant initializer だけを持てる。runtime 呼び出しを伴う initializer は compile error とする。
 - sourceから宣言する `func init()` hookは持たない。compilerはglobal initializerを適用する内部関数を生成してよいが、user codeから参照できず、runtime初期化の入口にもならない。
@@ -431,6 +452,7 @@ bounds checkの失敗は追加のstack frameやheap allocationに依存しない
 Kagura target の runtime entry と正常終了通知は [Ond for Kagura Machine Profile v1](../targets/kagura-v1/machine.md) に従う。
 
 ## 12. Build Output
+<!-- ond-spec-id: build/output -->
 
 - compilerはsourceをMIR/Objectへ翻訳し、linkerはLinkedImageを生成する。配布形式とROM生成は機種SDKが定義する。
 - link 工程は compiler 実装の [Ond Linker](../../../crates/compiler/docs/ond-linker.md) に従う。

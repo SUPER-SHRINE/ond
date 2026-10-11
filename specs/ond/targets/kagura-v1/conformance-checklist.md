@@ -1,4 +1,5 @@
 # MIR → Kagura backend 適合チェックリスト
+<!-- ond-spec-id: targets/kagura-v1/conformance-checklist -->
 
 監査日: 2026-09-20。
 対象はsource → core/MIR → Kagura backend → Object → linker/startup → Kagura CPU。
@@ -6,6 +7,7 @@
 初回は棚卸しのみ。2026-09-20追補で§5の共通実行口・数値/評価順・複合ケースを実装した。標準backend切り替えは行わない。
 
 ## 1. 判定と証拠の区別
+<!-- ond-spec-id: targets/kagura-v1/conformance-evidence-policy -->
 
 - **検証済**: 行に限定した契約をassertしている。全入力・組み合わせの網羅を意味しない。
 - **部分**: 代表例は検証しているが、仕様表の型/境界/組み合わせに不足がある。
@@ -30,11 +32,13 @@ coreの[チェックリスト](../../../../crates/compiler-core/docs/conformance
 旧runtimeケース表の判定は新backendへ転記しない。machineの共通suiteは標準MIR入口の`tests`で実行する（§7）。旧ケース表の全行を自動的にMIR検証済みとはしない。
 
 ## 2. チェックリスト
+<!-- ond-spec-id: targets/kagura-v1/conformance-items -->
 
 証拠欄の略称は§3のリンク先suiteを指す。関数名は実在するtest名。
 core IDは元表への対応付けであり、その行の全契約をbackendが引き受けるという意味ではない。
 
 ### 数値・型・メモリ
+<!-- ond-spec-id: targets/kagura-v1/conformance-numeric-type-memory -->
 
 | ID / 対応するcore項目 | 確認対象 | 判定 / 証拠 | 残検証 |
 | --- | --- | --- | --- |
@@ -52,6 +56,7 @@ core IDは元表への対応付けであり、その行の全契約をbackendが
 | KB-12 / MEM-02、EVAL | Ordered copy/read/writeの順序・padding・alias・途中fault | 検証済 K+bus trace: ORDER全5件 | 宣言/index順、全read→write、重複領域、非rollback、bool正規化、u16 alignment fault、raw offset wrapをassert。全幅/全fault位置の行列ではない |
 
 ### 制御フロー・ABI・frame
+<!-- ond-spec-id: targets/kagura-v1/conformance-control-flow-abi-frame -->
 
 | ID / core項目 | 確認対象 | 判定 / 証拠 | 残検証 |
 | --- | --- | --- | --- |
@@ -64,6 +69,7 @@ core IDは元表への対応付けであり、その行の全契約をbackendが
 | KB-19 / MEM-03 | stack不足検出、SP/callee-save維持、32-bit計算overflow | 検証済 K/KM/D（列挙範囲）: BASIC/FRAME、CON-COMB `large_recursive_frames_fit_exact_stack_then_fault_one_level_later` | 大frame再帰のexact fit/次段不足/物理guard/SP維持、人工的な低SPで減算underflowを追補。全容量組合せではない |
 
 ### Link・startup・runtime・配布経路
+<!-- ond-spec-id: targets/kagura-v1/conformance-link-startup-runtime -->
 
 | ID / core項目 | 確認対象 | 判定 / 証拠 | 残検証 |
 | --- | --- | --- | --- |
@@ -80,6 +86,7 @@ core IDは元表への対応付けであり、その行の全契約をbackendが
 | KB-30 / SYN、NAME、TYPE、DIAG | 字句/構文/型/名前の受理・拒否行列 | 別工程 C | coreの適合表が正本。受理された値の物理表現/実行は上記KB項目へ分離する |
 
 ## 3. 証拠索引
+<!-- ond-spec-id: targets/kagura-v1/conformance-evidence-index -->
 
 - BASIC: [mir_backend/tests.rs](../../../../crates/compiler/src/mir_backend/tests.rs)。`run`/`execute`は新経路。正常終了時のSP/callee-saveも照合。
 - NUM: [numeric_tests.rs](../../../../crates/compiler/src/mir_backend/numeric_tests.rs)。動的引数またはbus入力を使い、定数畳み込みだけで通らない構成。
@@ -96,6 +103,7 @@ core IDは元表への対応付けであり、その行の全契約をbackendが
 - MACHINE: [machine_suite.rs](../../../../crates/compiler/src/test_support/machine_suite.rs)。テスト専用busへLinkedImageを直接loadし、実Kagura CPUで実行する。
 
 ## 4. 次に追加する順序と合格条件
+<!-- ond-spec-id: targets/kagura-v1/conformance-acceptance-order -->
 
 - [x] **棚卸し**: 実行層を区別し、既存のassert範囲と不足を対応付ける（本書）。
 - [x] **P0: Kagura適合ケースの共通実行口**（KB-02〜06/14）: §5のrunnerとfeature-gated fixture共有を実装。coreをtarget非依存のまま維持し、既存テストはadapterで継続。production machine suite全体の移行は下記P1として残す。
@@ -109,6 +117,7 @@ core IDは元表への対応付けであり、その行の全契約をbackendが
 
 
 ## 5. 2026-09-20 接続実装の記録
+<!-- ond-spec-id: targets/kagura-v1/conformance-connection-record -->
 
 - 共通runner: [runner.rs](../../../../crates/compiler/src/mir_backend/conformance/runner.rs)。複数source filesをcompileして得たLinkedImageに、case ID/spec IDs・動的入力word・期待出力word列・Return/FaultCode・step上限を与える。実CPUを使用し、正常終了時のexit=0/SP/callee-save、fault時のexit未実行と出力sentinelを照合する。traceは出力word列の一部として最終値と同時に検査する。誤った値・期待fault・step不足のrunner負例もある。
 - 共有データ: coreの[test_vectors](../../../../crates/compiler-core/src/test_vectors.rs)。整数336件、float bits 25件、評価順25件を一箇所に保持。整数castはsource_tyも明示する。coreのoracle/定数/MemoryVm検証を維持し、compilerのdev-dependencyだけが `conformance-fixtures` を有効にする。通常ビルドには公開されない、不安定なテスト用API。coreにKagura依存を導入しない。
@@ -122,6 +131,7 @@ core IDは元表への対応付けであり、その行の全契約をbackendが
 
 
 ## 6. 適合suiteの実行口
+<!-- ond-spec-id: targets/kagura-v1/conformance-suite-entrypoint -->
 
 MIR → Object → linker → LinkedImageをテスト用busへ直接読み込み、実Kagura CPUで実行する。ファイル形式のencode/decodeを経由しない。専用の旧配布形式に依存していた検証は撤去し、通常の言語動作・fault・retired countの20件をtest_supportへ移した。
 
