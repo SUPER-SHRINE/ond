@@ -14,6 +14,14 @@ $repoRoot = [System.IO.Path]::GetFullPath($gitRoot.Trim())
 $specRoot = Join-Path $repoRoot "specs/ond"
 $idPattern = '^[a-z0-9]+(?:-[a-z0-9]+)*(?:/[a-z0-9]+(?:-[a-z0-9]+)*)*$'
 $markerPattern = '^<!-- ond-spec-id: (?<id>[^ ]+) -->$'
+$invalidCaseFixture = 'Type-System/inference'
+if ($invalidCaseFixture -cmatch $idPattern) {
+    throw "ond-spec-id validation must be case-sensitive."
+}
+$invalidMarkerCaseFixture = '<!-- OND-SPEC-ID: type-system/inference -->'
+if ($invalidMarkerCaseFixture -cmatch $markerPattern) {
+    throw "ond-spec-id marker validation must be case-sensitive."
+}
 $seen = @{}
 $failures = [System.Collections.Generic.List[string]]::new()
 $headingCount = 0
@@ -35,13 +43,13 @@ foreach ($file in Get-ChildItem -LiteralPath $specRoot -Recurse -File -Filter "*
 
         $headingCount++
         $lineNumber = $index + 1
-        if ($index + 1 -ge $lines.Count -or [string]$lines[$index + 1] -notmatch $markerPattern) {
+        if ($index + 1 -ge $lines.Count -or [string]$lines[$index + 1] -cnotmatch $markerPattern) {
             $failures.Add("${relative}:${lineNumber}: heading must be followed immediately by an ond-spec-id marker")
             continue
         }
 
         $id = [string]$Matches.id
-        if ($id -notmatch $idPattern) {
+        if ($id -cnotmatch $idPattern) {
             $failures.Add("${relative}:$($lineNumber + 1): invalid ond-spec-id '$id'")
             continue
         }
