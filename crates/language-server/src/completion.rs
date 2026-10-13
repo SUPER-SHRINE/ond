@@ -8,6 +8,8 @@ use serde_json::{Value, json};
 use crate::protocol::{Position, lsp_offset};
 use crate::symbol_index::{IndexedSymbol, IndexedSymbolKind, ProjectSymbolIndex};
 
+const MAX_COMPLETION_INFERRED_POINTER_DEPTH: usize = 16;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImportPathCompletion {
     prefix: String,
@@ -635,7 +637,7 @@ pub fn resolve_completion_struct_fields(
     base: &ast::Expr,
 ) -> Option<Vec<ast::Field>> {
     let ty = resolve_completion_expr_type(package, function, base)?;
-    resolve_completion_struct_fields_for_type(package, &ty, 0)
+    resolve_completion_struct_fields_for_type(package, &ty, 0, 0)
 }
 
 pub fn resolve_project_completion_struct_fields(
@@ -646,7 +648,7 @@ pub fn resolve_project_completion_struct_fields(
     base: &ast::Expr,
 ) -> Option<Vec<ast::Field>> {
     let ty = resolve_project_completion_expr_type(project, package, file, function, base)?;
-    let (fields, _, _, external) = resolve_project_completion_struct_type(project, ty, 0)?;
+    let (fields, _, _, external) = resolve_project_completion_struct_type(project, ty, 0, 0)?;
     Some(
         fields
             .into_iter()
@@ -664,7 +666,7 @@ pub fn resolve_project_completion_methods(
 ) -> Option<Vec<Value>> {
     let resolved = resolve_project_completion_expr_type(project, package, file, function, base)?;
     let interface = resolve_project_completion_interface_type(project, resolved.clone(), 0);
-    let (path, pointer) = completion_receiver_path(&resolved.ty, false)?;
+    let (path, pointer_depth) = completion_receiver_path(&resolved.ty, 0)?;
     let (method_package, name, external) = match path.segments.as_slice() {
         [name] => (resolved.package, name.name.as_str(), resolved.external),
         [alias, name] => (
@@ -675,7 +677,9 @@ pub fn resolve_project_completion_methods(
         _ => return None,
     };
     let mut methods = Vec::new();
-    if !pointer && let Some((required, interface_external)) = interface {
+    if pointer_depth == 0
+        && let Some((required, interface_external)) = interface
+    {
         methods.extend(
             required
                 .iter()
@@ -699,7 +703,7 @@ pub fn resolve_project_completion_methods(
                 continue;
             };
             if receiver_name == name
-                && receiver_pointer == pointer
+                && receiver_pointer == pointer_depth
                 && (!external || completion_name_is_exported(&method.name.name))
             {
                 methods.push(method_completion_item(method));
@@ -715,9 +719,11 @@ pub fn resolve_completion_methods(
     base: &ast::Expr,
 ) -> Option<Vec<Value>> {
     let ty = resolve_completion_expr_type(package, function, base)?;
-    let (name, pointer) = completion_exact_named_receiver(&ty)?;
+    let (name, pointer_depth) = completion_exact_named_receiver(&ty)?;
     let mut methods = Vec::new();
-    if !pointer && let Some(required) = resolve_completion_interface_type(package, &ty, 0) {
+    if pointer_depth == 0
+        && let Some(required) = resolve_completion_interface_type(package, &ty, 0)
+    {
         methods.extend(required.iter().map(interface_method_completion_item));
     }
     for file in &package.files {
@@ -728,7 +734,7 @@ pub fn resolve_completion_methods(
             let Some(receiver) = &method.receiver else {
                 continue;
             };
-            if completion_exact_named_receiver(&receiver.ty) == Some((name, pointer)) {
+            if completion_exact_named_receiver(&receiver.ty) == Some((name, pointer_depth)) {
                 methods.push(method_completion_item(method));
             }
         }
@@ -736,18 +742,28 @@ pub fn resolve_completion_methods(
     Some(methods)
 }
 
-fn completion_exact_named_receiver(ty: &ast::Type) -> Option<(&str, bool)> {
-    let (path, pointer) = completion_receiver_path(ty, false)?;
-    (path.segments.len() == 1).then(|| (path.segments[0].name.as_str(), pointer))
+fn completion_exact_named_receiver(ty: &ast::Type) -> Option<(&str, usize)> {
+    let (path, pointer_depth) = completion_receiver_path(ty, 0)?;
+    (path.segments.len() == 1).then(|| (path.segments[0].name.as_str(), pointer_depth))
 }
 
-fn completion_receiver_path(ty: &ast::Type, pointer: bool) -> Option<(&ast::Path, bool)> {
+fn completion_receiver_path(ty: &ast::Type, pointer_depth: usize) -> Option<(&ast::Path, usize)> {
     match ty {
-        ast::Type::Named(path) => Some((path, pointer)),
-        ast::Type::Apply { base, .. } => Some((base, pointer)),
-        ast::Type::Pointer(inner, _) => completion_receiver_path(inner, true),
+        ast::Type::Named(path) => Some((path, pointer_depth)),
+        ast::Type::Apply { base, .. } => Some((base, pointer_depth)),
+        ast::Type::Pointer(inner, _) => completion_receiver_path(inner, pointer_depth + 1),
         _ => None,
     }
+}
+
+fn completion_pointer_depth(ty: &ast::Type) -> usize {
+    let mut depth = 0;
+    let mut ty = ty;
+    while let ast::Type::Pointer(inner, _) = ty {
+        depth += 1;
+        ty = inner;
+    }
+    depth
 }
 
 fn method_completion_item(method: &ast::FuncDecl) -> Value {
@@ -1023,7 +1039,7 @@ fn resolve_project_completion_expr_type<'a>(
             )?;
             for segment in &path.segments[1..] {
                 let (fields, field_package, field_file, external) =
-                    resolve_project_completion_struct_type(project, resolved, 0)?;
+                    resolve_project_completion_struct_type(project, resolved, 0, 0)?;
                 let field = fields
                     .into_iter()
                     .find(|candidate| candidate.name.name == segment.name)?;
@@ -1040,7 +1056,7 @@ fn resolve_project_completion_expr_type<'a>(
             let base =
                 resolve_project_completion_expr_type(project, package, file, function, base)?;
             let (fields, field_package, field_file, external) =
-                resolve_project_completion_struct_type(project, base, 0)?;
+                resolve_project_completion_struct_type(project, base, 0, 0)?;
             let field = fields
                 .into_iter()
                 .find(|candidate| candidate.name.name == field.name)?;
@@ -1084,6 +1100,16 @@ fn resolve_project_completion_expr_type<'a>(
                 return None;
             };
             resolved.ty = *inner;
+            Some(resolved)
+        }
+        ast::Expr::Unary {
+            op: ast::UnaryOp::AddrOf,
+            expr,
+            span,
+        } => {
+            let mut resolved =
+                resolve_project_completion_expr_type(project, package, file, function, expr)?;
+            resolved.ty = ast::Type::Pointer(Box::new(resolved.ty), *span);
             Some(resolved)
         }
         ast::Expr::Index { base, .. } => {
@@ -1377,6 +1403,19 @@ fn project_completion_type_from_known_expr<'a>(
         ast::Expr::Call { callee, .. } => {
             project_completion_call_result(project, package, file, None, callee, expr.span().start)
         }
+        ast::Expr::Unary {
+            op: ast::UnaryOp::AddrOf,
+            expr,
+            span,
+        } => {
+            let mut resolved =
+                project_completion_type_from_known_expr(project, package, file, expr, types)?;
+            if completion_pointer_depth(&resolved.ty) >= MAX_COMPLETION_INFERRED_POINTER_DEPTH {
+                return None;
+            }
+            resolved.ty = ast::Type::Pointer(Box::new(resolved.ty), *span);
+            Some(resolved)
+        }
         _ => None,
     }
 }
@@ -1480,7 +1519,7 @@ fn project_completion_method_result<'a>(
     _limit: usize,
 ) -> Option<ProjectCompletionType<'a>> {
     let receiver = resolve_project_completion_expr_type(project, package, file, function, base)?;
-    let (path, pointer, arguments) = completion_receiver_application(&receiver.ty, false)?;
+    let (path, pointer_depth, arguments) = completion_receiver_application(&receiver.ty, 0)?;
     let (method_package, receiver_name, alias) = match path.segments.as_slice() {
         [name] => (receiver.package, name.name.as_str(), None),
         [alias, name] => (
@@ -1496,7 +1535,7 @@ fn project_completion_method_result<'a>(
                 return None;
             };
             let receiver = method.receiver.as_ref()?;
-            (completion_exact_named_receiver(&receiver.ty) == Some((receiver_name, pointer))
+            (completion_exact_named_receiver(&receiver.ty) == Some((receiver_name, pointer_depth))
                 && method.name.name == method_name.name)
                 .then_some((method, candidate_file))
         })
@@ -1526,14 +1565,14 @@ fn project_completion_method_result<'a>(
 
 fn completion_receiver_application(
     ty: &ast::Type,
-    pointer: bool,
-) -> Option<(&ast::Path, bool, &[ast::Type])> {
+    pointer_depth: usize,
+) -> Option<(&ast::Path, usize, &[ast::Type])> {
     match ty {
-        ast::Type::Named(path) => Some((path, pointer, &[])),
+        ast::Type::Named(path) => Some((path, pointer_depth, &[])),
         ast::Type::Apply {
             base, arguments, ..
-        } => Some((base, pointer, arguments)),
-        ast::Type::Pointer(inner, _) => completion_receiver_application(inner, true),
+        } => Some((base, pointer_depth, arguments)),
+        ast::Type::Pointer(inner, _) => completion_receiver_application(inner, pointer_depth + 1),
         _ => None,
     }
 }
@@ -1543,7 +1582,7 @@ fn substitute_completion_method_receiver(
     declared_receiver: &ast::Type,
     arguments: &[ast::Type],
 ) -> Option<ast::Type> {
-    let (_, _, parameters) = completion_receiver_application(declared_receiver, false)?;
+    let (_, _, parameters) = completion_receiver_application(declared_receiver, 0)?;
     if parameters.len() != arguments.len() {
         return None;
     }
@@ -1587,8 +1626,9 @@ fn resolve_project_completion_struct_type<'a>(
     project: &'a ast::Project,
     resolved: ProjectCompletionType<'a>,
     depth: usize,
+    pointer_depth: usize,
 ) -> Option<(Vec<ast::Field>, &'a ast::Package, &'a ast::File, bool)> {
-    if depth > 16 {
+    if depth > 16 || pointer_depth > 1 {
         return None;
     }
     match resolved.ty {
@@ -1599,6 +1639,7 @@ fn resolve_project_completion_struct_type<'a>(
                 ..resolved
             },
             depth + 1,
+            pointer_depth + 1,
         ),
         ast::Type::Struct { fields, .. } => {
             Some((fields, resolved.package, resolved.file, resolved.external))
@@ -1615,6 +1656,7 @@ fn resolve_project_completion_struct_type<'a>(
                         ..resolved
                     },
                     depth + 1,
+                    pointer_depth,
                 )
             }
             [alias, name] => {
@@ -1629,6 +1671,7 @@ fn resolve_project_completion_struct_type<'a>(
                         external: true,
                     },
                     depth + 1,
+                    pointer_depth,
                 )
             }
             _ => None,
@@ -1647,6 +1690,7 @@ fn resolve_project_completion_struct_type<'a>(
                         ..resolved
                     },
                     depth + 1,
+                    pointer_depth,
                 )
             }
             [alias, name] => {
@@ -1662,6 +1706,7 @@ fn resolve_project_completion_struct_type<'a>(
                         external: true,
                     },
                     depth + 1,
+                    pointer_depth,
                 )
             }
             _ => None,
@@ -1904,7 +1949,7 @@ fn resolve_completion_expr_type(
         }
         ast::Expr::Selector { base, field, .. } => {
             let base_ty = resolve_completion_expr_type(package, function, base)?;
-            let fields = resolve_completion_struct_fields_for_type(package, &base_ty, 0)?;
+            let fields = resolve_completion_struct_fields_for_type(package, &base_ty, 0, 0)?;
             fields
                 .into_iter()
                 .find(|candidate| candidate.name.name == field.name)
@@ -1912,6 +1957,14 @@ fn resolve_completion_expr_type(
         }
         ast::Expr::Cast { ty, .. } | ast::Expr::Composite { ty, .. } => Some(ty.clone()),
         ast::Expr::New { ty, span } => Some(ast::Type::Pointer(Box::new(ty.clone()), *span)),
+        ast::Expr::Unary {
+            op: ast::UnaryOp::AddrOf,
+            expr,
+            span,
+        } => Some(ast::Type::Pointer(
+            Box::new(resolve_completion_expr_type(package, function, expr)?),
+            *span,
+        )),
         ast::Expr::Call { callee, .. } => completion_call_result(package, callee),
         _ => None,
     }
@@ -2053,6 +2106,15 @@ fn completion_type_from_known_expr(
     match expr {
         ast::Expr::Cast { ty, .. } | ast::Expr::Composite { ty, .. } => Some(ty.clone()),
         ast::Expr::New { ty, span } => Some(ast::Type::Pointer(Box::new(ty.clone()), *span)),
+        ast::Expr::Unary {
+            op: ast::UnaryOp::AddrOf,
+            expr,
+            span,
+        } => {
+            let ty = completion_type_from_known_expr(package, expr, types)?;
+            (completion_pointer_depth(&ty) < MAX_COMPLETION_INFERRED_POINTER_DEPTH)
+                .then(|| ast::Type::Pointer(Box::new(ty), *span))
+        }
         ast::Expr::Name(path) if path.segments.len() == 1 => {
             types.get(&path.segments[0].name).cloned()
         }
@@ -2094,14 +2156,15 @@ fn resolve_completion_struct_fields_for_type(
     package: &ast::Package,
     ty: &ast::Type,
     depth: usize,
+    pointer_depth: usize,
 ) -> Option<Vec<ast::Field>> {
-    if depth > 16 {
+    if depth > 16 || pointer_depth > 1 {
         return None;
     }
     match ty {
         ast::Type::Struct { fields, .. } => Some(fields.clone()),
         ast::Type::Pointer(inner, _) => {
-            resolve_completion_struct_fields_for_type(package, inner, depth + 1)
+            resolve_completion_struct_fields_for_type(package, inner, depth + 1, pointer_depth + 1)
         }
         ast::Type::Named(path) if path.segments.len() == 1 => package
             .files
@@ -2116,7 +2179,12 @@ fn resolve_completion_struct_fields_for_type(
                     .iter()
                     .find(|spec| spec.name.name == path.segments[0].name)
                     .and_then(|spec| {
-                        resolve_completion_struct_fields_for_type(package, &spec.ty, depth + 1)
+                        resolve_completion_struct_fields_for_type(
+                            package,
+                            &spec.ty,
+                            depth + 1,
+                            pointer_depth,
+                        )
                     })
             }),
         ast::Type::Apply {
@@ -2124,7 +2192,7 @@ fn resolve_completion_struct_fields_for_type(
         } if base.segments.len() == 1 => {
             let (spec, _) = completion_type_spec(package, &base.segments[0].name)?;
             let ty = substitute_completion_type_arguments(spec, arguments)?;
-            resolve_completion_struct_fields_for_type(package, &ty, depth + 1)
+            resolve_completion_struct_fields_for_type(package, &ty, depth + 1, pointer_depth)
         }
         _ => None,
     }
