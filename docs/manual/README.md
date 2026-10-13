@@ -13,7 +13,7 @@ Ond v1の厳密な定義は[`specs/ond/v1`](../../specs/ond/v1/README.md)にあ�
 3. [プロジェクトとパッケージ](projects-and-packages.md) — 複数パッケージと依存関係を扱う
 4. [言語リファレンス案内](reference.md) — 詳細な規則を目的別に調べる
 
-すでに静的型付き言語に慣れている場合は、言語ツアーから始めてもよい。言語ツアーにはgeneric型・関数・method、generic interface、interfaceへ委譲するoperatorの例も含む。OndはGoに近い見た目を持つが、暗黙変換、slice、組み込み文字列型、garbage collectionは持たない。特にメモリ管理とinterfaceの規則は推測せず、該当章を確認してほしい。
+すでに静的型付き言語に慣れている場合は、言語ツアーから始めてもよい。言語ツアーにはgeneric型・関数・method、generic interface、interfaceへ委譲するoperatorの例も含む。OndはGoに近い見た目を持つが、数値型やinterfaceの暗黙変換、slice、組み込み文字列型、garbage collectionは持たない。method receiverだけは1段の暗黙address取得・参照外しを行える。特にメモリ管理とinterfaceの規則は推測せず、該当章を確認してほしい。
 
 ## マニュアルと仕様の役割
 

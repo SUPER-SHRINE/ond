@@ -790,6 +790,20 @@ mod tests {
     }
 
     #[test]
+    fn resolves_methods_with_implicit_receiver_conversion() {
+        let text = "package main\ntype S struct {}\nfunc (value: *S) Pointer() {}\nfunc (value: S) Value() {}\nfunc main() { var value: S; value.Pointer(); var pointer = &value; pointer.Value(); }\n";
+        assert!(hover_at(text, "Pointer", 1).is_some());
+        assert!(hover_at(text, "Value", 1).is_some());
+    }
+
+    #[test]
+    fn resolves_methods_through_a_named_pointer() {
+        let text = "package main\ntype S struct {}\ntype P *S\nfunc (value: S) Value() {}\nfunc (pointer: *P) Address() {}\nfunc main() { var pointer: P; pointer.Value(); pointer.Address(); }\n";
+        assert!(hover_at(text, "Value", 1).is_some());
+        assert!(hover_at(text, "Address", 1).is_some());
+    }
+
+    #[test]
     fn resolves_method_hover_for_an_inferred_generic_receiver() {
         let text = "package main\ntype List[T] struct { length: u32 }\nfunc (list: *List[T]) push(value: T) {}\nfunc NewList[T]() -> *List[T] { return new(List[T]) }\nfunc f() { l := NewList[u32](); l.push(1) }\n";
 
@@ -849,6 +863,62 @@ mod tests {
                 .unwrap()
                 .contains("func (box: *Box[T]) Read() -> T")
         );
+    }
+
+    #[test]
+    fn resolves_method_hover_through_an_imported_generic_named_pointer() {
+        let library_text = "package runtime\ntype Cell[T] struct { value: T }\ntype P[T] *Cell[T]\nfunc (cell: Cell[T]) Get() -> T { return cell.value }\n";
+        let usage_text = "package main\nimport \"runtime\"\ntype S struct {}\nfunc f() { var p: runtime.P[S]; p.Get() }\n";
+        let mut sources = SourceDb::default();
+        let library_id = sources.add_file(PathBuf::from("runtime/api.ond"), library_text.into());
+        let usage_id = sources.add_file(PathBuf::from("main.ond"), usage_text.into());
+        let library = parse_source_file(library_id, library_text).unwrap();
+        let usage = parse_source_file(usage_id, usage_text).unwrap();
+        let main_package = ast::Package {
+            logical_path: ".".into(),
+            files: vec![usage.clone()],
+        };
+        let project = ast::Project {
+            packages: vec![
+                main_package.clone(),
+                ast::Package {
+                    logical_path: "runtime".into(),
+                    files: vec![library],
+                },
+            ],
+        };
+        let offset = usage_text.rfind("Get").unwrap();
+        let position = Position {
+            line: 3,
+            character: usage_text[usage_text[..offset].rfind('\n').unwrap() + 1..offset]
+                .encode_utf16()
+                .count() as u32,
+        };
+
+        let method = hover_for_project(&project, &main_package, &usage, &sources, &position)
+            .expect("imported generic named pointer method hover");
+        assert!(
+            method["contents"]["value"]
+                .as_str()
+                .unwrap()
+                .contains("func (cell: Cell[T]) Get() -> T")
+        );
+    }
+
+    #[test]
+    fn method_hover_respects_receiver_addressability() {
+        let text = "package main\ntype S struct {}\ntype P *S\ntype R struct {}\ntype Q struct {}\nfunc (s: S) Which() -> R { return R{} }\nfunc (p: *P) Which() -> Q { return Q{} }\nfunc make() -> P { return nil }\nfunc f() { _ = make().Which(); var p = make(); _ = p.Which() }\n";
+
+        let temporary = hover_at(text, "Which", 2).expect("temporary receiver method hover");
+        let temporary = temporary["contents"]["value"].as_str().unwrap();
+        assert!(
+            temporary.contains("func (s: S) Which() -> R"),
+            "{temporary}"
+        );
+
+        let local = hover_at(text, "Which", 3).expect("addressable receiver method hover");
+        let local = local["contents"]["value"].as_str().unwrap();
+        assert!(local.contains("func (p: *P) Which() -> Q"), "{local}");
     }
 
     #[test]
