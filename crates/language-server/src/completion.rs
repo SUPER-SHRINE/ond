@@ -1086,6 +1086,16 @@ fn resolve_project_completion_expr_type<'a>(
             resolved.ty = *inner;
             Some(resolved)
         }
+        ast::Expr::Unary {
+            op: ast::UnaryOp::AddrOf,
+            expr,
+            span,
+        } => {
+            let mut resolved =
+                resolve_project_completion_expr_type(project, package, file, function, expr)?;
+            resolved.ty = ast::Type::Pointer(Box::new(resolved.ty), *span);
+            Some(resolved)
+        }
         ast::Expr::Index { base, .. } => {
             let mut resolved =
                 resolve_project_completion_expr_type(project, package, file, function, base)?;
@@ -1376,6 +1386,16 @@ fn project_completion_type_from_known_expr<'a>(
         }
         ast::Expr::Call { callee, .. } => {
             project_completion_call_result(project, package, file, None, callee, expr.span().start)
+        }
+        ast::Expr::Unary {
+            op: ast::UnaryOp::AddrOf,
+            expr,
+            span,
+        } => {
+            let mut resolved =
+                project_completion_type_from_known_expr(project, package, file, expr, types)?;
+            resolved.ty = ast::Type::Pointer(Box::new(resolved.ty), *span);
+            Some(resolved)
         }
         _ => None,
     }
@@ -1912,6 +1932,14 @@ fn resolve_completion_expr_type(
         }
         ast::Expr::Cast { ty, .. } | ast::Expr::Composite { ty, .. } => Some(ty.clone()),
         ast::Expr::New { ty, span } => Some(ast::Type::Pointer(Box::new(ty.clone()), *span)),
+        ast::Expr::Unary {
+            op: ast::UnaryOp::AddrOf,
+            expr,
+            span,
+        } => Some(ast::Type::Pointer(
+            Box::new(resolve_completion_expr_type(package, function, expr)?),
+            *span,
+        )),
         ast::Expr::Call { callee, .. } => completion_call_result(package, callee),
         _ => None,
     }
@@ -2053,6 +2081,14 @@ fn completion_type_from_known_expr(
     match expr {
         ast::Expr::Cast { ty, .. } | ast::Expr::Composite { ty, .. } => Some(ty.clone()),
         ast::Expr::New { ty, span } => Some(ast::Type::Pointer(Box::new(ty.clone()), *span)),
+        ast::Expr::Unary {
+            op: ast::UnaryOp::AddrOf,
+            expr,
+            span,
+        } => Some(ast::Type::Pointer(
+            Box::new(completion_type_from_known_expr(package, expr, types)?),
+            *span,
+        )),
         ast::Expr::Name(path) if path.segments.len() == 1 => {
             types.get(&path.segments[0].name).cloned()
         }

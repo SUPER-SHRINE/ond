@@ -1338,6 +1338,51 @@ mod tests {
     }
 
     #[test]
+    fn address_of_local_inference_completes_pointer_methods_in_both_modes() {
+        for project_mode in [true, false] {
+            for (selector, has_method) in [("s.", false), ("ptr.", true)] {
+                let root = normalize_path(std::env::temp_dir().join(format!(
+                    "ond-lsp-address-of-members-{}-{}-{project_mode}",
+                    std::process::id(),
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_nanos()
+                )));
+                std::fs::create_dir_all(&root).unwrap();
+                if project_mode {
+                    std::fs::write(root.join("ond.toml"), "[project]\nname=\"members\"\n").unwrap();
+                }
+                let source = format!(
+                    "package main\ntype S struct {{ A: u32 }}\nfunc (s: *S) Method() {{}}\nfunc main() {{\n    var s = S{{ A: 14 }}\n    ptr := &s\n    {selector}\n}}\n"
+                );
+                let path = root.join("main.ond");
+                std::fs::write(&path, &source).unwrap();
+                let uri = uri_from_path(&path).unwrap();
+                let mut state = ServerState::default();
+                let mut output = Vec::new();
+                state
+                    .open_document(uri.clone(), source.clone(), &mut output)
+                    .unwrap();
+
+                let text = source.lines().nth(6).unwrap();
+                let character = text.rfind('.').unwrap() as u32 + 1;
+                let completions = state.completions(&uri, 6, character).unwrap();
+                let labels = completions
+                    .iter()
+                    .filter_map(|item| item["label"].as_str())
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    labels.contains(&"Method"),
+                    has_method,
+                    "project={project_mode}, selector={selector}: {completions:?}"
+                );
+                std::fs::remove_dir_all(root).unwrap();
+            }
+        }
+    }
+
+    #[test]
     fn generic_interface_completion_uses_applied_type_arguments() {
         let root = normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-generic-interface-members-{}-{}",
