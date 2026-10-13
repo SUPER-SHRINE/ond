@@ -323,7 +323,7 @@ impl<'a> CompletionScope<'a> {
     pub(crate) fn receiver(self) -> Option<&'a ast::Field> {
         match self {
             Self::Function(function) => function.receiver.as_deref(),
-            Self::Operator(_) => None,
+            Self::Operator(operator) => operator.signature.params.first(),
         }
     }
 }
@@ -2190,7 +2190,7 @@ fn substitute_completion_type(
     }
 }
 
-fn completion_imported_package<'a>(
+pub(crate) fn completion_imported_package<'a>(
     project: &'a ast::Project,
     file: &ast::File,
     alias: &str,

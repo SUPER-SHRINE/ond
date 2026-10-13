@@ -997,7 +997,7 @@ mod tests {
 
     #[test]
     fn displays_operator_parameter_types_at_declarations_and_uses() {
-        let text = "package main\ntype List[T] struct {}\noperator[T] [](list: *List[T], index: u32) -> *T { _ = index; trap \"unused\" }\n";
+        let text = "package main\ntype List[T] struct {}\noperator (list: *List[T]) [](index: u32) -> *T { _ = index; trap \"unused\" }\n";
 
         for occurrence in [0, 1] {
             let index = hover_at(text, "index", occurrence).expect("operator parameter hover");

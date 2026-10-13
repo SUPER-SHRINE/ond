@@ -267,11 +267,11 @@ func NewPairList[T](first: T, second: T) -> List[T] {
     return values as List[T]
 }
 
-operator[T] [](values: List[T], index: u32) -> T {
+operator (values: List[T]) [](index: u32) -> T {
     return values.Get(index)
 }
 
-operator[T] []=(values: List[T], index: u32, value: T) {
+operator (values: List[T]) []=(index: u32, value: T) {
     values.Set(index, value)
 }
 

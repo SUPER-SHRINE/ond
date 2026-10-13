@@ -412,19 +412,18 @@ Kagura target の関数呼び出し規約は [Ond ABI for Kagura v1](../targets/
 ### 9.1 User-defined operators
 <!-- ond-spec-id: functions/user-defined-operators -->
 
-- top-level の `operator` 宣言だけが overload を持つ。通常の関数、method、interface method は overload しない。
+- top-level の `operator` 宣言だけが overload を持ち、receiver型に属する特殊名methodとして扱う。通常の関数、method、interface method は overload しない。
 - 対象は unary `+` / `-`、binary `+` / `-` / `*` / `/` / `%`、`[]`、`[]=`、`len` とする。比較・論理・bit operator は対象外とする。
-- 解決は operand 型の完全一致だけで行い、戻り値型は候補選択に使わない。operator 自体を function pointer 値として取得できない。
-- 宣言できる package は、左から見て最初の user-defined operand 型を所有する package とする。名前付きinterface型もuser-defined operandとして使用でき、そのinterfaceを所有するpackageでoperatorを宣言する。
+- 解決はreceiver型と残りのoperand型で行い、戻り値型は候補選択に使わない。operator 自体を function pointer 値として取得できない。
+- receiverは同じpackageで宣言された名前付き型またはそのpointerに限る。名前付きinterface型もreceiverとして使用できる。
 - operator候補はoperandの静的な型だけで選ぶ。具象型がinterfaceを満たしていてもinterface型へ暗黙変換してoperator候補を追加しない。
 - `[]` は値を 1 個返す。pointer を返すこともでき、その後の `.field` は通常の pointer field access と同様に暗黙 dereference する。`&collection[index]` は getter の戻り値が addressable とは限らないため禁止する。
-- `[]=` は `(collection, index, value)` を受け取り、値を返さない。
+- `[]=` はreceiver、index、valueを受け取り、値を返さない。
 - compound assignment は対応する binary operator と代入から導出し、左辺の base と index は一度だけ評価する。
-- 同じ operand 型列を持つ operator 宣言は重複できない。operator は import alias を介した明示参照なしに解決候補となる。
-- generic operatorは `operator[T] +(...)` のように宣言する。型argumentを使用箇所へ明記する構文はなく、operandの具体型と宣言parameter型を構造的に照合してすべての型parameterを推論する。
-- generic interface向けoperatorも通常のtop-level operatorとして本体を持つ。専用alias構文やvtable entryは追加せず、`operator[T] [](values: List[T], index: u32) -> T { return values.Get(index) }`のように公開interface methodへ委譲できる。
-- 各型parameterは少なくとも1個のoperand型に現れなければならない。宣言packageが所有するgeneric型を適用したoperandを少なくとも1個必要とし、具体化後も左から最初のuser-defined operandをそのpackageが所有しなければならない。裸の型parameterだけからなる汎用operatorは宣言できない。
-- 推論後のparameter型列に対して通常operatorと同じ完全一致規則を適用し、型argument列ごとに静的関数へ具体化する。generic operatorと非generic operator、または複数のgeneric operatorが同じoperand型列に一致した場合、優先順位を設けず曖昧としてcompile errorにする。
+- 同じreceiver基底型ではoperator kindとoperand数が同じ宣言を重複できない。receiverのpointer有無は重複判定で区別せず、単項と二項、`[]`と`[]=`は区別する。operator は import alias を介した明示参照なしに解決候補となる。
+- generic operatorは `operator (self: List[T]) [](index: u32) -> T` のように宣言する。receiver型引数は宣言型の型引数に個数が一致するfreshかつ相異なる名前とし、`List[u32]` のような具体化receiverを宣言できない。operator固有の型parameterは持たず、型引数はreceiverから決まる。
+- generic interface向けoperatorも本体を持ち、`operator (values: List[T]) [](index: u32) -> T { return values.Get(index) }`のように公開interface methodへ委譲できる。
+- 呼出し時のreceiverだけはmethodと同様に1段の暗黙参照化または参照外しを許す。pointer receiverへ値を渡すにはaddressableな値が必要であり、残りのoperandは型の完全一致を要する。型引数ごとに静的関数へ具体化する。
 
 ## 10. メモリ管理
 <!-- ond-spec-id: runtime/memory-management -->

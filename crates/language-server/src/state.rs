@@ -12,13 +12,13 @@ use crate::completion::{
     append_builtin_type_completion_items, append_import_completion_items,
     append_indexed_symbol_completion_items, append_local_completion_items,
     append_top_level_completion_items, append_top_level_variable_completion_items,
-    completion_qualifier, completion_text_with_placeholder, completion_text_with_value_placeholder,
-    dedupe_completion_items, find_completion_selector, import_path_completion_context,
-    import_path_completion_items, keyword_completion_items, package_member_completion_items,
-    package_member_completion_items_for_alias, project_completion_base_has_known_type,
-    resolve_completion_methods, resolve_completion_struct_fields,
-    resolve_project_completion_methods, resolve_project_completion_struct_fields,
-    struct_field_completion_items,
+    completion_imported_package, completion_qualifier, completion_text_with_placeholder,
+    completion_text_with_value_placeholder, dedupe_completion_items, find_completion_selector,
+    import_path_completion_context, import_path_completion_items, keyword_completion_items,
+    package_member_completion_items, package_member_completion_items_for_alias,
+    project_completion_base_has_known_type, resolve_completion_methods,
+    resolve_completion_struct_fields, resolve_project_completion_methods,
+    resolve_project_completion_struct_fields, struct_field_completion_items,
 };
 use crate::hover::{hover_for_file, hover_for_project};
 use crate::navigation::{definition_for_file, definition_for_project};
@@ -510,7 +510,25 @@ impl ServerState {
         character: u32,
     ) -> Result<Vec<Value>, String> {
         let base_overrides = self.collect_overrides();
-        let index = self.symbol_index(root, &base_overrides)?;
+        let cached_index = self.symbol_index(root, &base_overrides)?;
+        let mut index = cached_index.clone();
+        if index.is_none() {
+            let project = self
+                .load_project(root, &base_overrides)
+                .or_else(|_| self.load_project(root, &BTreeMap::new()))?;
+            let (mut ast, _) = parse_project_for_index(&project);
+            let current_file_parsed = ast
+                .packages
+                .iter()
+                .flat_map(|package| &package.files)
+                .any(|file| same_path(project.sources.file(file.file_id).path(), path));
+            if current_file_parsed {
+                index = Some(ProjectSymbolIndex::new(project, ast));
+            } else if let Ok(disk_project) = self.load_project(root, &BTreeMap::new()) {
+                ast = parse_project_for_index(&disk_project).0;
+                index = Some(ProjectSymbolIndex::new(disk_project, ast));
+            }
+        }
         let mut overrides = base_overrides;
         let completion_marker = self.documents.get(path).and_then(|document| {
             completion_text_with_placeholder(&document.text, line, character).map(
@@ -530,18 +548,39 @@ impl ServerState {
         if let Some(text) = &value_placeholder {
             overrides.insert(path.to_path_buf(), text.clone());
         }
+        let mut repaired_parse_failures = BTreeSet::new();
         let repaired_index = if completion_marker.is_some() || value_placeholder.is_some() {
             self.load_project(root, &overrides)
                 .ok()
                 .and_then(|project| {
-                    compiler::ond::parse_project(&project)
-                        .ok()
-                        .map(|ast| ProjectSymbolIndex::new(project, ast))
+                    let (ast, failed_packages) = parse_project_for_index(&project);
+                    let current_file_parsed = ast
+                        .packages
+                        .iter()
+                        .flat_map(|package| &package.files)
+                        .any(|file| same_path(project.sources.file(file.file_id).path(), path));
+                    if failed_packages.is_empty() || current_file_parsed {
+                        repaired_parse_failures = failed_packages;
+                        Some(ProjectSymbolIndex::new(project, ast))
+                    } else {
+                        None
+                    }
                 })
         } else {
             None
         };
-        let index = index.or_else(|| repaired_index.clone());
+        let index = if index.as_ref().is_some_and(|index| {
+            index
+                .ast
+                .packages
+                .iter()
+                .flat_map(|package| &package.files)
+                .any(|file| same_path(index.loaded.sources.file(file.file_id).path(), path))
+        }) {
+            index
+        } else {
+            repaired_index.clone().or(index)
+        };
         let completion_qualifier = self
             .documents
             .get(path)
@@ -642,11 +681,25 @@ impl ServerState {
                             ) {
                                 return Ok(Vec::new());
                             }
-                            if let Some(items) = package_member_completion_items(
-                                selector_index,
-                                selector_file,
-                                &base,
-                            ) {
+                            let member_index = match &base {
+                                ast::Expr::Name(path) if path.segments.len() == 1 => {
+                                    completion_imported_package(
+                                        &selector_index.ast,
+                                        selector_file,
+                                        &path.segments[0].name,
+                                    )
+                                    .filter(|package| {
+                                        repaired_parse_failures.contains(&package.logical_path)
+                                    })
+                                    .map_or(selector_index, |_| {
+                                        cached_index.as_ref().unwrap_or(&index)
+                                    })
+                                }
+                                _ => selector_index,
+                            };
+                            if let Some(items) =
+                                package_member_completion_items(member_index, selector_file, &base)
+                            {
                                 return Ok(items);
                             }
                         }
@@ -1012,6 +1065,39 @@ fn completion_function_for_incomplete_member<'a>(
         })
 }
 
+fn parse_project_for_index(project: &compiler::LoadedProject) -> (ast::Project, BTreeSet<String>) {
+    let mut failed_packages = BTreeSet::new();
+    let packages = project
+        .packages
+        .iter()
+        .map(|package| {
+            let mut package_failed = false;
+            let files = package
+                .files
+                .iter()
+                .filter_map(|file_id| {
+                    let file = project.sources.file(*file_id);
+                    match compiler::parse_source_file(*file_id, file.text()) {
+                        Ok(ast) => Some(ast),
+                        Err(_) => {
+                            package_failed = true;
+                            None
+                        }
+                    }
+                })
+                .collect();
+            if package_failed {
+                failed_packages.insert(package.logical_path.clone());
+            }
+            ast::Package {
+                logical_path: package.logical_path.clone(),
+                files,
+            }
+        })
+        .collect();
+    (ast::Project { packages }, failed_packages)
+}
+
 fn incomplete_completion_function_name(text: &str, offset: usize) -> Option<&str> {
     let prefix = text.get(..offset)?;
     let bytes = prefix.as_bytes();
@@ -1107,7 +1193,7 @@ mod tests {
 
     use super::{DocumentState, ServerState};
     use crate::protocol::TextDocumentContentChangeEvent;
-    use crate::util::{normalize_path, uri_from_path};
+    use crate::util::{normalize_path, same_path, uri_from_path};
 
     #[test]
     fn manifest_dependencies_are_loaded_for_language_features() {
@@ -1254,6 +1340,138 @@ mod tests {
             );
         }
         assert!(!completions.iter().any(|item| item["label"] == "package"));
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn package_member_completion_uses_updated_parseable_library_index() {
+        let base = normalize_path(std::env::temp_dir().join(format!(
+            "ond-lsp-updated-library-index-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        )));
+        let root = base.join("project");
+        let libraries = base.join("libraries");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(libraries.join("shared")).unwrap();
+        std::fs::write(root.join("ond.toml"), "[project]\nname=\"app\"\n").unwrap();
+        let main_path = root.join("main.ond");
+        let source = "package main\nimport \"shared\"\nfunc main() { shared.Old() }\n";
+        std::fs::write(&main_path, source).unwrap();
+        let library_path = libraries.join("shared/lib.ond");
+        std::fs::write(&library_path, "package shared\nfunc Old() {}\n").unwrap();
+
+        let main_uri = uri_from_path(&main_path).unwrap();
+        let library_uri = uri_from_path(&library_path).unwrap();
+        let mut state = ServerState::with_library_roots(vec![libraries]);
+        let mut output = Vec::new();
+        state
+            .open_document(main_uri.clone(), source.to_string(), &mut output)
+            .unwrap();
+        state
+            .change_document(
+                library_uri,
+                vec![TextDocumentContentChangeEvent {
+                    text: "package shared\nfunc New() {}\n".to_string(),
+                    range: None,
+                }],
+                &mut output,
+            )
+            .unwrap();
+        let incomplete = "package main\nimport \"shared\"\nfunc main() { shared. }\n";
+        state
+            .change_document(
+                main_uri.clone(),
+                vec![TextDocumentContentChangeEvent {
+                    text: incomplete.to_string(),
+                    range: None,
+                }],
+                &mut output,
+            )
+            .unwrap();
+        let line = incomplete.lines().nth(2).unwrap();
+        let completions = state
+            .completions(&main_uri, 2, line.find(". }").unwrap() as u32 + 1)
+            .unwrap();
+        assert!(
+            completions.iter().any(|item| item["label"] == "New"),
+            "missing updated symbol: {completions:?}"
+        );
+        assert!(
+            completions.iter().all(|item| item["label"] != "Old"),
+            "stale symbol remained: {completions:?}"
+        );
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn package_member_completion_uses_cached_index_when_new_file_is_unindexed() {
+        let base = normalize_path(std::env::temp_dir().join(format!(
+            "ond-lsp-unindexed-file-library-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        )));
+        let root = base.join("project");
+        let libraries = base.join("libraries");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(libraries.join("shared")).unwrap();
+        std::fs::write(root.join("ond.toml"), "[project]\nname=\"app\"\n").unwrap();
+        let main1_path = root.join("main1.ond");
+        let main1 = "package main\nimport \"shared\"\nfunc main() { shared.Run() }\n";
+        std::fs::write(&main1_path, main1).unwrap();
+        let main2_path = root.join("main2.ond");
+        let main2 = "package main\nimport \"shared\"\nfunc main() { shared. }\n";
+        std::fs::write(
+            &main2_path,
+            "package main\nimport \"shared\"\nfunc main() { shared.Run() }\n",
+        )
+        .unwrap();
+        let library_path = libraries.join("shared/lib.ond");
+        std::fs::write(&library_path, "package shared\nfunc Run() {}\n").unwrap();
+
+        let main1_uri = uri_from_path(&main1_path).unwrap();
+        let main2_uri = uri_from_path(&main2_path).unwrap();
+        let library_uri = uri_from_path(&library_path).unwrap();
+        let mut state = ServerState::with_library_roots(vec![libraries]);
+        let mut output = Vec::new();
+        state
+            .open_document(main1_uri, main1.to_string(), &mut output)
+            .unwrap();
+        state
+            .open_document(main2_uri.clone(), main2.to_string(), &mut output)
+            .unwrap();
+        let cached = state
+            .symbol_indexes
+            .get_mut(&normalize_path(root.clone()))
+            .unwrap();
+        for package in &mut cached.ast.packages {
+            package.files.retain(|file| {
+                !same_path(cached.loaded.sources.file(file.file_id).path(), &main2_path)
+            });
+        }
+        state
+            .change_document(
+                library_uri,
+                vec![TextDocumentContentChangeEvent {
+                    text: "package shared\nfunc Run(".to_string(),
+                    range: None,
+                }],
+                &mut output,
+            )
+            .unwrap();
+
+        let character = main2.lines().nth(2).unwrap().find(". }").unwrap() as u32 + 1;
+        let completions = state.completions(&main2_uri, 2, character).unwrap();
+        assert!(
+            completions.iter().any(|item| item["label"] == "Run"),
+            "missing last-good symbol: {completions:?}"
+        );
         std::fs::remove_dir_all(base).unwrap();
     }
 
@@ -1946,7 +2164,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"operators\"\n").unwrap();
         let path = root.join("main.ond");
-        let valid = "package main\ntype Box[T] struct { Value: T; value: T }\nfunc (box: Box[T]) Read() -> T { return box.value }\noperator[T] +(left: Box[T], right: Box[T]) -> Box[T] { return left }\n";
+        let valid = "package main\ntype Box[T] struct { Value: T; value: T }\nfunc (box: Box[T]) Read() -> T { return box.value }\noperator (left: Box[T]) + (right: Box[T]) -> Box[T] { return left }\n";
         std::fs::write(&path, valid).unwrap();
         let uri = uri_from_path(&path).unwrap();
         let mut state = ServerState::default();
@@ -2481,6 +2699,101 @@ mod tests {
         }
         assert!(!completions.iter().any(|item| item["label"] == "hidden"));
         std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn imports_remain_completable_when_an_unrelated_package_fails_to_parse() {
+        let root = normalize_path(std::env::temp_dir().join(format!(
+            "ond-lsp-imports-with-parse-error-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        )));
+        std::fs::create_dir_all(root.join("collection/span")).unwrap();
+        std::fs::create_dir_all(root.join("managed/string")).unwrap();
+        std::fs::write(root.join("ond.toml"), "[project]\nname=\"standard\"\n").unwrap();
+        let path = root.join("main.ond");
+        let baseline = "package main\nimport \"collection/span\"\nfunc main() { span.Init(1) }\n";
+        let source = "package main\nimport \"collection/span\"\nfunc main() { s }\n";
+        std::fs::write(&path, baseline).unwrap();
+        std::fs::write(
+            root.join("collection/span/api.ond"),
+            "package span\ntype Span[T] struct { value: T }\nfunc Init[T](value: T) -> Span[T] { return Span[T]{value: value} }\nfunc New[T](value: T) -> *Span[T] { return nil }\nfunc hidden() {}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("managed/string/string.ond"),
+            "package string\ntype String interface { Length() -> u32 }\noperator (value: String) [] (index: u32) -> u32 { return value.Length() }\nfunc Broken(\n",
+        )
+        .unwrap();
+
+        let uri = uri_from_path(&path).unwrap();
+        let mut state = ServerState::default();
+        let mut output = Vec::new();
+        state
+            .open_document(uri.clone(), baseline.to_string(), &mut output)
+            .unwrap();
+        assert!(compiler::ond::parse_project(&state.load_current_project(&root).unwrap()).is_err());
+        assert!(String::from_utf8_lossy(&output).contains("publishDiagnostics"));
+        let baseline_line = baseline.lines().nth(2).unwrap();
+        let init_character = baseline_line.find("Init").unwrap() as u32 + 1;
+        assert!(state.hover(&uri, 2, init_character).unwrap().is_null());
+        assert!(state.definition(&uri, 2, init_character).unwrap().is_null());
+        assert!(
+            state
+                .document_symbols(&uri)
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        state
+            .change_document(
+                uri.clone(),
+                vec![TextDocumentContentChangeEvent {
+                    text: source.to_string(),
+                    range: None,
+                }],
+                &mut output,
+            )
+            .unwrap();
+        let source_line = source.lines().nth(2).unwrap();
+        let completions = state
+            .completions(&uri, 2, source_line.find("s }").unwrap() as u32 + 1)
+            .unwrap();
+        assert!(
+            completions.iter().any(|item| item["label"] == "span"),
+            "missing import alias: {completions:?}"
+        );
+
+        let incomplete = "package main\nimport \"collection/span\"\nfunc main() { span. }\n";
+        state
+            .change_document(
+                uri.clone(),
+                vec![TextDocumentContentChangeEvent {
+                    text: incomplete.to_string(),
+                    range: None,
+                }],
+                &mut output,
+            )
+            .unwrap();
+        let incomplete_line = incomplete.lines().nth(2).unwrap();
+        let completions = state
+            .completions(&uri, 2, incomplete_line.find(". }").unwrap() as u32 + 1)
+            .unwrap();
+        for expected in ["Span", "Init", "New"] {
+            assert!(
+                completions.iter().any(|item| item["label"] == expected),
+                "missing public import member {expected}: {completions:?}"
+            );
+        }
+        assert!(
+            completions.iter().all(|item| item["label"] != "hidden"),
+            "private member was exposed: {completions:?}"
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

@@ -284,7 +284,6 @@ impl BodyLowerer<'_> {
                     let rhs = self.lower_expr(rhs, None)?;
                     (self.lower_expr(lhs, Some(rhs.ty))?, rhs)
                 } else {
-                    let lhs = self.lower_expr(lhs, (!comparison).then_some(expected).flatten())?;
                     let overloadable = matches!(
                         op,
                         ast::BinaryOp::Add
@@ -293,6 +292,23 @@ impl BodyLowerer<'_> {
                             | ast::BinaryOp::Div
                             | ast::BinaryOp::Rem
                     );
+                    let lhs_expected = (!comparison
+                        && (!overloadable || matches!(lhs.as_ref(), ast::Expr::Literal(_))))
+                    .then_some(expected)
+                    .flatten();
+                    let candidate = self.lower_expr(lhs, lhs_expected)?;
+                    let lhs = if overloadable
+                        && lhs_expected.is_none()
+                        && expected.is_some()
+                        && (self.types.is_integer(candidate.ty)
+                            || matches!(
+                                self.types.underlying_kind(candidate.ty),
+                                Some(TypeKind::F32)
+                            )) {
+                        self.lower_expr(lhs, expected)?
+                    } else {
+                        candidate
+                    };
                     let rhs = if matches!(op, ast::BinaryOp::ShiftLeft | ast::BinaryOp::ShiftRight)
                     {
                         self.lower_expr(rhs, Some(TypeId::U32))?
@@ -308,7 +324,8 @@ impl BodyLowerer<'_> {
                             })
                             .map(|parameters| parameters[1]);
                         let candidate = self.lower_expr(rhs, inferred)?;
-                        if candidate.ty != lhs.ty
+                        if inferred.is_none()
+                            && candidate.ty != lhs.ty
                             && matches!(
                                 rhs.as_ref(),
                                 ast::Expr::Literal(
