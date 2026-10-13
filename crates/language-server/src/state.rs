@@ -1946,7 +1946,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"operators\"\n").unwrap();
         let path = root.join("main.ond");
-        let valid = "package main\ntype Box[T] struct { Value: T; value: T }\nfunc (box: Box[T]) Read() -> T { return box.value }\noperator[T] +(left: Box[T], right: Box[T]) -> Box[T] { return left }\n";
+        let valid = "package main\ntype Box[T] struct { Value: T; value: T }\nfunc (box: Box[T]) Read() -> T { return box.value }\noperator (left: Box[T]) + (right: Box[T]) -> Box[T] { return left }\n";
         std::fs::write(&path, valid).unwrap();
         let uri = uri_from_path(&path).unwrap();
         let mut state = ServerState::default();

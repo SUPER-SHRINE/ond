@@ -105,7 +105,7 @@ ImportDecl    = "import" [ identifier ] string_lit .
 
 TopLevelDecl  = ConstDecl | VarDecl | TypeDecl | FuncDecl | OperatorDecl .
 
-OperatorDecl  = "operator" [ TypeParameters ] ( "+" | "-" | "*" | "/" | "%" | "[]" | "[]=" | "len" ) Signature Block .
+OperatorDecl  = "operator" Receiver ( "+" | "-" | "*" | "/" | "%" | "[]" | "[]=" | "len" ) Signature Block .
 
 ConstDecl     = "const" ConstSpec | "const" "(" { ConstSpec ";" } ")" .
 ConstSpec     = IdentifierList [ ":" Type ] "=" ExpressionList .
@@ -229,7 +229,7 @@ CallExpr      = PrimaryExpr Arguments .
 - `ArrayType` の長さは compile-time constant でなければならない。
 - 型・関数の型parameter listは宣言名へ空白を挟まず `Box[T]`、`Identity[T]` と書く。これは既存の配列型宣言 `type Buffer [N]u8` と区別するための規則である。
 - `TypeSpec`の型parameter listはstructだけでなくinterfaceにも使える。generic型のmethod receiverは`func (box: *Box[T]) Set(value: T)`のように適用型として書き、method名の後ろに追加の型parameter listは書かない。
-- generic operatorは `operator[T] [](values: *Vec[T], index: u32) -> *T` のように、`operator`へ空白を挟まず型parameter listを書いてからoperator名を書く。
+- generic operatorは `operator (values: *Vec[T]) [](index: u32) -> *T` のように、receiver型へ型parameterを記す。operator固有の型parameter listは持たない。
 - generic関数callはnamed functionに明示的な型argumentを付けて `Identity[u32](value)` と書く。型argument推論は行わない。同じtoken列になり得る `callbacks[index]()` は、`callbacks` がgeneric関数名でなければ通常のindex accessとcallとして解釈する。
 - 関数宣言の `Signature` では parameter 名を必須とする。関数型の `TypeSignature` では各 parameter 名を省略しても記載してもよい。関数型に記載した名前は binding を作らず、型の同一性に影響しない。
 - `Result` の括弧内には少なくとも1個の型が必要であり、`-> ()` は許可しない。戻り値が0個の場合はarrowを省略する。

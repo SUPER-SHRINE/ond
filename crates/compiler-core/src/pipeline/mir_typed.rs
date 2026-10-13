@@ -305,6 +305,16 @@ impl FunctionBuilder<'_> {
                         };
                         let place = place.clone();
                         let lhs = self.load_place_value(place.clone(), *span);
+                        let receiver = if let Some(call) = overloaded {
+                            Some(self.resolved_receiver_value(
+                                call.arguments.first()?,
+                                lhs,
+                                Some(&place),
+                                *span,
+                            )?)
+                        } else {
+                            None
+                        };
                         let evaluated = self.lower_values(values)?;
                         let [rhs] = evaluated.as_slice() else {
                             return None;
@@ -319,6 +329,7 @@ impl FunctionBuilder<'_> {
                             if *result_ty != place.ty {
                                 return None;
                             }
+                            let receiver = receiver?;
                             let result = mir::ValueId(self.values.len() as u32);
                             self.values.push(mir::Value {
                                 id: result,
@@ -330,7 +341,7 @@ impl FunctionBuilder<'_> {
                                 mir::InstructionKind::Call {
                                     callee: mir::Callee::Direct(symbol.clone()),
                                     signature: call.signature.clone(),
-                                    arguments: vec![lhs, *rhs],
+                                    arguments: vec![receiver, *rhs],
                                     effects: mir::CallEffects::Unknown,
                                 },
                                 *span,
@@ -394,14 +405,45 @@ impl FunctionBuilder<'_> {
                         setter,
                         span,
                     } = statement.as_ref();
-                    let base = self.lower_expr(base)?;
+                    let base_place = self.lower_place(base)?;
+                    let base = self.load_place_value(base_place.clone(), base.span);
+                    let getter_receiver = self.resolved_receiver_value(
+                        getter.arguments.first()?,
+                        base,
+                        Some(&base_place),
+                        *span,
+                    )?;
+                    let setter_receiver =
+                        if getter.arguments.first()?.ty == setter.arguments.first()?.ty {
+                            getter_receiver
+                        } else {
+                            self.resolved_receiver_value(
+                                setter.arguments.first()?,
+                                base,
+                                Some(&base_place),
+                                *span,
+                            )?
+                        };
                     let index = self.lower_expr(index)?;
-                    let got = self.emit_pre_evaluated_call(getter, vec![base, index], *span)?;
+                    let got =
+                        self.emit_pre_evaluated_call(getter, vec![getter_receiver, index], *span)?;
                     let [lhs] = got.as_slice() else { return None };
+                    let receiver = if let Some(call) = overloaded {
+                        Some(self.resolved_receiver_value(
+                            call.arguments.first()?,
+                            *lhs,
+                            None,
+                            *span,
+                        )?)
+                    } else {
+                        None
+                    };
                     let rhs = self.lower_values(values)?;
                     let [rhs] = rhs.as_slice() else { return None };
                     let result = if let Some(call) = overloaded {
-                        let result = self.emit_pre_evaluated_call(call, vec![*lhs, *rhs], *span)?;
+                        let receiver = receiver?;
+                        let result =
+                            self.emit_pre_evaluated_call(call, vec![receiver, *rhs], *span)?;
                         let [result] = result.as_slice() else {
                             return None;
                         };
@@ -427,7 +469,11 @@ impl FunctionBuilder<'_> {
                             *span,
                         )
                     };
-                    self.emit_pre_evaluated_call(setter, vec![base, index, result], *span)?;
+                    self.emit_pre_evaluated_call(
+                        setter,
+                        vec![setter_receiver, index, result],
+                        *span,
+                    )?;
                 }
                 hir::Stmt::Expr(expr) => {
                     self.lower_expr(expr)?;
@@ -822,6 +868,36 @@ impl FunctionBuilder<'_> {
             span,
         );
         Some(results)
+    }
+
+    fn resolved_receiver_value(
+        &mut self,
+        receiver: &hir::Expr,
+        value: mir::ValueId,
+        place: Option<&mir::Place>,
+        span: Span,
+    ) -> Option<mir::ValueId> {
+        if self.values.get(value.0 as usize)?.ty == receiver.ty {
+            return Some(value);
+        }
+        match &receiver.kind {
+            hir::ExprKind::AddressOf(_) => {
+                let place = place?.clone();
+                if let mir::PlaceBase::Local(id) = place.base {
+                    self.locals[id.0 as usize].address_taken = true;
+                }
+                Some(self.emit_value(receiver.ty, mir::InstructionKind::AddressOf(place), span))
+            }
+            hir::ExprKind::Dereference(_) => Some(self.load_place_value(
+                mir::Place {
+                    base: mir::PlaceBase::Pointer(value),
+                    projections: Vec::new(),
+                    ty: receiver.ty,
+                },
+                span,
+            )),
+            _ => Some(value),
+        }
     }
 
     fn lower_interface_callee(

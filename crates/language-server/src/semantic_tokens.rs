@@ -459,7 +459,11 @@ fn collect_top_level_decl(
         ast::TopLevelDecl::Operator(decl) => {
             let type_parameters =
                 collect_type_parameter_declarations(&decl.type_params, declarations);
-            for param in &decl.signature.params {
+            if let Some(receiver) = decl.signature.params.first() {
+                declarations.insert(receiver.name.span, SemanticStyle::Receiver);
+                collect_type(&receiver.ty, declarations, &type_parameters);
+            }
+            for param in decl.signature.params.iter().skip(1) {
                 declarations.insert(param.name.span, SemanticStyle::Parameter);
                 collect_type(&param.ty, declarations, &type_parameters);
             }
@@ -909,7 +913,7 @@ mod tests {
 
     #[test]
     fn distinguishes_methods_parameters_variables_and_type_parameters() {
-        let source = "package main\ntype Box[T] struct { value: T }\nfunc (box: *Box[T]) Read(fallback: T) -> T { local := fallback; _ = box; return local }\noperator[T] [](box: *Box[T], index: u32) -> *T { _ = index; return &box.value }\n";
+        let source = "package main\ntype Box[T] struct { value: T }\nfunc (box: *Box[T]) Read(fallback: T) -> T { local := fallback; _ = box; return local }\noperator (box: *Box[T]) [](index: u32) -> *T { _ = index; return &box.value }\n";
         let (project, package, file) = single_file_project(source);
         let decoded = decode(
             source,

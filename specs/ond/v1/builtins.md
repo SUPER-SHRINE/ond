@@ -84,7 +84,7 @@ var size: u32 = len(buffer)
 
 これは関数呼び出しではなく、型情報から compiler が直接解決する。
 
-配列以外では完全一致する `operator len` を呼び出す。一致する宣言がなければ compile error とする。
+配列以外ではreceiverに一致する `operator (self: T) len()` を呼び出す。一致する宣言がなければ compile error とする。
 
 ## 5. `load32`
 <!-- ond-spec-id: builtins/load32 -->

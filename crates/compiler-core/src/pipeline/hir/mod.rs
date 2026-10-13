@@ -15,10 +15,7 @@ use body::{BodyLowerer, lower_typed_body};
 use body_names::validate_generic_body_names;
 use control_flow::{block_can_complete_normally, return_diagnostics};
 use generic_functions::instantiate_generic_functions;
-use operators::{
-    canonical_generic_operator_symbol, canonical_operator_symbol, operator_type_owner,
-    type_mentions_parameter,
-};
+use operators::{canonical_generic_operator_symbol, canonical_operator_symbol};
 use types::{
     TypePackage, collect_type_universe, generic_method_receiver, method_receiver_name,
     resolve_all_defined_types, resolve_defined_type, resolve_method_signature, resolve_signature,
@@ -386,6 +383,82 @@ pub(crate) fn lower_to_hir(
                         }
                     }
                     ast::TopLevelDecl::Operator(decl) => {
+                        let receiver = &decl.signature.params[0];
+                        let Some((receiver_name, _)) = method_receiver_name(receiver) else {
+                            diagnostics.push(Diagnostic::error(
+                                receiver.span,
+                                "operator receiver must be a local named type or pointer to one",
+                            ));
+                            continue;
+                        };
+                        let Some(type_declaration) = type_universe
+                            .iter()
+                            .find(|candidate| candidate.id == source_package.id)
+                            .and_then(|candidate| candidate.declarations.get(receiver_name))
+                        else {
+                            diagnostics.push(Diagnostic::error(
+                                receiver.span,
+                                "operator receiver type must be declared in the same package",
+                            ));
+                            continue;
+                        };
+                        if type_declaration.type_params.is_empty() {
+                            if matches!(&receiver.ty, ast::Type::Apply { .. })
+                                || matches!(&receiver.ty, ast::Type::Pointer(inner, _) if matches!(inner.as_ref(), ast::Type::Apply { .. }))
+                            {
+                                diagnostics.push(Diagnostic::error(
+                                    receiver.span,
+                                    "non-generic operator receiver cannot have type arguments",
+                                ));
+                                continue;
+                            }
+                        } else {
+                            let Some(generic) = generic_method_receiver(receiver) else {
+                                diagnostics.push(Diagnostic::error(receiver.span, "generic operator receiver must apply fresh type parameter names to a local generic type"));
+                                continue;
+                            };
+                            if generic.parameters.len() != type_declaration.type_params.len() {
+                                diagnostics.push(Diagnostic::error(receiver.span, format!("generic operator receiver expects {} type parameters, found {}", type_declaration.type_params.len(), generic.parameters.len())));
+                                continue;
+                            }
+                            let mut names = BTreeSet::new();
+                            if generic.parameters.iter().any(|parameter| {
+                                parameter.name == "_"
+                                    || matches!(
+                                        parameter.name.as_str(),
+                                        "bool"
+                                            | "u8"
+                                            | "i8"
+                                            | "u16"
+                                            | "i16"
+                                            | "u32"
+                                            | "i32"
+                                            | "f32"
+                                    )
+                                    || type_universe
+                                        .iter()
+                                        .find(|candidate| candidate.id == source_package.id)
+                                        .is_some_and(|package| {
+                                            package.declarations.contains_key(&parameter.name)
+                                        })
+                                    || !names.insert(parameter.name.clone())
+                            }) {
+                                diagnostics.push(Diagnostic::error(receiver.span, "generic operator receiver type parameters must be fresh, distinct non-blank identifiers"));
+                                continue;
+                            }
+                        }
+                        let key = (
+                            receiver_name.to_string(),
+                            decl.name,
+                            decl.signature.params.len(),
+                        );
+                        if !seen_operators.insert(key) {
+                            diagnostics.push(Diagnostic::error(
+                                decl.span,
+                                "duplicate operator declaration for the same receiver and arity",
+                            ));
+                            continue;
+                        }
                         if !decl.type_params.is_empty() {
                             let parameter_count = decl.signature.params.len();
                             let valid_arity = match decl.name {
@@ -418,20 +491,6 @@ pub(crate) fn lower_to_hir(
                                 ));
                                 continue;
                             }
-                            if let Some(parameter) = decl.type_params.iter().find(|parameter| {
-                                !decl.signature.params.iter().any(|operand| {
-                                    type_mentions_parameter(&operand.ty, &parameter.name)
-                                })
-                            }) {
-                                diagnostics.push(Diagnostic::error(
-                                    parameter.span,
-                                    format!(
-                                        "operator type parameter `{}` cannot be inferred from its operands",
-                                        parameter.name
-                                    ),
-                                ));
-                                continue;
-                            }
                             let placeholders =
                                 vec![crate::semantic::TypeId::U8; decl.type_params.len()];
                             let validation_source = types::substitute_signature(
@@ -456,16 +515,6 @@ pub(crate) fn lower_to_hir(
                                     "operator len must return u32",
                                 ));
                                 continue;
-                            }
-                            let owner = validation_signature
-                                .parameters
-                                .iter()
-                                .find_map(|parameter| operator_type_owner(&types, parameter.ty));
-                            if owner.as_deref() != Some(package.logical_path.as_str()) {
-                                diagnostics.push(Diagnostic::error(
-                                    decl.signature.span,
-                                    "generic operator must be declared by the package owning its leftmost user-defined operand",
-                                ));
                             }
                             continue;
                         }
@@ -523,24 +572,6 @@ pub(crate) fn lower_to_hir(
                             .iter()
                             .map(|parameter| parameter.ty)
                             .collect::<Vec<_>>();
-                        let owner = parameter_types
-                            .iter()
-                            .find_map(|ty| operator_type_owner(&types, *ty));
-                        if owner.as_deref() != Some(package.logical_path.as_str()) {
-                            diagnostics.push(Diagnostic::error(
-                                decl.signature.span,
-                                "operator must be declared by the package owning its leftmost user-defined operand",
-                            ));
-                            continue;
-                        }
-                        let key = (decl.name, parameter_types.clone());
-                        if !seen_operators.insert(key) {
-                            diagnostics.push(Diagnostic::error(
-                                decl.span,
-                                "duplicate operator declaration for the same operand types",
-                            ));
-                            continue;
-                        }
                         let Some((body, function_statics)) = lower_typed_body(
                             source_package.id,
                             &signature,

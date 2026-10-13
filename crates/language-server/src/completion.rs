@@ -323,7 +323,7 @@ impl<'a> CompletionScope<'a> {
     pub(crate) fn receiver(self) -> Option<&'a ast::Field> {
         match self {
             Self::Function(function) => function.receiver.as_deref(),
-            Self::Operator(_) => None,
+            Self::Operator(operator) => operator.signature.params.first(),
         }
     }
 }
