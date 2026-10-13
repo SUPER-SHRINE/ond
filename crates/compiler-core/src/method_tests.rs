@@ -38,18 +38,48 @@ fn value_and_pointer_methods_lower_to_direct_calls_with_exact_receivers() {
 }
 
 #[test]
-fn method_receivers_never_gain_implicit_address_or_dereference_conversions() {
-    reject(
-        "package main\ntype S struct {}\nfunc (s: *S) Run() {}\nfunc main() { var s: S; s.Run(); }\n",
+fn method_calls_implicitly_address_or_dereference_one_receiver_level() {
+    let compilation = compile(
+        "package main\n\
+         type S struct { value: i32; }\n\
+         func (s: *S) Set(value: i32) { s.value = value; }\n\
+         func (s: S) Get() -> i32 { return s.value; }\n\
+         type P *S\n\
+         func (s: S) Which() -> i32 { return 1; }\n\
+         func (p: P) Which() -> i32 { return 2; }\n\
+         func (s: S) PreferAddress() -> i32 { return 1; }\n\
+         func (p: *P) PreferAddress() -> i32 { return 2; }\n\
+         func observe() -> i32 { var s = S { value: 1 }; s.Set(41); var p = &s; return p.Get() + 1; }\n\
+         func exact() -> i32 { var s = S{}; var p = (&s) as P; return p.Which(); }\n\
+         func implicitPriority() -> i32 { var p: P; return p.PreferAddress(); }\n\
+         func main() {}\n",
         None,
-        "unknown struct field `Run`",
-        "s.Run",
+    )
+    .unwrap();
+    assert_eq!(
+        memory_test_vm::execute(&compilation.mir, "main.observe", &[]).unwrap(),
+        [42]
     );
+    assert_eq!(
+        memory_test_vm::execute(&compilation.mir, "main.exact", &[]).unwrap(),
+        [2]
+    );
+    assert_eq!(
+        memory_test_vm::execute(&compilation.mir, "main.implicitPriority", &[]).unwrap(),
+        [2]
+    );
+
+    compile(
+        "package main\ntype S struct {}\ntype P *S\nfunc (p: *P) Run() {}\nfunc main() { var p: P; p.Run(); }\n",
+        None,
+    )
+    .unwrap();
+
     reject(
-        "package main\ntype S struct {}\nfunc (s: S) Run() {}\nfunc main() { var s: *S; s.Run(); }\n",
+        "package main\ntype S struct {}\nfunc (s: *S) Run() {}\nfunc make() -> S { return S{}; }\nfunc main() { make().Run(); }\n",
         None,
         "unknown struct field `Run`",
-        "s.Run",
+        "make().Run",
     );
 }
 

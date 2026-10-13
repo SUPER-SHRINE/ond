@@ -133,12 +133,12 @@ func (counter: *Counter) Add(amount: i32) {
 func useCounter() {
     var counter = Counter{value: 1}
     var pointer: *Counter = &counter
-    pointer.Add(2)
-    _ = counter.Value()
+    counter.Add(2)
+    _ = pointer.Value()
 }
 ```
 
-receiver型は完全一致が必要で、呼び出し時に暗黙のaddress取得や参照外しは行わない。value receiverは値をcopyし、pointer receiverはpointerを渡す。
+method呼び出しではreceiver型の完全一致、addressableな値の1段のaddress取得、pointerの1段の参照外しの順で候補を選ぶ。value receiverは値をcopyし、pointer receiverはpointerを渡す。この変換はmethod呼び出しだけに適用し、通常のfieldアクセスやinterface変換には適用しない。
 
 ## pointerとheap
 

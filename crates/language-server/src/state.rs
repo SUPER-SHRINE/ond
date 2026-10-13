@@ -1298,7 +1298,7 @@ mod tests {
     }
 
     #[test]
-    fn member_completion_includes_only_exact_receiver_and_interface_methods() {
+    fn member_completion_includes_implicitly_convertible_receiver_methods() {
         let root = normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-method-members-{}-{}",
             std::process::id(),
@@ -1320,8 +1320,14 @@ mod tests {
             .unwrap();
 
         for (line, expected) in [
-            (7, &["Value", "privateValue"][..]),
-            (8, &["Pointer", "privatePointer"][..]),
+            (
+                7,
+                &["Value", "privateValue", "Pointer", "privatePointer"][..],
+            ),
+            (
+                8,
+                &["Value", "privateValue", "Pointer", "privatePointer"][..],
+            ),
             (9, &["Read"][..]),
         ] {
             let text = source.lines().nth(line).unwrap();
@@ -1340,10 +1346,11 @@ mod tests {
     #[test]
     fn address_of_local_inference_completes_pointer_methods_in_both_modes() {
         for project_mode in [true, false] {
-            for (selector, has_field, has_method) in [
-                ("s.", true, false),
-                ("ptr.", true, true),
-                ("pp.", false, false),
+            for (selector, has_field, has_pointer_method, has_value_method) in [
+                ("s.", true, true, true),
+                ("ptr.", true, true, true),
+                ("pp.", false, true, false),
+                ("make().", true, false, true),
             ] {
                 let root = normalize_path(std::env::temp_dir().join(format!(
                     "ond-lsp-address-of-members-{}-{}-{project_mode}",
@@ -1358,7 +1365,7 @@ mod tests {
                     std::fs::write(root.join("ond.toml"), "[project]\nname=\"members\"\n").unwrap();
                 }
                 let source = format!(
-                    "package main\ntype S struct {{ A: u32 }}\nfunc (s: *S) Method() {{}}\nfunc main() {{\n    var s = S{{ A: 14 }}\n    ptr := &s\n    pp := &ptr\n    {selector}\n}}\n"
+                    "package main\ntype S struct {{ A: u32 }}\nfunc (s: *S) PointerMethod() {{}}\nfunc (s: S) ValueMethod() {{}}\nfunc make() -> S {{ return S{{}} }}\nfunc main() {{\n    var s = S{{ A: 14 }}\n    ptr := &s\n    pp := &ptr\n    {selector}\n}}\n"
                 );
                 let path = root.join("main.ond");
                 std::fs::write(&path, &source).unwrap();
@@ -1369,9 +1376,9 @@ mod tests {
                     .open_document(uri.clone(), source.clone(), &mut output)
                     .unwrap();
 
-                let text = source.lines().nth(7).unwrap();
+                let text = source.lines().nth(9).unwrap();
                 let character = text.rfind('.').unwrap() as u32 + 1;
-                let completions = state.completions(&uri, 7, character).unwrap();
+                let completions = state.completions(&uri, 9, character).unwrap();
                 let labels = completions
                     .iter()
                     .filter_map(|item| item["label"].as_str())
@@ -1382,13 +1389,167 @@ mod tests {
                     "project={project_mode}, selector={selector}: {completions:?}"
                 );
                 assert_eq!(
-                    labels.contains(&"Method"),
-                    has_method,
+                    labels.contains(&"PointerMethod"),
+                    has_pointer_method,
+                    "project={project_mode}, selector={selector}: {completions:?}"
+                );
+                assert_eq!(
+                    labels.contains(&"ValueMethod"),
+                    has_value_method,
                     "project={project_mode}, selector={selector}: {completions:?}"
                 );
                 std::fs::remove_dir_all(root).unwrap();
             }
         }
+    }
+
+    #[test]
+    fn named_pointer_alias_completes_one_level_methods_in_both_modes() {
+        for project_mode in [true, false] {
+            let root = normalize_path(std::env::temp_dir().join(format!(
+                "ond-lsp-named-pointer-methods-{}-{}-{project_mode}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            )));
+            std::fs::create_dir_all(&root).unwrap();
+            if project_mode {
+                std::fs::write(root.join("ond.toml"), "[project]\nname=\"members\"\n").unwrap();
+            }
+            let source = "package main\ntype Child struct {}\ntype S struct { child: Child }\ntype P *S\ntype R struct { A: u32 }\nfunc (s: S) Value() -> R { return R{} }\nfunc (s: *S) Pointer() {}\nfunc (p: *P) Address() {}\nfunc (child: *Child) Run() {}\nfunc make() -> P { return nil }\nfunc main() { var p: P; p. }\n";
+            let path = root.join("main.ond");
+            std::fs::write(&path, source).unwrap();
+            let uri = uri_from_path(&path).unwrap();
+            let mut state = ServerState::default();
+            let mut output = Vec::new();
+            state
+                .open_document(uri.clone(), source.to_string(), &mut output)
+                .unwrap();
+
+            let main_line = source
+                .lines()
+                .position(|line| line.starts_with("func main"))
+                .unwrap();
+            let line = source.lines().nth(main_line).unwrap();
+            let character = line.rfind('.').unwrap() as u32 + 1;
+            let completions = state
+                .completions(&uri, main_line as u32, character)
+                .unwrap();
+            let labels = completions
+                .iter()
+                .filter_map(|item| item["label"].as_str())
+                .collect::<Vec<_>>();
+            assert!(labels.contains(&"Value"), "{completions:?}");
+            assert!(labels.contains(&"Address"), "{completions:?}");
+            assert!(!labels.contains(&"Pointer"), "{completions:?}");
+
+            if project_mode {
+                let source = source.replace("p. }", "p.Value(). }");
+                state
+                    .change_document(
+                        uri.clone(),
+                        vec![TextDocumentContentChangeEvent {
+                            text: source.clone(),
+                            range: None,
+                        }],
+                        &mut output,
+                    )
+                    .unwrap();
+                let line = source.lines().nth(main_line).unwrap();
+                let character = line.rfind('.').unwrap() as u32 + 1;
+                let completions = state
+                    .completions(&uri, main_line as u32, character)
+                    .unwrap();
+                assert!(
+                    completions.iter().any(|item| item["label"] == "A"),
+                    "{completions:?}"
+                );
+            }
+
+            let source = source.replace("p. }", "make().child. }");
+            state
+                .change_document(
+                    uri.clone(),
+                    vec![TextDocumentContentChangeEvent {
+                        text: source.clone(),
+                        range: None,
+                    }],
+                    &mut output,
+                )
+                .unwrap();
+            let line = source.lines().nth(main_line).unwrap();
+            let character = line.rfind('.').unwrap() as u32 + 1;
+            let completions = state
+                .completions(&uri, main_line as u32, character)
+                .unwrap();
+            assert!(
+                completions.iter().any(|item| item["label"] == "Run"),
+                "{completions:?}"
+            );
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn imported_generic_named_pointer_keeps_type_argument_package() {
+        let root = normalize_path(std::env::temp_dir().join(format!(
+            "ond-lsp-imported-generic-pointer-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        )));
+        std::fs::create_dir_all(root.join("runtime")).unwrap();
+        std::fs::write(root.join("ond.toml"), "[project]\nname=\"members\"\n").unwrap();
+        std::fs::write(
+            root.join("runtime/api.ond"),
+            "package runtime\ntype P[T] *T\ntype S struct {}\nfunc (s: S) Foreign() {}\ntype Cell[T] struct { value: T }\ntype CellPointer[T] *Cell[T]\nfunc (cell: Cell[T]) Get() -> T { return cell.value }\n",
+        )
+        .unwrap();
+        let path = root.join("main.ond");
+        let source = "package main\nimport \"runtime\"\ntype S struct {}\nfunc (s: S) Value() {}\nfunc main() { var p: runtime.P[S]; p. }\n";
+        std::fs::write(&path, source).unwrap();
+        let uri = uri_from_path(&path).unwrap();
+        let mut state = ServerState::default();
+        let mut output = Vec::new();
+        state
+            .open_document(uri.clone(), source.to_string(), &mut output)
+            .unwrap();
+
+        let line = source.lines().nth(4).unwrap();
+        let character = line.rfind('.').unwrap() as u32 + 1;
+        let completions = state.completions(&uri, 4, character).unwrap();
+        assert!(
+            completions.iter().any(|item| item["label"] == "Value"),
+            "{completions:?}"
+        );
+        assert!(
+            completions.iter().all(|item| item["label"] != "Foreign"),
+            "{completions:?}"
+        );
+
+        let source = "package main\nimport \"runtime\"\ntype S struct { A: u32 }\nfunc main() { var p: runtime.CellPointer[S]; p.Get(). }\n";
+        state
+            .change_document(
+                uri.clone(),
+                vec![TextDocumentContentChangeEvent {
+                    text: source.to_string(),
+                    range: None,
+                }],
+                &mut output,
+            )
+            .unwrap();
+        let line = source.lines().nth(3).unwrap();
+        let character = line.rfind('.').unwrap() as u32 + 1;
+        let completions = state.completions(&uri, 3, character).unwrap();
+        assert!(
+            completions.iter().any(|item| item["label"] == "A"),
+            "{completions:?}"
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -1887,7 +2048,7 @@ mod tests {
     }
 
     #[test]
-    fn member_completion_chains_from_generic_method_results() {
+    fn member_completion_chains_from_implicitly_dereferenced_generic_method_results() {
         let root = normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-generic-method-result-chain-{}-{}",
             std::process::id(),
@@ -1899,7 +2060,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"chains\"\n").unwrap();
         let path = root.join("main.ond");
-        let source = "package main\ntype List[T] struct {}\nfunc (list: *List[T]) Pop() -> T { trap \"empty\" }\ntype Num u32\nfunc (value: Num) toStr() -> *u8 { return nil }\nfunc NewList[T]() -> *List[T] { return new(List[T]) }\nfunc f() { l := NewList[Num](); l.Pop(). }\n";
+        let source = "package main\ntype List[T] struct {}\nfunc (list: List[T]) Pop() -> T { trap \"empty\" }\ntype Num u32\nfunc (value: Num) toStr() -> *u8 { return nil }\nfunc NewList[T]() -> *List[T] { return new(List[T]) }\nfunc f() { l := NewList[Num](); l.Pop(). }\n";
         std::fs::write(&path, source).unwrap();
         let uri = uri_from_path(&path).unwrap();
         let mut state = ServerState::default();

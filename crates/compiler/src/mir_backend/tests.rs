@@ -135,6 +135,11 @@ fn methods_preserve_exact_receivers_nil_and_evaluation_order() {
         "calc()",
         1,
     );
+    run(
+        "type S struct { value: i32; }\nfunc (value: *S) Increment() { value.value += 1; }\nfunc (value: S) Read() -> i32 { return value.value; }\nfunc calc() -> i32 { var sa = S { value: 40 }; sa.Increment(); var sb = new(S); sb.value = 1; return sa.Read() + sb.Read(); }",
+        "calc()",
+        42,
+    );
 }
 
 #[test]

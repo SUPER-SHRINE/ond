@@ -45,7 +45,7 @@
 - 文字列リテラルは`[N]u8`であり、組み込みの`string`や`str`型はない。
 - arrayとstructは値copyされる。
 - raw pointerのindex、寿命、二重解放はruntime検査されない。
-- method呼び出しで暗黙のaddress取得や参照外しは行わない。
+- method呼び出しでは、完全一致、addressableな値の1段のaddress取得、pointerの1段の参照外しの順でreceiver候補を選ぶ。
 - interfaceはpointerから明示変換して作り、boxingやtype assertionはない。
 - genericの型argumentは明示する。ただしgeneric methodはreceiverから、generic operatorはoperandから型parameterが推論される。
 - package-level initializerから通常の関数は呼べず、自動`init` hookもない。

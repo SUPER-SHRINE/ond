@@ -666,60 +666,122 @@ impl BodyLowerer<'_> {
             Some(receiver) => receiver,
             None => return Some(None),
         };
-        for (package_id, declaration_index, method) in candidates {
-            let Some(candidate) =
-                self.resolve_method_candidate(package_id, declaration_index, &method, receiver.ty)
-            else {
-                continue;
-            };
-            let signature = candidate.signature;
-            if candidate.package_id != self.package_id
-                && !name.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
+        let mut matched = None;
+        for (package_id, declaration_index, method) in &candidates {
+            if let Some(candidate) =
+                self.resolve_method_candidate(*package_id, *declaration_index, method, receiver.ty)
             {
-                return Some(self.fail(span, format!("method `{name}` is not exported")));
+                matched = Some((candidate, receiver.clone()));
+                break;
             }
-            let expected = &signature.parameters[1..];
-            if args.len() != expected.len() {
-                return Some(self.fail(
-                    span,
-                    format!(
-                        "method expects {} arguments, found {}",
-                        expected.len(),
-                        args.len()
-                    ),
+        }
+        if matched.is_none() {
+            for address in [true, false] {
+                for (package_id, declaration_index, method) in &candidates {
+                    if let Some(candidate) = self.resolve_implicit_method_call_candidate(
+                        *package_id,
+                        *declaration_index,
+                        method,
+                        &receiver,
+                        address,
+                    ) {
+                        matched = Some(candidate);
+                        break;
+                    }
+                }
+                if matched.is_some() {
+                    break;
+                }
+            }
+        }
+        let (candidate, receiver) = matched?;
+        let signature = candidate.signature;
+        if candidate.package_id != self.package_id
+            && !name.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
+        {
+            return Some(self.fail(span, format!("method `{name}` is not exported")));
+        }
+        let expected = &signature.parameters[1..];
+        if args.len() != expected.len() {
+            return Some(self.fail(
+                span,
+                format!(
+                    "method expects {} arguments, found {}",
+                    expected.len(),
+                    args.len()
+                ),
+            ));
+        }
+        let mut arguments = vec![receiver];
+        for (index, (argument, parameter)) in args.iter().zip(expected).enumerate() {
+            let Some(value) = self.lower_value(argument, Some(parameter.ty)) else {
+                if let Some(diagnostic) = &mut self.failure {
+                    diagnostic.message = format!(
+                        "argument {} type mismatch or invalid expression: {}",
+                        index + 1,
+                        diagnostic.message
+                    );
+                }
+                return Some(None);
+            };
+            arguments.push(value);
+        }
+        let function_type = signature.function_type();
+        let function_ty = self
+            .types
+            .intern(TypeKind::Function(function_type.clone()), span);
+        let callee = hir::Expr {
+            kind: hir::ExprKind::Function(candidate.symbol),
+            ty: function_ty,
+            span,
+        };
+        Some(Some(hir::Call {
+            callee: Box::new(callee),
+            signature: function_type,
+            arguments,
+            span,
+        }))
+    }
+
+    fn resolve_implicit_method_call_candidate(
+        &mut self,
+        package_id: PackageId,
+        declaration_index: usize,
+        method: &ast::FuncDecl,
+        receiver: &hir::Expr,
+        address: bool,
+    ) -> Option<(ResolvedMethodCandidate, hir::Expr)> {
+        if !address
+            && let Some(TypeKind::Pointer(pointee)) = self.types.underlying_kind(receiver.ty)
+        {
+            let pointee = *pointee;
+            if let Some(candidate) =
+                self.resolve_method_candidate(package_id, declaration_index, method, pointee)
+            {
+                return Some((
+                    candidate,
+                    hir::Expr {
+                        kind: hir::ExprKind::Dereference(Box::new(receiver.clone())),
+                        ty: pointee,
+                        span: receiver.span,
+                    },
                 ));
             }
-            let mut arguments = vec![receiver];
-            for (index, (argument, parameter)) in args.iter().zip(expected).enumerate() {
-                let Some(value) = self.lower_value(argument, Some(parameter.ty)) else {
-                    if let Some(diagnostic) = &mut self.failure {
-                        diagnostic.message = format!(
-                            "argument {} type mismatch or invalid expression: {}",
-                            index + 1,
-                            diagnostic.message
-                        );
-                    }
-                    return Some(None);
-                };
-                arguments.push(value);
-            }
-            let function_type = signature.function_type();
-            let function_ty = self
-                .types
-                .intern(TypeKind::Function(function_type.clone()), span);
-            let callee = hir::Expr {
-                kind: hir::ExprKind::Function(candidate.symbol),
-                ty: function_ty,
-                span,
-            };
-            return Some(Some(hir::Call {
-                callee: Box::new(callee),
-                signature: function_type,
-                arguments,
-                span,
-            }));
         }
-        None
+        if !address || !self.addressable(receiver) {
+            return None;
+        }
+        let pointer = self.types.pointer(receiver.ty, receiver.span);
+        let candidate =
+            self.resolve_method_candidate(package_id, declaration_index, method, pointer)?;
+        Some((
+            candidate,
+            hir::Expr {
+                kind: hir::ExprKind::AddressOf(Box::new(receiver.clone())),
+                ty: pointer,
+                span: receiver.span,
+            },
+        ))
     }
 
     pub(super) fn resolve_method_candidate(

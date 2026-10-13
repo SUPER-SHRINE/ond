@@ -199,7 +199,7 @@ func (box: *Box[Element]) Set(value: Element) { box.value = value }
 
 - receiverは `T`、`*T`、generic型の `T[P1, ...]`、または `*T[P1, ...]` で、`T`を宣言したpackage内でだけ宣言できる。`T`のunderlying typeはstructに限らない。
 - generic methodの型parameterはreceiverの具体型から位置ごとに推論し、その型argument列ごとに静的関数へ具体化する。method本体の値名と字句scopeは宣言時に検査し、型argumentに依存する型検査は具体化時に行う。
-- value receiverは値をcopyし、pointer receiverはpointer値を渡す。呼出し側で暗黙のaddress取得・参照外し・copy・型変換を行わず、receiver型は完全一致を要求する。
+- value receiverは値をcopyし、pointer receiverはpointer値を渡す。method呼出しでは完全一致、addressableなreceiverの1段のaddress取得、pointer receiverの1段の参照外しの順で候補を選ぶ。通常のfieldアクセス、interface変換、その他の型変換にはこの規則を適用しない。
 - `nil`のpointer receiverも呼び出せる。呼出し自体はfaultせず、method内でそのpointerを参照外しした時点で通常のraw pointer規則を適用する。
 - 同じbase named typeではvalue/pointer receiverを通してmethod名を一意とする。fieldと同名のmethodは宣言できない。top-level関数とは別namespaceとする。
 - method名の先頭がASCII大文字なら他packageから呼べる。非公開named typeの値でも、公開APIから型推論で得られた値に対する公開method呼出しは許可する。

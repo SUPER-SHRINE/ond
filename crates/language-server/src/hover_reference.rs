@@ -261,8 +261,13 @@ pub fn resolve_reference(
             function,
         } => {
             let ty = resolve_expr_type(project, package, file, function, base, offset)?;
+            let addressable = crate::completion::project_completion_expr_is_addressable(
+                project, package, file, function, base,
+            );
             let declaration = resolve_composite_field(project, package, file, &ty, &field.name, 0)
-                .or_else(|| resolve_method(project, package, file, &ty, &field.name))?;
+                .or_else(|| {
+                    resolve_method(project, package, file, &ty, &field.name, addressable)
+                })?;
             Some(ResolvedReference {
                 target: ResolvedTarget::Declaration(declaration),
                 reference: field.span,
@@ -284,10 +289,34 @@ fn resolve_method(
     file: &ast::File,
     ty: &ast::Type,
     name: &str,
+    addressable: bool,
 ) -> Option<Span> {
-    let (path, pointer) = method_receiver_path(ty, false)?;
+    resolve_method_direct(project, package, file, ty, name, addressable, true).or_else(|| {
+        let (package, file, ty) = implicit_method_dereference_type(project, package, file, ty, 0)?;
+        resolve_method_direct(project, package, file, &ty, name, false, false)
+    })
+}
+
+fn resolve_method_direct(
+    project: &ast::Project,
+    package: &ast::Package,
+    file: &ast::File,
+    ty: &ast::Type,
+    name: &str,
+    addressable: bool,
+    allow_implicit_conversion: bool,
+) -> Option<Span> {
+    let (path, pointer_depth) = method_receiver_path(ty, 0)?;
     match path.segments.as_slice() {
-        [base] => method_in_package(package, &base.name, pointer, name, false),
+        [base] => method_in_package(
+            package,
+            &base.name,
+            pointer_depth,
+            name,
+            false,
+            addressable,
+            allow_implicit_conversion,
+        ),
         [alias, base] => {
             if !is_exported(&base.name) || !is_exported(name) {
                 return None;
@@ -297,17 +326,139 @@ fn resolve_method(
                 .packages
                 .iter()
                 .find(|candidate| candidate.logical_path == import_path)?;
-            method_in_package(imported, &base.name, pointer, name, true)
+            method_in_package(
+                imported,
+                &base.name,
+                pointer_depth,
+                name,
+                true,
+                addressable,
+                allow_implicit_conversion,
+            )
         }
         _ => None,
     }
 }
 
-fn method_receiver_path(ty: &ast::Type, pointer: bool) -> Option<(&ast::Path, bool)> {
+fn implicit_method_dereference_type<'a>(
+    project: &'a ast::Project,
+    package: &'a ast::Package,
+    file: &'a ast::File,
+    ty: &ast::Type,
+    depth: usize,
+) -> Option<(&'a ast::Package, &'a ast::File, ast::Type)> {
+    if depth > 16 {
+        return None;
+    }
     match ty {
-        ast::Type::Named(path) => Some((path, pointer)),
-        ast::Type::Apply { base, .. } => Some((base, pointer)),
-        ast::Type::Pointer(inner, _) => method_receiver_path(inner, true),
+        ast::Type::Pointer(inner, _) => Some((package, file, (**inner).clone())),
+        ast::Type::Named(path) => match path.segments.as_slice() {
+            [name] => {
+                let ty = find_type(package, &name.name)?;
+                implicit_method_dereference_type(project, package, file, ty, depth + 1)
+            }
+            [alias, name] => {
+                let import_path = import_path_for_alias(file, &alias.name)?;
+                let imported = project
+                    .packages
+                    .iter()
+                    .find(|candidate| candidate.logical_path == import_path)?;
+                let ty = find_type(imported, &name.name)?;
+                let ty = qualify_imported_type(ty.clone(), alias);
+                implicit_method_dereference_type(project, package, file, &ty, depth + 1)
+            }
+            _ => None,
+        },
+        ast::Type::Apply {
+            base, arguments, ..
+        } => match base.segments.as_slice() {
+            [name] => {
+                let spec = find_type_spec(package, &name.name)?;
+                let ty = substitute_type_spec(spec, arguments)?;
+                implicit_method_dereference_type(project, package, file, &ty, depth + 1)
+            }
+            [alias, name] => {
+                let import_path = import_path_for_alias(file, &alias.name)?;
+                let imported = project
+                    .packages
+                    .iter()
+                    .find(|candidate| candidate.logical_path == import_path)?;
+                let spec = find_type_spec(imported, &name.name)?;
+                let ty = substitute_imported_type_spec(spec, arguments, alias)?;
+                implicit_method_dereference_type(project, package, file, &ty, depth + 1)
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn substitute_imported_type_spec(
+    spec: &ast::TypeSpec,
+    arguments: &[ast::Type],
+    alias: &ast::Ident,
+) -> Option<ast::Type> {
+    if spec.type_params.len() != arguments.len() {
+        return None;
+    }
+    let substitutions = spec
+        .type_params
+        .iter()
+        .zip(arguments)
+        .map(|(parameter, argument)| (parameter.name.as_str(), argument))
+        .collect::<BTreeMap<_, _>>();
+    let ty = qualify_imported_spec_type(&spec.ty, alias, &spec.type_params);
+    Some(substitute_type(&ty, &substitutions))
+}
+
+fn qualify_imported_spec_type(
+    ty: &ast::Type,
+    alias: &ast::Ident,
+    type_params: &[ast::Ident],
+) -> ast::Type {
+    match ty {
+        ast::Type::Named(path)
+            if path.segments.len() == 1
+                && type_params
+                    .iter()
+                    .any(|parameter| parameter.name == path.segments[0].name) =>
+        {
+            ty.clone()
+        }
+        ast::Type::Pointer(inner, span) => ast::Type::Pointer(
+            Box::new(qualify_imported_spec_type(inner, alias, type_params)),
+            *span,
+        ),
+        ast::Type::Array { len, element, span } => ast::Type::Array {
+            len: len.clone(),
+            element: Box::new(qualify_imported_spec_type(element, alias, type_params)),
+            span: *span,
+        },
+        ast::Type::Apply {
+            base,
+            arguments,
+            span,
+        } if base.segments.len() == 1 => {
+            let mut base = base.clone();
+            base.segments.insert(0, alias.clone());
+            ast::Type::Apply {
+                base,
+                arguments: arguments
+                    .iter()
+                    .map(|argument| qualify_imported_spec_type(argument, alias, type_params))
+                    .collect(),
+                span: *span,
+            }
+        }
+        _ => qualify_imported_type(ty.clone(), alias),
+    }
+}
+
+fn method_receiver_path(ty: &ast::Type, pointer_depth: usize) -> Option<(&ast::Path, usize)> {
+    match ty {
+        ast::Type::Named(path) => Some((path, pointer_depth)),
+        ast::Type::Apply { base, .. } => Some((base, pointer_depth)),
+        ast::Type::Pointer(inner, _) => method_receiver_path(inner, pointer_depth + 1),
         _ => None,
     }
 }
@@ -315,15 +466,27 @@ fn method_receiver_path(ty: &ast::Type, pointer: bool) -> Option<(&ast::Path, bo
 fn method_in_package(
     package: &ast::Package,
     receiver_name: &str,
-    pointer: bool,
+    pointer_depth: usize,
     method_name: &str,
     external: bool,
+    addressable: bool,
+    allow_implicit_conversion: bool,
 ) -> Option<Span> {
     for file in &package.files {
         for decl in &file.decls {
             if let ast::TopLevelDecl::Func(method) = decl
                 && let Some(receiver) = &method.receiver
-                && exact_receiver_name(&receiver.ty) == Some((receiver_name, pointer))
+                && exact_receiver_name(&receiver.ty).is_some_and(
+                    |(candidate_name, receiver_pointer)| {
+                        candidate_name == receiver_name
+                            && (usize::from(receiver_pointer) == pointer_depth
+                                || (allow_implicit_conversion
+                                    && (usize::from(receiver_pointer) + 1 == pointer_depth
+                                        || (addressable
+                                            && usize::from(receiver_pointer)
+                                                == pointer_depth + 1))))
+                    },
+                )
                 && method.name.name == method_name
                 && (!external || is_exported(method_name))
             {
@@ -331,7 +494,7 @@ fn method_in_package(
             }
         }
     }
-    if pointer {
+    if pointer_depth != 0 {
         return None;
     }
     let ast::Type::Interface { methods, .. } = find_type(package, receiver_name)? else {
@@ -650,7 +813,7 @@ fn resolve_name(
         crate::completion::project_value_type_for_name(project, package, file, &base.name, offset)
     })?;
     let declaration = resolve_composite_field(project, package, file, &ty, &ident.name, 0)
-        .or_else(|| resolve_method(project, package, file, &ty, &ident.name))?;
+        .or_else(|| resolve_method(project, package, file, &ty, &ident.name, true))?;
     Some(ResolvedReference {
         target: ResolvedTarget::Declaration(declaration),
         reference: ident.span,
