@@ -2190,7 +2190,7 @@ fn substitute_completion_type(
     }
 }
 
-fn completion_imported_package<'a>(
+pub(crate) fn completion_imported_package<'a>(
     project: &'a ast::Project,
     file: &ast::File,
     alias: &str,
