@@ -71,6 +71,15 @@ impl FunctionBuilder<'_> {
     }
 
     pub(super) fn lower_place(&mut self, expr: &hir::Expr) -> Option<Place> {
+        self.lower_place_with_checks(expr, None)
+    }
+
+    // Only direct simple-assignment destinations defer checks; operand reads use lower_expr.
+    pub(super) fn lower_place_with_checks(
+        &mut self,
+        expr: &hir::Expr,
+        mut deferred: Option<&mut Vec<(Check, Span)>>,
+    ) -> Option<Place> {
         match &expr.kind {
             hir::ExprKind::Global(symbol) => Some(Place {
                 base: PlaceBase::Static {
@@ -91,7 +100,7 @@ impl FunctionBuilder<'_> {
                 ty: expr.ty,
             }),
             hir::ExprKind::Field { base, index } => {
-                let mut place = self.lower_place(base)?;
+                let mut place = self.lower_place_with_checks(base, deferred)?;
                 place.projections.push(Projection::Field {
                     index: *index,
                     ty: expr.ty,
@@ -111,7 +120,10 @@ impl FunctionBuilder<'_> {
                     ),
                     TypeKind::Array { length, .. } => {
                         let length = *length;
-                        (self.lower_place(base)?, Some(length))
+                        (
+                            self.lower_place_with_checks(base, deferred.as_deref_mut())?,
+                            Some(length),
+                        )
                     }
                     _ => return None,
                 };
@@ -125,13 +137,15 @@ impl FunctionBuilder<'_> {
                         }),
                         expr.span,
                     );
-                    self.emit_effect(
-                        InstructionKind::Check(Check::Bounds {
-                            index: index_value,
-                            length,
-                        }),
-                        index.span,
-                    );
+                    let check = Check::Bounds {
+                        index: index_value,
+                        length,
+                    };
+                    if let Some(deferred) = deferred {
+                        deferred.push((check, index.span));
+                    } else {
+                        self.emit_effect(InstructionKind::Check(check), index.span);
+                    }
                 }
                 place.projections.push(if length.is_none() {
                     Projection::Offset { index: index_value }

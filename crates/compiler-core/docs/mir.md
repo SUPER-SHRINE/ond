@@ -203,7 +203,7 @@ call は当初 `CallEffects::Unknown` とし、全 memory を読み書きでき�
 ## 11. Lowering rules
 
 - operand と argument は source の左から右へ 1 回ずつ評価する。
-- assignment は右辺をすべて評価してから左辺へ書く。
+- 単純代入 `=` は左辺の index/pointer operand と右辺をすべて評価して値を保持し、各格納先の bounds check と書き込みを左から右へ行う
 - `&&` と `||` は branch と merge block へ lower する。
 - `if` と `for` は CFG へ lower する。
 - array の動的 index は明示的な bounds check を生成する。文字列literalはarrayとして同じ経路を使う。
@@ -412,6 +412,9 @@ array・struct定数は全明示要素を評価した疎なCompositeとして保
 - composite literal は compiler temporary を zero 初期化し、指定された要素を source 順に1回ずつ評価して書き込む。未指定要素は zero のままとする。巨大な zero array を要素数分の命令に展開しない。
 - aggregate storage は local/temporary の place に置く。式・call の境界の aggregate `ValueId` は storage alias ではなく immutable な値の snapshot とする。aggregate store は temporary を経由する `AggregateCopy` を生成する。引数・戻り値も snapshot を受け渡し、physical copy/ABI は後段で決定する。これらの aggregate value は scalar SSA promotion の対象外。
 - 代入の左辺 address/index を左から評価し、右辺の値をすべて snapshot として評価した後に書き込む。右辺評価中や先の左辺への書き込みで、後続のコピー元が変わることはない。
+- 単純代入 `=` の直接の配列格納先にある各 `Index` projection の `Check::Bounds` は、operand の評価から分離し、その格納先への書き込みの直前に projection 順で生成する
+- 後続の bounds check が失敗しても先行する書き込みを取り消さず、各 check は対応する `Store` / `AggregateCopy` を支配する
+- 左辺の pointer/index operand 内の配列読み取り、`AddressOf`、右辺の配列読み取り、および compound assignment は評価時に check を生成する
 - 文字列literalはUTF-8/escapeをdecodeし、byteごとの`u8`要素を持つ通常の`Composite`としてHIRへ置く。MIRには文字列専用type、constant、instructionを持たせず、zero初期化・要素store・`AggregateCopy`へlowerする。
 - 読み取り専用の文字列literal実体は`Static.null_terminated`で区別する。このflagは論理的なarray型や`StaticValue`を変更せず、target backendがhidden sentinelの配置と同一Object内の完全一致・suffix一致共有に使用する。
 - `len`はoperandを1回評価し、その結果を捨てた後、array型の長さからHIRの`u32`定数へ解決する。runtime文字列length命令は存在しない。

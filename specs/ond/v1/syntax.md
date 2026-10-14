@@ -241,7 +241,10 @@ CallExpr      = PrimaryExpr Arguments .
 - 文法上 `Expression` は任意の式を許すが、型検査で `if` と条件付き `for` の条件は `bool` に制限する。
 - multi-value function call は `VarSpec`、`Assignment`、`ShortVarDecl`、`ReturnStmt` で使える。v1 では `ConstSpec` や他の call の argument 位置へそのまま渡せない。
 - assignment の左辺は `_`、変数、参照外し、配列または raw pointer の index、struct field のいずれかで、書き込み可能でなければならない。
-- assignment は最初に左辺の index と pointer operand、および右辺を source 上の左から右へ評価し、その後で左辺への書き込みを左から右へ行う。
-- compound assignment の左辺は `_` 以外の書き込み可能な式 1 個、右辺は式 1 個とする。左辺の index、pointer operand、および現在値は 1 回だけ評価する。
+- 単純代入 `=` は最初に左辺の index と pointer operand を左から右へ評価し、次に右辺を左から右へ評価して、それぞれの値を保持する
+- その後、左辺への書き込みを左から右へ行い、直接の配列格納先に必要な bounds check は各書き込みの直前に行う
+- 後続の格納先で bounds check が失敗しても、それ以前の書き込みは保持する
+- 左辺の operand 内で行う配列読み取り（`*P[i]` の `P[i]` など）、`&A[i]` のアドレス取得、および右辺の配列読み取りは、その評価時に bounds check を行う
+- compound assignment の左辺は `_` 以外の書き込み可能な式 1 個、右辺は式 1 個とし、左辺の index、pointer operand、bounds check、および現在値の読み取りを 1 回行ってから右辺を評価する
 - `++` と `--` は後置の statement だけとし、前置形式や値を生成する expression としては使えない。
 - 戻り値を持つ関数は、到達可能なすべての実行経路で宣言と一致する `return` に到達しなければならない。無条件 `for {}` は、外へ到達する `break` を含まない場合に限り終端とみなす。
