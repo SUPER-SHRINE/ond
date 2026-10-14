@@ -421,6 +421,8 @@ Kagura target の関数呼び出し規約は [Ond ABI for Kagura v1](../targets/
 - `[]=` はreceiver、index、valueを受け取り、値を返さない。
 - compound assignment は対応する binary operator と代入から導出し、左辺の base と index は一度だけ評価する。
 - 同じreceiver基底型ではoperator kindとoperand数が同じ宣言を重複できない。receiverのpointer有無は重複判定で区別せず、単項と二項、`[]`と`[]=`は区別する。operator は import alias を介した明示参照なしに解決候補となる。
+- operator候補はreceiver基底の名前付き型を宣言したpackageだけから選ぶ
+  - 呼出し元fileがそのpackageを直接importしているか、別package経由で値を得たか、import aliasを使うかには依存しない
 - generic operatorは `operator (self: List[T]) [](index: u32) -> T` のように宣言する。receiver型引数は宣言型の型引数に個数が一致するfreshかつ相異なる名前とし、`List[u32]` のような具体化receiverを宣言できない。operator固有の型parameterは持たず、型引数はreceiverから決まる。
 - generic interface向けoperatorも本体を持ち、`operator (values: List[T]) [](index: u32) -> T { return values.Get(index) }`のように公開interface methodへ委譲できる。
 - 呼出し時のreceiverだけはmethodと同様に1段の暗黙参照化または参照外しを許す。pointer receiverへ値を渡すにはaddressableな値が必要であり、残りのoperandは型の完全一致を要する。型引数ごとに静的関数へ具体化する。

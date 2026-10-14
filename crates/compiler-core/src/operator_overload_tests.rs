@@ -904,6 +904,52 @@ operator (values: *Values[T]) [](index: u32) -> *T {
 }
 
 #[test]
+fn generic_pointer_operators_are_found_through_a_bridge_import() {
+    let compilation = test_support::compile_files(&[
+        (
+            "main.ond",
+            r#"package main
+import facade "bridge"
+
+func observe() -> u32 {
+    values := facade.Make[u32]()
+    return *(&values)[0]
+}
+
+func main() {}
+"#,
+        ),
+        (
+            "bridge/bridge.ond",
+            r#"package bridge
+import ownerpkg "owner"
+
+func Make[T]() -> ownerpkg.Values[T] {
+    return ownerpkg.Values[T]{Data: [1]T{37}}
+}
+"#,
+        ),
+        (
+            "owner/owner.ond",
+            r#"package owner
+
+type Values[T] struct { Data: [1]T }
+
+operator (values: *Values[T]) [](index: u32) -> *T {
+    return &values.Data[index]
+}
+"#,
+        ),
+    ])
+    .expect("generic pointer operators should be found in the receiver owner package");
+
+    assert_eq!(
+        memory_test_vm::execute(&compilation.mir, "main.observe", &[]).unwrap(),
+        [37]
+    );
+}
+
+#[test]
 fn operator_receiver_must_be_local_and_use_declared_type_parameters() {
     for (source, expected) in [
         (
@@ -968,6 +1014,49 @@ operator (values: List[T]) [](index: u32) -> T {
         ),
     )
     .expect("an imported generic interface operator should be available by operand type");
+}
+
+#[test]
+fn generic_interface_operators_are_found_through_a_bridge_import() {
+    test_support::compile_files(&[
+        (
+            "main.ond",
+            r#"package main
+import facade "bridge"
+
+func main() {
+    values := facade.Make()
+    _ = values[0]
+}
+"#,
+        ),
+        (
+            "bridge/bridge.ond",
+            r#"package bridge
+import ownerpkg "owner"
+
+type Pair struct { Values: [1]u32 }
+var pair = Pair{Values: [1]u32{37}}
+func (pair: *Pair) Get(index: u32) -> u32 { return pair.Values[index] }
+
+func Make() -> ownerpkg.List[u32] {
+    return (&pair) as ownerpkg.List[u32]
+}
+"#,
+        ),
+        (
+            "owner/owner.ond",
+            r#"package owner
+
+type List[T] interface { Get(index: u32) -> T; }
+
+operator (values: List[T]) [](index: u32) -> T {
+    return values.Get(index)
+}
+"#,
+        ),
+    ])
+    .expect("generic interface operators should be found in the receiver owner package");
 }
 
 #[test]
