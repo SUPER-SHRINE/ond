@@ -120,7 +120,7 @@ pub fn run(bytes: &crate::linker::LinkedImage, case: Case<'_>) {
 fn runner_rejects_wrong_values_faults_and_step_limits() {
     let bytes = compile(&[(
         "main.ond",
-        &format!("package main\nfunc main(){{store32({OUTPUT},7)}}"),
+        &format!("package main\nfunc main(){{*({OUTPUT} as u32 as *u32) = 7}}"),
     )]);
     let mut case = Case {
         id: "runner.self-check",

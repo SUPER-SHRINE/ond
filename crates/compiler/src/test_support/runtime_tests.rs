@@ -58,7 +58,7 @@ fn execute_helper(h: Helper, args: &[u32], fault: bool) -> u32 {
         .collect::<Vec<_>>()
         .join(",");
     let mut objects = input(format!(
-        "package main\nfunc stub({parameters})->u32{{return 0}}\nfunc main(){{store32(4294934608,stub({arguments}))}}"
+        "package main\nfunc stub({parameters})->u32{{return 0}}\nfunc main(){{*(4294934608 as u32 as *u32) = stub({arguments})}}"
     ));
     // The stub establishes the exact typed call/frame. A backend operation would
     // request this reserved symbol directly instead of emitting main.stub.

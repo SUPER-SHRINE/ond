@@ -8,9 +8,7 @@ use crate::diagnostic::{Diagnostic, Diagnostics};
 use crate::ir::ast;
 use std::collections::{BTreeMap, BTreeSet};
 
-const BUILTINS: &[&str] = &[
-    "alloc", "free", "len", "load32", "store32", "thisFile", "thisLine",
-];
+const BUILTINS: &[&str] = &["alloc", "free", "len", "thisFile", "thisLine"];
 
 pub(super) fn validate_generic_body_names(project: &ast::Project) -> Diagnostics {
     let package_values = project

@@ -2,7 +2,7 @@
 
 対象: CAST-01、NIL-01、OP-01、BI-01/02、DECL-01/02。
 実装は [conformance/boundaries](../src/conformance/boundaries/mod.rs) に機能別に分割する。
-共通Case形式で **1,366ケース**を生成し、受理・拒否、spec ID、入力source、検証層、診断を固定する。
+共通Case形式で **1,315ケース**を生成し、受理・拒否、spec ID、入力source、検証層、診断を固定する。
 Rustのテスト関数数とは異なる（4つの行列実行テスト＋inventoryテスト）。
 
 ## 型の集合と行列
@@ -15,8 +15,8 @@ Rustのテスト関数数とは異なる（4つの行列実行テスト＋invent
 | --- | ---: | --- |
 | conversions | 866 | 14×14型対×代入/引数/return、明示cast、nil |
 | operators | 322 | 14型×binary19種・unary4種の受理/拒否とreturnの結果型 |
-| builtins | 117 | arity、引数位置ごとの14型、戻り値/void、new構文、defined array、source位置builtin |
-| declarations | 61 | 型なし・初期値なし拒否、14型のzero/推論/後続異型代入、定数適格性・値 |
+| builtins | 67 | arity、引数位置ごとの14型、戻り値/void、new構文、defined array、source位置builtin |
+| declarations | 60 | 型なし・初期値なし拒否、14型のzero/推論/後続異型代入、定数適格性・値 |
 
 ### CAST-01 / NIL-01
 
@@ -36,10 +36,10 @@ Rustのテスト関数数とは異なる（4つの行列実行テスト＋invent
 
 ### BI-01 / BI-02
 
-- alloc/free/load32/store32/lenの誤arityは引数0〜3個から列挙。正しいarityの型境界は別表で検証する。
-- store32のaddress/valueを別々に検査。len(array)のoperandも型検査し、通常どおり1回評価する。
+- alloc/free/lenの誤arityは引数0〜3個から列挙。正しいarityの型境界は別表で検証する。
+- len(array)のoperandも型検査し、通常どおり1回評価する。
 - `new()`/余分な型引数、void戻り値の値としての使用を拒否。
-- `new([4]u8)` を `*[4]u8` 戻り値として受理し、`*u8` への代入を拒否。alloc/load32/lenの結果型もreturnで確認する。
+- `new([4]u8)` を `*[4]u8` 戻り値として受理し、`*u8` への代入を拒否。alloc/lenの結果型もreturnで確認する。
 - defined arrayのlenを受理。`len`を含む組み込み名はbindingとして宣言できず、global関数やlocal/global/constでshadowできない。
 
 ### DECL-01 / DECL-02

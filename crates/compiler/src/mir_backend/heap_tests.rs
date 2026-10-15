@@ -49,7 +49,7 @@ fn failed_allocation_and_overflow_preserve_existing_memory() {
 #[test]
 fn heap_can_fill_exactly_to_stack_bottom_and_recover_after_oom() {
     let f = Fixture::new(
-        "package main\ntype Z struct{}\nfunc main(){var first=alloc[u8](1);free(first);var n:u32=61440-(first as u32);var full=alloc[u8](n);full[n-1]=165;var empty=new(Z);var score:u32;if empty==nil{score=1};free(full);var again=new(Z);if again!=nil{score=score+2};free(again);store32(4294934608,score)}",
+        "package main\ntype Z struct{}\nfunc main(){var first=alloc[u8](1);free(first);var n:u32=61440-(first as u32);var full=alloc[u8](n);full[n-1]=165;var empty=new(Z);var score:u32;if empty==nil{score=1};free(full);var again=new(Z);if again!=nil{score=score+2};free(again);*(4294934608 as u32 as *u32) = score}",
     );
     let bytes = crate::test_support::compile_image(&f.0).unwrap();
     let (mut cpu, mut bus, top) = machine(&bytes);

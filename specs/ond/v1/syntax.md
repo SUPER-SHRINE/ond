@@ -73,7 +73,7 @@ package-qualified name は `packageName.ExportedName` とする。
 - `if` の init で宣言した名前は condition、両 branch から見える。`for` の init で宣言した名前は condition、post、loop body から見える。
 - 組み込み型名 `bool`, `u8`, `i8`, `u16`, `i16`, `u32`, `i32`, `f32` は shadow できない。`type`・`var`・`const`・`:=`・関数宣言・関数宣言のparameterでbindingを導入する名前として使用するとcompile errorとする。package/localの両scopeで禁止する。
 - struct field名と関数型内の説明用parameter名は、型名を隠すbindingを作らないため、この禁止の対象外とする。型参照・field selector等では組み込み型名の綴りを通常どおり読み取れる。
-- 組み込み名 `alloc`, `free`, `len`, `trap`, `sizeof`, `alignof`, `load32`, `store32`, `thisFile`, `thisLine`, `new` は binding として宣言できない。struct field 名など binding を作らない位置では使用できる。`str` は通常の識別子である。
+- 組み込み名 `alloc`, `free`, `len`, `trap`, `sizeof`, `alignof`, `thisFile`, `thisLine`, `new` は binding として宣言できない。struct field 名など binding を作らない位置では使用できる。`str` は通常の識別子である。
 
 ## 5. Operator Precedence
 <!-- ond-spec-id: syntax/operator-precedence -->

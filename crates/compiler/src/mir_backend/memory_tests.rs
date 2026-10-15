@@ -152,7 +152,7 @@ fn zero_size_storage_is_non_nil_and_layout_remains_zero() {
 #[test]
 fn bounds_fault_precedes_destination_write() {
     let f = Fixture::new(
-        "package main\nfunc set(i:u32){var a=[2]u8{1,2};a[i]=99;store32(4294934608,123)}\nfunc main(){set(2)}",
+        "package main\nfunc set(i:u32){var a=[2]u8{1,2};a[i]=99;*(4294934608 as u32 as *u32) = 123}\nfunc main(){set(2)}",
     );
     let bytes = crate::test_support::compile_image(&f.0).unwrap();
     let (mut cpu, mut bus, _) = machine(&bytes);
@@ -179,7 +179,7 @@ fn assignment_fault(image: &crate::linker::LinkedImage) -> (kagura::DefaultBus, 
 fn assignment_bounds_check_follows_rhs_effects() {
     for index in ["2", "-1"] {
         let f = Fixture::new(&format!(
-            "package main\nfunc rhs()->u32{{store32(4294934608,123);return 99}}\nfunc main(){{var a:[2]u32;var i:i32={index};a[i]=rhs()}}"
+            "package main\nfunc rhs()->u32{{*(4294934608 as u32 as *u32)=123;return 99}}\nfunc main(){{var a:[2]u32;var i:i32={index};a[i]=rhs()}}"
         ));
         let image = crate::test_support::compile_image(&f.0).unwrap();
         let (mut bus, _) = assignment_fault(&image);
@@ -190,7 +190,7 @@ fn assignment_bounds_check_follows_rhs_effects() {
 #[test]
 fn assignment_bounds_check_preserves_earlier_stores() {
     let f = Fixture::new(
-        "package main\nvar A:[2]u32\nvar Later:u32\nfunc rhs()->u32{store32(4294934608,123);return 99}\nfunc main(){var i:u32=2;A[0],A[i],Later=7,rhs(),8}",
+        "package main\nvar A:[2]u32\nvar Later:u32\nfunc rhs()->u32{*(4294934608 as u32 as *u32)=123;return 99}\nfunc main(){var i:u32=2;A[0],A[i],Later=7,rhs(),8}",
     );
     let image = crate::test_support::compile_image(&f.0).unwrap();
     let (mut bus, _) = assignment_fault(&image);
@@ -202,7 +202,7 @@ fn assignment_bounds_check_preserves_earlier_stores() {
 #[test]
 fn assignment_bounds_check_follows_all_lhs_operands_and_rhs_values() {
     let f = Fixture::new(
-        "package main\nvar Trace:u32\nvar A:[2]u32\nfunc index(tag:u32,i:u32)->u32{Trace=Trace*10+tag;return i}\nfunc pointer()->*u32{Trace=Trace*10+2;return &A[0]}\nfunc rhs(tag:u32)->u32{Trace=Trace*10+tag;store32(4294934608,Trace);return tag}\nfunc main(){A[index(1,2)],*pointer()=rhs(3),rhs(4)}",
+        "package main\nvar Trace:u32\nvar A:[2]u32\nfunc index(tag:u32,i:u32)->u32{Trace=Trace*10+tag;return i}\nfunc pointer()->*u32{Trace=Trace*10+2;return &A[0]}\nfunc rhs(tag:u32)->u32{Trace=Trace*10+tag;*(4294934608 as u32 as *u32)=Trace;return tag}\nfunc main(){A[index(1,2)],*pointer()=rhs(3),rhs(4)}",
     );
     let image = crate::test_support::compile_image(&f.0).unwrap();
     let (mut bus, _) = assignment_fault(&image);
@@ -214,7 +214,7 @@ fn assignment_bounds_check_follows_all_lhs_operands_and_rhs_values() {
 fn assignment_bounds_check_defers_nested_destination_projections() {
     for (outer, inner) in [(2, 1), (1, 2)] {
         let f = Fixture::new(&format!(
-            "package main\ntype S struct{{values:[2]u32}}\nvar Trace:u32\nfunc index(tag:u32,i:u32)->u32{{Trace=Trace*10+tag;return i}}\nfunc rhs()->u32{{Trace=Trace*10+3;store32(4294934608,Trace);return 99}}\nfunc main(){{var a:[2]S;a[index(1,{outer})].values[index(2,{inner})]=rhs()}}"
+            "package main\ntype S struct{{values:[2]u32}}\nvar Trace:u32\nfunc index(tag:u32,i:u32)->u32{{Trace=Trace*10+tag;return i}}\nfunc rhs()->u32{{Trace=Trace*10+3;*(4294934608 as u32 as *u32)=Trace;return 99}}\nfunc main(){{var a:[2]S;a[index(1,{outer})].values[index(2,{inner})]=rhs()}}"
         ));
         let image = crate::test_support::compile_image(&f.0).unwrap();
         let (mut bus, _) = assignment_fault(&image);
@@ -225,7 +225,7 @@ fn assignment_bounds_check_defers_nested_destination_projections() {
 #[test]
 fn assignment_bounds_check_precedes_rhs_for_compound_assignment() {
     let f = Fixture::new(
-        "package main\nfunc rhs()->u32{store32(4294934608,123);return 99}\nfunc main(){var a:[2]u32;var i:u32=2;a[i]+=rhs()}",
+        "package main\nfunc rhs()->u32{*(4294934608 as u32 as *u32)=123;return 99}\nfunc main(){var a:[2]u32;var i:u32=2;a[i]+=rhs()}",
     );
     let image = crate::test_support::compile_image(&f.0).unwrap();
     let (mut bus, _) = assignment_fault(&image);
@@ -241,7 +241,7 @@ fn assignment_bounds_check_remains_immediate_in_lhs_operand_reads() {
         "var a:[2]u32;var i:u32=2;a[0],a[1]=a[i],rhs()",
     ] {
         let f = Fixture::new(&format!(
-            "package main\nfunc rhs()->u32{{store32(4294934608,123);return 99}}\nfunc main(){{{body}}}"
+            "package main\nfunc rhs()->u32{{*(4294934608 as u32 as *u32)=123;return 99}}\nfunc main(){{{body}}}"
         ));
         let image = crate::test_support::compile_image(&f.0).unwrap();
         let (mut bus, _) = assignment_fault(&image);

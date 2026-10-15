@@ -236,18 +236,6 @@ pub(crate) const BUILTINS: &[BuiltinInfo] = &[
         syntax: false,
     },
     BuiltinInfo {
-        name: "load32",
-        signature: "load32(address: u32 | *T) -> u32",
-        description: "read a 32-bit value from memory",
-        syntax: false,
-    },
-    BuiltinInfo {
-        name: "store32",
-        signature: "store32(address: u32 | *T, value: u32)",
-        description: "write a 32-bit value to memory",
-        syntax: false,
-    },
-    BuiltinInfo {
         name: "thisFile",
         signature: "thisFile() -> *u8",
         description: "get the current logical source path",

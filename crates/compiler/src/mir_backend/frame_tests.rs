@@ -32,7 +32,7 @@ fn large_frames_preserve_stack_arguments_results_snapshots_and_indirect_calls() 
         func pair(a:u32,b:u32,c:u32,d:u32,e:u32,f:u32,g:u32)->(u32,u32){return a+b+c+d+e+f+g,g}
         func copy(s:S)->S {s.a=s.a+1;return s}
         func main(){var s=S{a:10,b:20};var p=pair;var a,b=p(1,2,3,4,5,6,7);
-            var t=copy(s);store32(4294934608,a+b+s.a+t.a+t.b)}",
+            var t=copy(s);*(4294934608 as u32 as *u32) = a+b+s.a+t.a+t.b}",
     );
     let mut project = fixture.core();
     enlarge(&mut project);
@@ -81,7 +81,7 @@ fn large_frame_stack_exhaustion_faults_before_writes_or_sp_update() {
 fn source_large_array_addresses_and_high_spills_execute() {
     let fixture = Fixture::new(
         "package main\nfunc main(){var x:[9000]u32;
-        x[8999]=41;var p=&x[8999];*p=*p+1;store32(4294934608,*p)}",
+        x[8999]=41;var p=&x[8999];*p=*p+1;*(4294934608 as u32 as *u32) = *p}",
     );
     let bytes = crate::test_support::build_image(
         &fixture.core(),

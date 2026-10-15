@@ -138,7 +138,6 @@ helperの生成が同じhelperを要求する循環を避け、整数primitive�
 
 - New(T): layoutのsize/alignmentで確保し、成功時のみzero化。failureはnil。ゼロサイズは§7。
 - Alloc / Free: machine profileのallocator。alloc(0)/failureはnil、free(nil)はno-op。
-- Load32 / Store32: addressを32-bitとしてLDW/STWを1回実行。alignment/MMIO faultはbus/CPUへ委ねる。
 - debug metadata: function/range/source/unwindをObjectと並行して生成する。linkerが最終addressへ解決し、VMは任意でfault理由とstack traceの表示に利用できる。metadataの有無は実行時意味論を変えない。
 - Global: 当初はzero storageをBssへ出す。初期値のsource再評価やData化による順序変更はしない。
 - initializer: MIRの内部関数を通常関数としてemitし、Project.initialization_orderを明示的なstartup計画へ渡す。
@@ -216,7 +215,7 @@ new(T)はsize=0でも最低payloadを確保し、成功時は非nil、失敗時�
 - aggregate: ValueIdは独立したsnapshot。copyはsource読み取りを完了してからdestinationへ書き、再帰的に宣言/index順のscalar accessのみを発行する。paddingを読み書きしない。文字列literalも通常のbyte配列として実行できる。
 - 呼出し: 直接/間接call、Direct/Indirect引数、複数戻り値。先頭6 ABI wordはr1〜r6、残りはstack。aggregate引数はcaller-owned temporaryへコピーする。aggregateを含む戻り値または5個以上のDirect戻り値はhidden pointer付きreturn area、それ以外はr1〜r4。再帰対応。r7〜r11を変更せず、r15をframeへ保存する。
 - frame: 8-byte alignment、outgoing引数領域、local/value snapshot、edge copy一時領域、引数copy、callごとのreturn area、return address。各用途を分離し、stack下限検査後にSPを更新する。frameとincoming引数offsetは32-bit範囲で検査し、大きなoffsetは§12のアドレス生成を使用する。
-- intrinsic: load32/store32を単一LDW/STWへ変換する。alloc/free/newは§10のOnd製runtime helperへ接続する。
+- alloc/free/newは§10のOnd製runtime helperへ接続する。
 - global/startup: 全globalを自然alignmentでBSSへ配置し、文字列リテラルと配列・struct定数の静的実体を自然alignmentでRodataへ配置する。Static PlaceはAbs32 relocationで解決する。ゼロサイズglobalと静的実体にも物理identity用の最低1 byteを予約する。通常のglobal初期値は定数で書ける場合もDataへ先取りせず、MIR initializer内の処理として残す。machine loaderが全BSSをゼロ化した後、`Project.initialization_order`に従ってinitializerを一度ずつ呼び、最後にmain.mainを呼ぶ。Object順やimport名のソートから順序を再構成しない。mainから到達しないpackageのinitializerは呼ばない（object/storage自体の除去は未実装）。
 - 検証: 生成したLinkedImageをテストbusへloadしてKagura CPUで実行し、結果・短絡非評価・再帰・stack引数・SP復元・callee-save保持・stack overflowを確認する。pointer alias、自然layout/array stride、bounds、ゼロサイズ値、aggregate引数の非alias、評価途中のsnapshot、mixed return area、間接callも検査する。bus traceではアクセス幅・順序・padding非アクセス・重複copy・source/destination途中faultを確認する。layout/ABIの固定期待値、layout overflow、分岐距離の正負境界、frame上限、未対応診断も検査する。
 

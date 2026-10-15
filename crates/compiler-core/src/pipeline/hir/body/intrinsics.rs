@@ -48,10 +48,7 @@ impl BodyLowerer<'_> {
         args: &[ast::Expr],
         span: Span,
     ) -> Option<hir::Call> {
-        let count = match name {
-            "store32" => 2,
-            _ => 1,
-        };
+        let count = 1;
         if args.len() != count {
             return self.fail(span, format!("{name} expects {count} arguments"));
         }
@@ -72,26 +69,6 @@ impl BodyLowerer<'_> {
                 }
                 arguments.push(pointer);
                 (Intrinsic::Free, Vec::new())
-            }
-            "load32" | "store32" => {
-                let expected = matches!(args[0], ast::Expr::Literal(ast::Literal::Int(_, _)))
-                    .then_some(TypeId::U32);
-                let address = self.lower_value(&args[0], expected)?;
-                if address.ty != TypeId::U32
-                    && !matches!(
-                        self.types.underlying_kind(address.ty),
-                        Some(TypeKind::Pointer(_))
-                    )
-                {
-                    return self.fail(span, "memory address requires u32 or pointer");
-                }
-                arguments.push(address);
-                if name == "store32" {
-                    arguments.push(self.lower_value(&args[1], Some(TypeId::U32))?);
-                    (Intrinsic::Store32, Vec::new())
-                } else {
-                    (Intrinsic::Load32, vec![TypeId::U32])
-                }
             }
             _ => return self.fail(span, "unknown compiler intrinsic"),
         };

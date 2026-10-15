@@ -146,7 +146,7 @@ Q-01/02/04の包括的な決定反映テストはspecification_decision_tests.rs
 共通型のCase/SourceFile/Expected/Locationは生成データの借用にも対応する。
 固定registryは従来どおりstaticな定義を維持し、生成ケースと合わせてID重複を検査する。
 
-P1型/値境界の1,366生成ケースは [type-boundary-conformance.md](./type-boundary-conformance.md) を参照。
+P1型/値境界の1,315生成ケースは [type-boundary-conformance.md](./type-boundary-conformance.md) を参照。
 `boundaries/` の4モジュールで同じCase runnerを使い、受理/拒否の対照と診断位置を検証する。
 zero初期化のMIR値・格納先とaggregate定数のHIR値も確認する。件数はinventoryテストで固定する。
 

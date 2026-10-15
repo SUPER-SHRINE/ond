@@ -181,16 +181,6 @@ fn intrinsic(types: &TypeTable, op: Intrinsic, sig: &FunctionType) -> bool {
         Intrinsic::Free => {
             sig.parameters.len() == 1 && pointer(sig.parameters[0]) && sig.returns.is_empty()
         }
-        Intrinsic::Load32 | Intrinsic::Store32 => {
-            let store = op == Intrinsic::Store32;
-            sig.parameters.len() == if store { 2 } else { 1 }
-                && (sig.parameters[0] == TypeId::U32 || pointer(sig.parameters[0]))
-                && if store {
-                    sig.parameters[1] == TypeId::U32 && sig.returns.is_empty()
-                } else {
-                    sig.returns == [TypeId::U32]
-                }
-        }
     }
 }
 

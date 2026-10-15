@@ -409,7 +409,7 @@ impl BodyLowerer<'_> {
             }
             return self.fail(*span, "type arguments require a generic function");
         }
-        if let Some(name @ ("alloc" | "free" | "load32" | "store32")) = self.builtin_name(source) {
+        if let Some(name @ ("alloc" | "free")) = self.builtin_name(source) {
             if name == "alloc" {
                 return self.fail(*span, "alloc requires a type argument: alloc[T](count)");
             }

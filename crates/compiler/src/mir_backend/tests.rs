@@ -96,7 +96,7 @@ pub(super) fn execute_steps(bytes: &crate::linker::LinkedImage, limit: usize) ->
 }
 pub(super) fn run(declarations: &str, expression: &str, expected: u32) {
     let source = format!(
-        "package main\n{declarations}\nfunc main() {{ store32(4294934608, ({expression}) as u32) }}\n"
+        "package main\n{declarations}\nfunc main() {{ *(4294934608 as u32 as *u32) = ({expression}) as u32 }}\n"
     );
     let fixture = Fixture::new(&source);
     let bytes = crate::test_support::compile_image(&fixture.0)
@@ -145,7 +145,7 @@ fn methods_preserve_exact_receivers_nil_and_evaluation_order() {
 #[test]
 fn exported_methods_on_an_inferred_private_type_work_across_packages() {
     let fixture = Fixture::new(
-        "package main\nimport \"shared\"\ntype Reader interface { Read() -> i32; }\nfunc main() { var direct = shared.New().Read(); var dynamic = (shared.New() as Reader).Read(); store32(4294934608, (direct + dynamic) as u32); }\n",
+        "package main\nimport \"shared\"\ntype Reader interface { Read() -> i32; }\nfunc main() { var direct = shared.New().Read(); var dynamic = (shared.New() as Reader).Read(); *(4294934608 as u32 as *u32) = (direct + dynamic) as u32; }\n",
     );
     fs::create_dir(fixture.0.join("shared")).unwrap();
     fs::write(
@@ -210,7 +210,7 @@ fn locals_branches_loops_and_boolean_block_parameters_execute() {
     );
     // Skipped RHS would fault: verifies actual branch execution, not merely result bits.
     run(
-        "func bad() -> bool { store32(0, 1); return true }\nfunc calc(x: bool) -> i32 { if x && bad() { return 9 }; if !x || bad() { return 3 }; return 8 }",
+        "func bad() -> bool { *(0 as u32 as *u32) = 1; return true }\nfunc calc(x: bool) -> i32 { if x && bad() { return 9 }; if !x || bad() { return 3 }; return 8 }",
         "calc(false)",
         3,
     );
@@ -228,7 +228,7 @@ fn direct_calls_recursion_stack_arguments_and_spills_execute() {
         514,
     );
     run(
-        "func set(v:u32) { store32(4294934608,v) }\nfunc pair(x:i32) -> i32 { set(99); return x+1 }",
+        "func set(v:u32) { *(4294934608 as u32 as *u32) = v }\nfunc pair(x:i32) -> i32 { set(99); return x+1 }",
         "pair(4)+pair(6)",
         12,
     );
