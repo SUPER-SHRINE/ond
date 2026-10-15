@@ -32,7 +32,7 @@ fn far_calls_large_frames_hidden_returns_stack_arguments_and_helpers_coexist() {
         func recur(s:S,n:u32)->S{{if n==0{{return s}};s.a=s.a+1;var q=(s.a as f32)/2.0; s.b=q as u32;return recur(s,n-1)}}
         func padding(){{var buf:[2000]u8;buf[1999]=1}}
         func main(){{G=initialize();var s=S{{a:7,b:8}};var t,q=leaf(1,2,3,4,5,6,s);var r=recur(t,3);
-            G.a=r.a;store32({OUTPUT},t.a);store32({},t.b);store32({},q);store32({},r.a);store32({},r.b);store32({},s.a);free(G)}}",
+            G.a=r.a;*({OUTPUT} as u32 as *u32) = t.a;*({} as u32 as *u32) = t.b;*({} as u32 as *u32) = q;*({} as u32 as *u32) = r.a;*({} as u32 as *u32) = r.b;*({} as u32 as *u32) = s.a;free(G)}}",
         OUTPUT+4,OUTPUT+8,OUTPUT+12,OUTPUT+16,OUTPUT+20);
     let mut p = project(&[("main.ond", &source)]);
     enlarge(&mut p);
@@ -100,7 +100,7 @@ fn size(p: &mir::Project, name: &str) -> u32 {
 #[test]
 fn large_recursive_frames_fit_exact_stack_then_fault_one_level_later() {
     let source = format!(
-        "package main\nfunc walk(n:u32)->u32{{if n==0{{return 7}};return walk(n-1)+1}}\nfunc main(){{var n=walk(load32({INPUT}));store32({OUTPUT},n)}}"
+        "package main\nfunc walk(n:u32)->u32{{if n==0{{return 7}};return walk(n-1)+1}}\nfunc main(){{var n=walk(*({INPUT} as u32 as *u32));*({OUTPUT} as u32 as *u32) = n}}"
     );
     let mut p = project(&[("main.ond", &source)]);
     enlarge(&mut p);

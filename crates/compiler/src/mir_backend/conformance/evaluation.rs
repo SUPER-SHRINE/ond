@@ -12,7 +12,7 @@ fn shared_25_evaluation_cases_preserve_trace_and_final_values() {
         let stores = names
             .iter()
             .enumerate()
-            .map(|(i, v)| format!("store32({}, {v} as u32);", OUTPUT + i as u32 * 4))
+            .map(|(i, v)| format!("*({} as u32 as *u32) = {v} as u32;", OUTPUT + i as u32 * 4))
             .collect::<String>();
         let entry = format!("func main(){{var {}=test();{stores}}}", names.join(","));
         let sources = case
@@ -54,7 +54,7 @@ fn discard_and_callee_evaluation_keep_effects_and_multi_result_positions() {
         (
             "DECL-03.discard",
             format!(
-                "package main\nvar trace:u32\nfunc mark(n:u32)->u32{{trace=trace*10+n;return n}}\nfunc pair(_:u32)->(u32,u32,u32){{return mark(3),mark(4),mark(5)}}\nfunc main(){{_=mark(1);var _,b,_=pair(mark(2));_=mark(6);store32({OUTPUT},trace);store32({},b)}}",
+                "package main\nvar trace:u32\nfunc mark(n:u32)->u32{{trace=trace*10+n;return n}}\nfunc pair(_:u32)->(u32,u32,u32){{return mark(3),mark(4),mark(5)}}\nfunc main(){{_=mark(1);var _,b,_=pair(mark(2));_=mark(6);*({OUTPUT} as u32 as *u32) = trace;*({} as u32 as *u32) = b}}",
                 OUTPUT + 4
             ),
             vec![123456, 4],
@@ -62,7 +62,7 @@ fn discard_and_callee_evaluation_keep_effects_and_multi_result_positions() {
         (
             "EVAL-01.callee",
             format!(
-                "package main\nvar trace:u32\nfunc mark(n:u32)->u32{{trace=trace*10+n;return n}}\nfunc f(a:u32,b:u32)->u32{{return a+b}}\nfunc target()->func(u32,u32)->u32{{_=mark(1);return f}}\nfunc main(){{var n=target()(mark(2),mark(3));store32({OUTPUT},trace);store32({},n)}}",
+                "package main\nvar trace:u32\nfunc mark(n:u32)->u32{{trace=trace*10+n;return n}}\nfunc f(a:u32,b:u32)->u32{{return a+b}}\nfunc target()->func(u32,u32)->u32{{_=mark(1);return f}}\nfunc main(){{var n=target()(mark(2),mark(3));*({OUTPUT} as u32 as *u32) = trace;*({} as u32 as *u32) = n}}",
                 OUTPUT + 4
             ),
             vec![123, 5],
@@ -94,22 +94,30 @@ fn faults_do_not_execute_following_effects_or_overwrite_destination() {
         ),
         (
             "DECL-03.discard-fault",
-            format!("var x=load32({INPUT});_=(1 as u32)/x"),
+            format!(
+                "var address:u32={INPUT};var input = address as *u32;var x=*input;_=(1 as u32)/x"
+            ),
             FaultCode::InvalidInstruction,
         ),
         (
             "BOUND-01.negative",
-            format!("var p={array} as *[2]u32;var i=load32({INPUT}) as i32;(*p)[i]=9"),
+            format!(
+                "var p={array} as *[2]u32;var address:u32={INPUT};var input = address as *u32;var i=(*input) as i32;(*p)[i]=9"
+            ),
             FaultCode::InvalidInstruction,
         ),
         (
             "BOUND-01.length",
-            format!("var p={array} as *[2]u32;var i=load32({INPUT});(*p)[i]=9"),
+            format!(
+                "var p={array} as *[2]u32;var address:u32={INPUT};var input = address as *u32;var i=*input;(*p)[i]=9"
+            ),
             FaultCode::InvalidInstruction,
         ),
         (
             "BOUND-01.empty",
-            format!("var p={array} as *[0]u32;var i=load32({INPUT});(*p)[i]=9"),
+            format!(
+                "var p={array} as *[0]u32;var address:u32={INPUT};var input = address as *u32;var i=*input;(*p)[i]=9"
+            ),
             FaultCode::InvalidInstruction,
         ),
     ] {
@@ -121,7 +129,7 @@ fn faults_do_not_execute_following_effects_or_overwrite_destination() {
             0
         };
         let source = format!(
-            "package main\nfunc main(){{{body};store32({},99)}}",
+            "package main\nfunc main(){{{body};*({} as u32 as *u32) = 99}}",
             OUTPUT + 16
         );
         run(
@@ -137,7 +145,7 @@ fn faults_do_not_execute_following_effects_or_overwrite_destination() {
         );
     }
     let source = format!(
-        "package main\nfunc main(){{var p={OUTPUT} as *[2]u32;var i=load32({INPUT});(*p)[i]=9}}"
+        "package main\nfunc main(){{var inputAddress:u32={INPUT};var input=inputAddress as *u32;var p={OUTPUT} as *[2]u32;var i=*input;(*p)[i]=9}}"
     );
     run(
         &compile(&[("main.ond", &source)]),

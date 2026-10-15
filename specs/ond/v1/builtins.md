@@ -20,8 +20,6 @@
 | --- |-------------------------------------------------------------------| --- |
 | `alloc` | `alloc[T](count: u32) -> *T` | 型付きの未初期化 heap 領域を確保する |
 | `free` | `free(pointer: *T)` 相当                                            | `alloc` / `new` が返した領域を解放する |
-| `load32` | `load32(address: u32 \| pointer) -> u32`                          | 32-bit 値をメモリから読む |
-| `store32` | `store32(address: u32                    \| pointer, value: u32)` | 32-bit 値をメモリへ書く |
 | `thisFile` | `thisFile() -> *u8` | 現在の論理source pathを返す |
 | `thisLine` | `thisLine() -> u32` | 現在のsource行番号を返す |
 
@@ -86,35 +84,7 @@ var size: u32 = len(buffer)
 
 配列以外ではreceiverに一致する `operator (self: T) len()` を呼び出す。一致する宣言がなければ compile error とする。
 
-## 5. `load32`
-<!-- ond-spec-id: builtins/load32 -->
-
-```ond
-var status: u32 = load32(DeviceStatusReg)
-```
-
-- 引数は 1 個だけ必要
-- 引数型は `u32` または pointer
-- 返り値は `u32`
-
-MMIO register や raw memory を 32-bit 単位で読む用途を想定している。
-
-## 6. `store32`
-<!-- ond-spec-id: builtins/store32 -->
-
-```ond
-store32(DeviceCommandReg, DeviceCmdStart)
-store32(DeviceDestinationReg, dest as u32)
-```
-
-- 引数は 2 個だけ必要
-- 第 1 引数は `u32` または pointer
-- 第 2 引数は `u32`
-- 返り値はない
-
-MMIO register や raw memory を 32-bit 単位で書く用途を想定している。
-
-## 7. `new`
+## 5. `new`
 <!-- ond-spec-id: builtins/new -->
 
 ```ond
@@ -130,7 +100,7 @@ var ptr: *[4]u8 = new([4]u8)
 
 `alloc[T]`は未初期化の`T`を複数個格納する領域、`new(T)`はzero初期化した`T`を1個格納する領域の確保に使う。
 
-## 8. `thisFile`
+## 6. `thisFile`
 <!-- ond-spec-id: builtins/this-file -->
 
 ```ond
@@ -147,14 +117,14 @@ report(thisFile(), thisLine())
 
 例えばproject rootの`main.ond`では`"main.ond\000"`相当、package `graphics/draw`の`render.ond`では`"graphics/draw/render.ond\000"`相当のstorageを指す。
 
-## 9. `thisLine`
+## 7. `thisLine`
 <!-- ond-spec-id: builtins/this-line -->
 
 - 引数は取らない
 - `thisLine()` 自身の先頭tokenが置かれた、1始まりのsource行番号を`u32`で返す
 - 外側のcallや、現在の関数を呼び出した箇所の行番号には遡らない
 
-## 10. `trap`
+## 8. `trap`
 <!-- ond-spec-id: builtins/trap -->
 
 ```ond
@@ -169,26 +139,22 @@ trap `raw reason`
 - linkerは理由を`.onddebug`へ移し、実行命令は引数なしのCPU trapとする。
 - `trap()` は存在しない。
 
-## 11. 名前解決上の注意
+## 9. 名前解決上の注意
 <!-- ond-spec-id: builtins/name-resolution -->
 
 組み込み名は lexical binding として宣言できない。field 名など binding を作らない member 名には使用できる。
 
-## 12. よくある compile error
+## 10. よくある compile error
 <!-- ond-spec-id: builtins/compile-errors -->
 
 - `alloc(...)` は引数 1 個のみ
 - `free(...)` は引数 1 個のみ
 - `len(...)` は引数 1 個のみ
 - `len(...)` の引数は配列のみ
-- `load32(...)` は引数 1 個のみ
-- `load32(...)` の address は `u32` または pointer
-- `store32(...)` は引数 2 個のみ
-- `store32(...)` の value は `u32`
 - `thisFile()` と `thisLine()` は引数を取らない
 - `trap` の直後にはUTF-8として有効なstring literalを置く
 
-## 13. 関連仕様
+## 11. 関連仕様
 <!-- ond-spec-id: builtins/related-specifications -->
 
 - [Ond Language v1](./language.md)

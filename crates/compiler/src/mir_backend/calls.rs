@@ -10,18 +10,6 @@ impl Context<'_> {
     ) -> Result<(), Diagnostic> {
         use ond_compiler_core::semantic::Intrinsic;
         match callee {
-            mir::Callee::Intrinsic(Intrinsic::Store32) => {
-                self.load(arguments[0], 1);
-                self.load(arguments[1], 2);
-                self.e.emit(11, 2, 1, 0, 0);
-                return Ok(());
-            }
-            mir::Callee::Intrinsic(Intrinsic::Load32) => {
-                self.load(arguments[0], 1);
-                self.e.emit(7, 1, 1, 0, 0);
-                self.e.store(1, self.frame.value(i.results[0]));
-                return Ok(());
-            }
             mir::Callee::Intrinsic(
                 op @ (Intrinsic::Alloc(_) | Intrinsic::Free | Intrinsic::New(_)),
             ) => {

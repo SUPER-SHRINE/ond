@@ -15,23 +15,20 @@ pub(super) fn rows() -> Vec<Row> {
         row.occurrence = Some(0);
         rows.push(row);
     }
-    for call in ["free(nil)", "store32(0, 0)"] {
-        rows.push(
-            Row::new(
-                format!("BI-01.void-result.{call}"),
-                &["BI-01"],
-                format!("func test() {{ var x = {call} }}"),
-            )
-            .reject(
-                "declaration value count mismatch: expected 1, found 0",
-                format!("x = {call}"),
-            ),
-        );
-    }
+    let call = "free(nil)";
+    rows.push(
+        Row::new(
+            format!("BI-01.void-result.{call}"),
+            &["BI-01"],
+            format!("func test() {{ var x = {call} }}"),
+        )
+        .reject(
+            "declaration value count mismatch: expected 1, found 0",
+            format!("x = {call}"),
+        ),
+    );
     for (name, arity, spec) in [
         ("free", 1, &["BI-01"][..]),
-        ("load32", 1, &["BI-01"][..]),
-        ("store32", 2, &["BI-01"][..]),
         ("len", 1, &["BI-02"][..]),
         ("thisFile", 0, &["BI-03"][..]),
         ("thisLine", 0, &["BI-03"][..]),
@@ -50,8 +47,6 @@ pub(super) fn rows() -> Vec<Row> {
                 .reject(
                     match name {
                         "free" => "free expects 1 argument",
-                        "load32" => "load32 expects 1 argument",
-                        "store32" => "store32 expects 2 arguments",
                         "len" => "len expects 1 argument",
                         _ => {
                             if name == "thisFile" {
@@ -86,30 +81,6 @@ pub(super) fn rows() -> Vec<Row> {
                 &["BI-01"][..],
             ),
             (
-                "load32",
-                "load32(src)",
-                pointer || *ty == "u32",
-                "memory address requires u32 or pointer",
-                true,
-                &["BI-01"][..],
-            ),
-            (
-                "store-address",
-                "store32(src, 0)",
-                pointer || *ty == "u32",
-                "memory address requires u32 or pointer",
-                true,
-                &["BI-01"][..],
-            ),
-            (
-                "store-value",
-                "store32(0, src)",
-                *ty == "u32",
-                IDENTICAL,
-                false,
-                &["BI-01"][..],
-            ),
-            (
                 "len",
                 "len(src)",
                 *ty == "[2]i32",
@@ -136,7 +107,6 @@ pub(super) fn rows() -> Vec<Row> {
             "alloc-typed-result",
             "func test() -> *S { return alloc[S](4) }",
         ),
-        ("load-result", "func test() -> u32 { return load32(0) }"),
         ("free-nil", "func test() { free(nil) }"),
         ("new-array", "func test() -> *[4]u8 { return new([4]u8) }"),
         ("new-defined", "func test() -> *S { return new(S) }"),

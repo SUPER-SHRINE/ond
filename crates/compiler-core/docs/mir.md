@@ -343,7 +343,7 @@ MIR は次を含まない。
 - effect classification
 - structural/type validator、定義順・到達可能CFGのdominance・命令の型制約・関数symbol/signatureの検査
 - 除算・array indexの支配的な安全checkまたは静的証明の検査
-- `new`/`alloc`/`free`/`load32`/`store32` の型付きintrinsic lowering
+- `new`/`alloc`/`free` の型付きintrinsic lowering
 - integer/f32 literal と定数castの範囲検査、曖昧なimport名の拒否
 - `compile_loaded_project` 成功前の自動MIR検証
 - deterministic text dump の基盤
@@ -392,7 +392,6 @@ array・struct定数は全明示要素を評価した疎なCompositeとして保
 - `New(TypeId)`: 引数なし、`*T`を返す。Tのzero valueで初期化した領域を確保する。サイズ・alignmentは後段で解決する。
 - `Alloc(TypeId)`: `u32 -> *T`。`T`を指定個数格納できる未初期化領域を確保する。0個とallocation failureはnil。
 - `Free`: 任意のpointerを受け取り、戻り値なし。nilはno-op。
-- `Load32` / `Store32`: addressはu32またはpointer。読み出し結果・書き込み値はu32。targetのmemory access契約へ後段でloweringする。
 - `New`もallocation failureはnil。全intrinsicのcall effectは保守的に `Unknown` とし、評価・メモリアクセス順序を保持する。組み込み名はbindingとして宣言できず、user declarationでshadowしない。
 
 ### Function calls and multiple results

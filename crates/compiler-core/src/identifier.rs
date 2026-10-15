@@ -38,8 +38,6 @@ pub(crate) fn reserved_builtin(name: &str) -> bool {
                 | "trap"
                 | "sizeof"
                 | "alignof"
-                | "load32"
-                | "store32"
                 | "thisFile"
                 | "thisLine"
                 | "new"

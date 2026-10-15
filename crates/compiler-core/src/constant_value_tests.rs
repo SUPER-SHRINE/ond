@@ -76,7 +76,7 @@ fn rejects_overflow_at_all_value_boundaries() {
         "var x = S{x: 128 << 1}",
         "var x = 2147483647 + 1",
         "_ = 2147483647 + 1",
-        "store32(0, 4294967295 + 1)",
+        "*(0 as u32 as *u32) = 4294967295 + 1",
         "var x: u8 = 1; x = x + (128 << 1)",
     ] {
         let source = format!(

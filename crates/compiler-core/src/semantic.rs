@@ -11,8 +11,6 @@ pub enum Intrinsic {
     New(TypeId),
     Alloc(TypeId),
     Free,
-    Load32,
-    Store32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
