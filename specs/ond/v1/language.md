@@ -160,6 +160,8 @@ Kagura target における型のサイズ、alignment、zero value は [Ond for 
 - `len(array)` はoperandを通常どおり1回評価した後、配列長を表す `u32` の compile-time constant を返す。
 - 定数 index が `0 <= index < N` を満たさない場合はコンパイルエラーとする。
 - 実行時に決まる index には bounds check を生成し、範囲外なら回復不能なtrapで停止する。
+- 単純代入 `=` の直接の配列格納先では、左辺の operand と右辺をすべて評価して値を保持した後、各格納先への書き込みの直前に bounds check を行う
+- 配列読み取り、配列要素のアドレス取得、および compound assignment の bounds check は、それぞれの評価時に行う
 - compiler は index が範囲内だと証明できる場合だけ runtime bounds check を省略できる。
 - struct は `type Name struct { field: T }` と宣言し、`value.field` で field へアクセスする。
 - 配列と struct の代入および引数渡しは値コピーとする。
@@ -389,8 +391,10 @@ func split(ptr: *u8, len: i32) -> (*u8, i32) {
 - 複数の戻り値は関数の return と呼び出し結果にだけ存在し、tuple 型は作らない。
 - `return` の値の個数と型は関数宣言に一致しなければならない。
 - 複数の戻り値は同数の左辺へ宣言または代入できる。
-- 代入は右辺をすべて評価してから左辺へ書き込む。
-- compound assignment は左辺の格納先と現在値を 1 回評価してから右辺を評価し、演算結果を同じ格納先へ書き込む。`++` と `--` も同じ一回評価規則に従う。
+- 単純代入 `=` は左辺の index と pointer operand、次に右辺を、それぞれ左から右へ 1 回評価して値を保持し、左辺へ左から右に書き込む
+- 直接の配列格納先は各書き込みの直前に bounds check を行い、後続の検査でtrapになっても先行する書き込みは保持する
+- compound assignment は左辺の格納先の bounds check と現在値の読み取りを 1 回行ってから右辺を評価し、演算結果を同じ格納先へ書き込む
+- `++` と `--` も compound assignment と同じ一回評価規則に従う
 
 function pointer 型は parameter 型と戻り値型を含む。
 

@@ -163,6 +163,125 @@ fn bounds_fault_precedes_destination_write() {
     assert_eq!(bus.read32(0xffff8050).unwrap(), 0);
 }
 
+fn assignment_fault(image: &crate::linker::LinkedImage) -> (kagura::DefaultBus, u32) {
+    let (mut cpu, mut bus, _) = machine(image);
+    for _ in 0..20000 {
+        let pc = cpu.pc();
+        if let Err(fault) = cpu.step(&mut bus) {
+            assert!(format!("{fault:?}").contains("InvalidInstruction"));
+            return (bus, pc);
+        }
+    }
+    panic!("expected assignment fault");
+}
+
+#[test]
+fn assignment_bounds_check_follows_rhs_effects() {
+    for index in ["2", "-1"] {
+        let f = Fixture::new(&format!(
+            "package main\nfunc rhs()->u32{{store32(4294934608,123);return 99}}\nfunc main(){{var a:[2]u32;var i:i32={index};a[i]=rhs()}}"
+        ));
+        let image = crate::test_support::compile_image(&f.0).unwrap();
+        let (mut bus, _) = assignment_fault(&image);
+        assert_eq!(bus.read32(0xffff8050).unwrap(), 123, "index {index}");
+    }
+}
+
+#[test]
+fn assignment_bounds_check_preserves_earlier_stores() {
+    let f = Fixture::new(
+        "package main\nvar A:[2]u32\nvar Later:u32\nfunc rhs()->u32{store32(4294934608,123);return 99}\nfunc main(){var i:u32=2;A[0],A[i],Later=7,rhs(),8}",
+    );
+    let image = crate::test_support::compile_image(&f.0).unwrap();
+    let (mut bus, _) = assignment_fault(&image);
+    assert_eq!(bus.read32(0xffff8050).unwrap(), 123);
+    assert_eq!(bus.read32(image.symbols["main.A"]).unwrap(), 7);
+    assert_eq!(bus.read32(image.symbols["main.Later"]).unwrap(), 0);
+}
+
+#[test]
+fn assignment_bounds_check_follows_all_lhs_operands_and_rhs_values() {
+    let f = Fixture::new(
+        "package main\nvar Trace:u32\nvar A:[2]u32\nfunc index(tag:u32,i:u32)->u32{Trace=Trace*10+tag;return i}\nfunc pointer()->*u32{Trace=Trace*10+2;return &A[0]}\nfunc rhs(tag:u32)->u32{Trace=Trace*10+tag;store32(4294934608,Trace);return tag}\nfunc main(){A[index(1,2)],*pointer()=rhs(3),rhs(4)}",
+    );
+    let image = crate::test_support::compile_image(&f.0).unwrap();
+    let (mut bus, _) = assignment_fault(&image);
+    assert_eq!(bus.read32(0xffff8050).unwrap(), 1234);
+    assert_eq!(bus.read32(image.symbols["main.A"]).unwrap(), 0);
+}
+
+#[test]
+fn assignment_bounds_check_defers_nested_destination_projections() {
+    for (outer, inner) in [(2, 1), (1, 2)] {
+        let f = Fixture::new(&format!(
+            "package main\ntype S struct{{values:[2]u32}}\nvar Trace:u32\nfunc index(tag:u32,i:u32)->u32{{Trace=Trace*10+tag;return i}}\nfunc rhs()->u32{{Trace=Trace*10+3;store32(4294934608,Trace);return 99}}\nfunc main(){{var a:[2]S;a[index(1,{outer})].values[index(2,{inner})]=rhs()}}"
+        ));
+        let image = crate::test_support::compile_image(&f.0).unwrap();
+        let (mut bus, _) = assignment_fault(&image);
+        assert_eq!(bus.read32(0xffff8050).unwrap(), 123);
+    }
+}
+
+#[test]
+fn assignment_bounds_check_precedes_rhs_for_compound_assignment() {
+    let f = Fixture::new(
+        "package main\nfunc rhs()->u32{store32(4294934608,123);return 99}\nfunc main(){var a:[2]u32;var i:u32=2;a[i]+=rhs()}",
+    );
+    let image = crate::test_support::compile_image(&f.0).unwrap();
+    let (mut bus, _) = assignment_fault(&image);
+    assert_eq!(bus.read32(0xffff8050).unwrap(), 0);
+}
+
+#[test]
+fn assignment_bounds_check_remains_immediate_in_lhs_operand_reads() {
+    for body in [
+        "var a:[2]u32;var p=[1]*u32{&a[0]};var i:u32=1;*p[i]=rhs()",
+        "var a:[2]u32;var i:u32=2;*(&a[i])=rhs()",
+        "var a:[2]u32;var indices:[1]u32;var i:u32=1;a[indices[i]]=rhs()",
+        "var a:[2]u32;var i:u32=2;a[0],a[1]=a[i],rhs()",
+    ] {
+        let f = Fixture::new(&format!(
+            "package main\nfunc rhs()->u32{{store32(4294934608,123);return 99}}\nfunc main(){{{body}}}"
+        ));
+        let image = crate::test_support::compile_image(&f.0).unwrap();
+        let (mut bus, _) = assignment_fault(&image);
+        assert_eq!(bus.read32(0xffff8050).unwrap(), 0, "{body}");
+    }
+}
+
+#[test]
+fn assignment_bounds_check_follows_rhs_division_fault() {
+    use ond_protocol::debug::DebugOperation;
+    let f = Fixture::new(
+        "package main\nfunc main(){var a:[2]u32;var i:u32=2;var one:u32=1;var zero:u32=0;a[i]=one/zero}",
+    );
+    let image = crate::test_support::compile_image(&f.0).unwrap();
+    let (_, pc) = assignment_fault(&image);
+    let project = f.core();
+    let output = codegen_selected_with_debug(
+        &project,
+        &project
+            .packages
+            .iter()
+            .map(|p| p.logical_path.clone())
+            .collect(),
+        None,
+    )
+    .unwrap();
+    let debug = &output.debug[0];
+    let function = debug
+        .functions
+        .iter()
+        .find(|f| f.symbol == "main.main")
+        .unwrap();
+    let offset = pc - image.symbols["main.main"] + function.offset;
+    assert!(debug.ranges.iter().any(|range| {
+        range.start <= offset
+            && offset < range.end
+            && range.operation == DebugOperation::DivisionByZero
+    }));
+}
+
 #[test]
 fn layout_and_abi_have_independent_fixed_expectations() {
     use layout::Argument::{Register, Stack};

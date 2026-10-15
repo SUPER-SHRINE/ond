@@ -295,12 +295,20 @@ impl FunctionBuilder<'_> {
                     let targets = targets
                         .iter()
                         .map(|target| match target {
-                            Some(target) => self.lower_place(target).map(Some),
+                            Some(target) => {
+                                let mut checks = Vec::new();
+                                let place = if op.is_none() {
+                                    self.lower_place_with_checks(target, Some(&mut checks))?
+                                } else {
+                                    self.lower_place(target)?
+                                };
+                                Some(Some((place, checks)))
+                            }
                             None => Some(None),
                         })
                         .collect::<Option<Vec<_>>>()?;
                     if let Some(op) = op {
-                        let [Some(place)] = targets.as_slice() else {
+                        let [Some((place, _))] = targets.as_slice() else {
                             return None;
                         };
                         let place = place.clone();
@@ -389,7 +397,10 @@ impl FunctionBuilder<'_> {
                         return None;
                     }
                     for (place, value) in targets.into_iter().zip(evaluated) {
-                        if let Some(place) = place {
+                        if let Some((place, checks)) = place {
+                            for (check, check_span) in checks {
+                                self.emit_effect(mir::InstructionKind::Check(check), check_span);
+                            }
                             self.store_value(place, value, *span);
                         }
                     }
