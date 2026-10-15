@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
-use crate::diagnostic::{Diagnostic, FrontendError};
+use crate::diagnostic::{Diagnostic, Diagnostics, FrontendError};
 use crate::project::{
     LoadedProject, PackageId, PackageSources, load_project_with_overrides_and_exclusions,
 };
@@ -297,52 +297,87 @@ fn retain_reachable_packages(
     if optional.is_empty() {
         return Ok(());
     }
-    let ast = match crate::ond::parse_project(loaded) {
-        Ok(ast) => ast,
-        Err(_) if allow_incomplete => return Ok(()),
-        Err(error) => {
-            return Err(FrontendError::new(
-                error
-                    .diagnostics()
-                    .iter()
-                    .map(|diagnostic| {
-                        Diagnostic::error(Span::synthetic(), diagnostic.render(&loaded.sources))
-                    })
-                    .collect(),
-            ));
-        }
-    };
-    let graph = ast
+    let package_paths = loaded
         .packages
         .iter()
-        .map(|package| {
-            let imports = package
-                .files
-                .iter()
-                .flat_map(|file| &file.imports)
-                .map(|import| crate::decode_import_path(&import.path))
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(failure)?;
-            Ok((package.logical_path.clone(), imports))
-        })
-        .collect::<Result<BTreeMap<_, _>, FrontendError>>()?;
-    let mut reachable = graph
-        .keys()
-        .filter(|package| !optional.contains(*package))
+        .map(|package| package.logical_path.clone())
+        .collect::<BTreeSet<_>>();
+    let mut reachable = package_paths
+        .difference(optional)
         .cloned()
         .collect::<BTreeSet<_>>();
-    let mut pending = reachable.iter().cloned().collect::<Vec<_>>();
+    let root_imports = match imports_for_packages(loaded, &reachable) {
+        Ok(imports) => imports,
+        Err(_) if allow_incomplete => return Ok(()),
+        Err(error) => return Err(render_parse_error(loaded, error)),
+    };
+    let mut pending = root_imports.into_values().flatten().collect::<Vec<_>>();
+
     while let Some(package) = pending.pop() {
-        for import in graph.get(&package).into_iter().flatten() {
-            if reachable.insert(import.clone()) {
-                pending.push(import.clone());
-            }
+        if !package_paths.contains(&package) || !reachable.insert(package.clone()) {
+            continue;
         }
+        if !optional.contains(&package) {
+            continue;
+        }
+        let imports = match imports_for_packages(loaded, &BTreeSet::from([package])) {
+            Ok(imports) => imports,
+            Err(_) if allow_incomplete => return Ok(()),
+            Err(error) => return Err(render_parse_error(loaded, error)),
+        };
+        pending.extend(imports.into_values().flatten());
     }
+
     loaded
         .packages
         .retain(|package| reachable.contains(&package.logical_path));
     Ok(())
+}
+
+fn render_parse_error(loaded: &LoadedProject, error: FrontendError) -> FrontendError {
+    FrontendError::new(
+        error
+            .diagnostics()
+            .iter()
+            .map(|diagnostic| {
+                Diagnostic::error(Span::synthetic(), diagnostic.render(&loaded.sources))
+            })
+            .collect(),
+    )
+}
+
+fn imports_for_packages(
+    loaded: &LoadedProject,
+    selected: &BTreeSet<String>,
+) -> Result<BTreeMap<String, Vec<String>>, FrontendError> {
+    let mut diagnostics = Diagnostics::new();
+    let mut imports_by_package = BTreeMap::new();
+    for package in loaded
+        .packages
+        .iter()
+        .filter(|package| selected.contains(&package.logical_path))
+    {
+        let mut imports = Vec::new();
+        for &file_id in &package.files {
+            match crate::ond::parse_source_file(file_id, loaded.sources.file(file_id).text()) {
+                Ok(file) => {
+                    for import in file.imports {
+                        match crate::decode_import_path(&import.path) {
+                            Ok(path) => imports.push(path),
+                            Err(message) => return Err(failure(message)),
+                        }
+                    }
+                }
+                Err(error) => diagnostics.extend(error),
+            }
+        }
+        imports_by_package.insert(package.logical_path.clone(), imports);
+    }
+    if diagnostics.is_empty() {
+        Ok(imports_by_package)
+    } else {
+        Err(FrontendError::new(diagnostics.into_vec()))
+    }
 }
 
 fn assign_package_ids(loaded: &mut LoadedProject) {

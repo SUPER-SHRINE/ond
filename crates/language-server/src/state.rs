@@ -39,6 +39,7 @@ use crate::util::{
 pub struct ServerState {
     documents: BTreeMap<PathBuf, DocumentState>,
     library_roots: Vec<PathBuf>,
+    published_project_uris: BTreeMap<PathBuf, BTreeSet<String>>,
     symbol_indexes: BTreeMap<PathBuf, ProjectSymbolIndex>,
 }
 
@@ -52,6 +53,7 @@ impl ServerState {
         Self {
             documents: BTreeMap::new(),
             library_roots,
+            published_project_uris: BTreeMap::new(),
             symbol_indexes: BTreeMap::new(),
         }
     }
@@ -147,7 +149,12 @@ impl ServerState {
             }
         }
 
-        let uris = self.project_document_uris(root)?;
+        let root = normalize_path(root.to_path_buf());
+        let current_uris = self.project_source_uris(&root, &project)?;
+        let mut uris = current_uris.clone();
+        if let Some(previous_uris) = self.published_project_uris.get(&root) {
+            uris.extend(previous_uris.iter().cloned());
+        }
         for uri in uris {
             let path = normalize_path(path_from_uri(&uri)?);
             let diagnostics = diagnostics_by_path.remove(&path).unwrap_or_default();
@@ -158,6 +165,7 @@ impl ServerState {
             ));
             publish_diagnostics(writer, &uri, diagnostics)?;
         }
+        self.published_project_uris.insert(root, current_uris);
 
         Ok(())
     }
@@ -1022,10 +1030,34 @@ impl ServerState {
 
     fn project_document_uris(&self, root: &Path) -> Result<Vec<String>, String> {
         let mut uris = BTreeSet::new();
-        for path in self.documents.keys().filter(|path| path.starts_with(root)) {
+        for path in self.documents.keys().filter(|path| {
+            find_project_root(path).is_some_and(|document_root| same_path(&document_root, root))
+        }) {
             uris.insert(uri_from_path(path)?);
         }
         Ok(uris.into_iter().collect())
+    }
+
+    fn project_source_uris(
+        &self,
+        root: &Path,
+        project: &compiler::LoadedProject,
+    ) -> Result<BTreeSet<String>, String> {
+        let mut uris = BTreeSet::new();
+        for source in project.sources.files() {
+            let path = normalize_path(source.path().to_path_buf());
+            if path.is_file()
+                && find_project_root(&path).is_some_and(|source_root| same_path(&source_root, root))
+            {
+                uris.insert(uri_from_path(&path)?);
+            }
+        }
+        for path in self.documents.keys().filter(|path| {
+            find_project_root(path).is_some_and(|document_root| same_path(&document_root, root))
+        }) {
+            uris.insert(uri_from_path(path)?);
+        }
+        Ok(uris)
     }
 }
 
@@ -1195,6 +1227,162 @@ mod tests {
     use crate::protocol::TextDocumentContentChangeEvent;
     use crate::util::{normalize_path, same_path, uri_from_path};
 
+    fn published_diagnostics(output: &[u8], uri: &str) -> Vec<Value> {
+        let mut messages = Vec::new();
+        let mut offset = 0;
+        while offset < output.len() {
+            let header_end = output[offset..]
+                .windows(4)
+                .position(|window| window == b"\r\n\r\n")
+                .map(|index| offset + index)
+                .unwrap();
+            let header = std::str::from_utf8(&output[offset..header_end]).unwrap();
+            let body_length = header
+                .lines()
+                .find_map(|line| line.strip_prefix("Content-Length: "))
+                .unwrap()
+                .parse::<usize>()
+                .unwrap();
+            let body_start = header_end + 4;
+            let body_end = body_start + body_length;
+            let message: Value = serde_json::from_slice(&output[body_start..body_end]).unwrap();
+            if message["method"] == "textDocument/publishDiagnostics"
+                && message["params"]["uri"] == uri
+            {
+                messages.push(message["params"]["diagnostics"].clone());
+            }
+            offset = body_end;
+        }
+        messages
+    }
+
+    fn test_project_root(name: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "ond-lsp-{name}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&path).unwrap();
+        std::fs::canonicalize(path).unwrap()
+    }
+
+    #[test]
+    fn project_diagnostics_include_closed_files_but_exclude_path_dependencies() {
+        let base = test_project_root("closed-file-diagnostics");
+        let root = base.join("project");
+        let dependency = base.join("dependency");
+        let nested_dependency = root.join(".ond/dependencies/nested");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&dependency).unwrap();
+        std::fs::create_dir_all(&nested_dependency).unwrap();
+        let dependency_path = dependency.to_string_lossy().replace('\\', "/");
+        let nested_dependency_path = nested_dependency.to_string_lossy().replace('\\', "/");
+        std::fs::write(
+            root.join("ond.toml"),
+            format!(
+                "[dependencies]\nstandard = \"{dependency_path}\"\nnested = \"{nested_dependency_path}\"\n"
+            ),
+        )
+        .unwrap();
+        let main = root.join("main.ond");
+        let closed = root.join("closed.ond");
+        let external = dependency.join("broken.ond");
+        let nested_external = nested_dependency.join("broken.ond");
+        let source = "package main\nfunc main() {}\n";
+        std::fs::write(&main, source).unwrap();
+        std::fs::write(&closed, "").unwrap();
+        std::fs::write(
+            dependency.join("ond.toml"),
+            "[project]\nname = \"standard\"\n",
+        )
+        .unwrap();
+        std::fs::write(&external, "").unwrap();
+        std::fs::write(
+            nested_dependency.join("ond.toml"),
+            "[project]\nname = \"nested\"\n",
+        )
+        .unwrap();
+        std::fs::write(&nested_external, "").unwrap();
+
+        let uri = uri_from_path(&main).unwrap();
+        let closed_uri = uri_from_path(&closed).unwrap();
+        let external_uri = uri_from_path(&external).unwrap();
+        let nested_external_uri = uri_from_path(&nested_external).unwrap();
+        let mut state = ServerState::default();
+        let mut output = Vec::new();
+        state
+            .open_document(nested_external_uri.clone(), String::new(), &mut output)
+            .unwrap();
+        output.clear();
+        state
+            .open_document(uri, source.to_string(), &mut output)
+            .unwrap();
+
+        let closed_diagnostics = published_diagnostics(&output, &closed_uri);
+        assert_eq!(closed_diagnostics.len(), 1, "{output:?}");
+        assert!(!closed_diagnostics[0].as_array().unwrap().is_empty());
+        assert!(published_diagnostics(&output, &external_uri).is_empty());
+        assert!(published_diagnostics(&output, &nested_external_uri).is_empty());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn closed_project_diagnostics_are_cleared_after_fix_rename_and_removal() {
+        let root = test_project_root("clear-closed-diagnostics");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("ond.toml"), "[project]\nname = \"lsp\"\n").unwrap();
+        let main = root.join("main.ond");
+        let closed = root.join("closed.ond");
+        let renamed = root.join("renamed.ond");
+        let source = "package main\nfunc main() {}\n";
+        std::fs::write(&main, source).unwrap();
+        std::fs::write(&closed, "").unwrap();
+        let uri = uri_from_path(&main).unwrap();
+        let closed_uri = uri_from_path(&closed).unwrap();
+        let mut state = ServerState::default();
+        let mut output = Vec::new();
+        state
+            .open_document(uri, source.to_string(), &mut output)
+            .unwrap();
+
+        let initial_diagnostics = published_diagnostics(&output, &closed_uri);
+        assert_eq!(initial_diagnostics.len(), 1, "{output:?}");
+        assert!(!initial_diagnostics[0].as_array().unwrap().is_empty());
+
+        std::fs::write(&closed, "package main\n").unwrap();
+        output.clear();
+        state.watched_files_changed(&mut output).unwrap();
+        assert_eq!(
+            published_diagnostics(&output, &closed_uri),
+            vec![serde_json::json!([])]
+        );
+
+        std::fs::rename(&closed, &renamed).unwrap();
+        output.clear();
+        state.watched_files_changed(&mut output).unwrap();
+        assert_eq!(
+            published_diagnostics(&output, &closed_uri),
+            vec![serde_json::json!([])]
+        );
+        let renamed_uri = uri_from_path(&renamed).unwrap();
+        assert_eq!(
+            published_diagnostics(&output, &renamed_uri),
+            vec![serde_json::json!([])]
+        );
+
+        std::fs::remove_file(&renamed).unwrap();
+        output.clear();
+        state.watched_files_changed(&mut output).unwrap();
+        assert_eq!(
+            published_diagnostics(&output, &renamed_uri),
+            vec![serde_json::json!([])]
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn manifest_dependencies_are_loaded_for_language_features() {
         let base = normalize_path(std::env::temp_dir().join(format!(
@@ -1253,6 +1441,58 @@ mod tests {
                 .iter()
                 .any(|item| item["label"] == "local_alias/json")
         );
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn manifest_path_dependency_keeps_local_hover_and_document_symbols() {
+        let base = normalize_path(std::env::temp_dir().join(format!(
+                "ond-lsp-manifest-dependency-symbols-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            )));
+        let project = base.join("project");
+        let library = base.join("library");
+        std::fs::create_dir_all(library.join("io")).unwrap();
+        std::fs::create_dir_all(library.join("ansi/escape_code")).unwrap();
+        std::fs::create_dir_all(project.join("api")).unwrap();
+        std::fs::create_dir_all(&project).unwrap();
+        let dependency_path = library.to_string_lossy().replace('\\', "/");
+        std::fs::write(
+            project.join("ond.toml"),
+            format!("[dependencies]\nstandard = \"{dependency_path}\"\n"),
+        )
+        .unwrap();
+        std::fs::write(project.join("main.ond"), "package main\nfunc main() {}\n").unwrap();
+        std::fs::write(library.join("ond.toml"), "[project]\nname = \"standard\"\n").unwrap();
+        std::fs::write(library.join("io/io.ond"), "package io\nfunc Read(){}\n").unwrap();
+        std::fs::write(library.join("ansi/escape_code/api.ond"), "").unwrap();
+        let path = project.join("api/driver.ond");
+        std::fs::write(&path, "package api\nfunc Local() {}\n").unwrap();
+
+        let uri = uri_from_path(&path).unwrap();
+        let mut state = ServerState::default();
+        let mut output = Vec::new();
+        state
+            .open_document(
+                uri.clone(),
+                std::fs::read_to_string(&path).unwrap(),
+                &mut output,
+            )
+            .unwrap();
+        let hover = state.hover(&uri, 1, 5).unwrap();
+        let symbols = state.document_symbols(&uri).unwrap();
+        let has_local_symbol = symbols
+            .as_array()
+            .is_some_and(|items| items.iter().any(|item| item["name"] == "Local"));
+        assert!(
+            !hover.is_null() && has_local_symbol,
+            "hover={hover}; document symbols={symbols}"
+        );
+
         std::fs::remove_dir_all(base).unwrap();
     }
 
