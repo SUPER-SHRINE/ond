@@ -154,6 +154,9 @@ Kagura target における型のサイズ、alignment、zero value は [Ond for 
 <!-- ond-spec-id: type-system/arrays-and-structs -->
 
 - `[N]T` は長さ `N` の固定長配列である。
+- 固定長配列と推論長配列に共通して、長さ `N` は整数で `0 <= N <= 2^32-1` とする
+  - 配列要素の有効な index は `0 <= index < N` とする
+  - `N = 0` の配列に有効な index はない
 - 配列の長さはコンパイル時定数でなければならない。
 - 配列アクセスは `array[index]` とする。
 - index は integer でなければならない。
@@ -177,7 +180,8 @@ inferred := [...]u32{10, 20, 30}
 
 - struct literal は `T{field: value}` の field 名付き形式だけを許可する。
 - array literal は key のない要素と、compile-time integer index を key とする `index: value` を許可する。最初の key なし要素の index は 0、以降は直前の要素の index に 1 を加えた値とする。
-- `[...]T` の長さは最大 index に 1 を加えた値とする。要素がない `[...]T{}` は compile error とする。
+- `[...]T` の長さは最大 index に 1 を加えた値とし、その長さが `2^32-1` を超える場合は compile error とする
+  - 要素がない `[...]T{}` は compile error とする
 - field、index の重複と、固定長配列の範囲外 index は compile error とする。
 - 指定されなかった field と要素は zero value とする。
 - 初期化式は source 上の左から右へ 1 回ずつ評価する。
