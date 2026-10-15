@@ -12,13 +12,13 @@ use crate::completion::{
     append_builtin_type_completion_items, append_import_completion_items,
     append_indexed_symbol_completion_items, append_local_completion_items,
     append_top_level_completion_items, append_top_level_variable_completion_items,
-    completion_imported_package, completion_qualifier, completion_text_with_placeholder,
-    completion_text_with_value_placeholder, dedupe_completion_items, find_completion_selector,
-    import_path_completion_context, import_path_completion_items, keyword_completion_items,
-    package_member_completion_items, package_member_completion_items_for_alias,
-    project_completion_base_has_known_type, resolve_completion_methods,
-    resolve_completion_struct_fields, resolve_project_completion_methods,
-    resolve_project_completion_struct_fields, struct_field_completion_items,
+    completion_qualifier, completion_text_with_placeholder, completion_text_with_value_placeholder,
+    dedupe_completion_items, find_completion_selector, import_path_completion_context,
+    import_path_completion_items, keyword_completion_items, package_member_completion_items,
+    package_member_completion_items_for_alias, project_completion_base_has_known_type,
+    resolve_completion_methods, resolve_completion_struct_fields,
+    resolve_project_completion_methods, resolve_project_completion_struct_fields,
+    struct_field_completion_items,
 };
 use crate::hover::{hover_for_file, hover_for_project};
 use crate::navigation::{definition_for_file, definition_for_project};
@@ -80,10 +80,10 @@ impl ServerState {
         self.validate_uri(&uri, writer)
     }
 
-    pub fn close_document(&mut self, uri: &str) -> Result<(), String> {
+    pub fn close_document(&mut self, uri: &str, writer: &mut impl Write) -> Result<(), String> {
         let path = normalize_path(path_from_uri(uri)?);
         self.documents.remove(&path);
-        Ok(())
+        self.validate_uri(uri, writer)
     }
 
     pub fn validate_uri(&mut self, uri: &str, writer: &mut impl Write) -> Result<(), String> {
@@ -109,11 +109,11 @@ impl ServerState {
             overrides.len()
         ));
         let project = self.load_project(root, &overrides)?;
+        self.refresh_symbol_index(root, project.clone());
         let mut diagnostics_by_path = BTreeMap::<PathBuf, Vec<Value>>::new();
 
         let validation_error = match compiler::ond::parse_project(&project) {
-            Ok(ast) => {
-                self.store_symbol_index(root, project.clone(), ast);
+            Ok(_) => {
                 match catch_unwind(AssertUnwindSafe(|| {
                     compiler::compile_loaded_project(project.clone())
                 })) {
@@ -126,10 +126,7 @@ impl ServerState {
                     ])),
                 }
             }
-            Err(error) => {
-                self.seed_symbol_index_from_disk(root);
-                Some(error)
-            }
+            Err(error) => Some(error),
         };
         if let Some(error) = validation_error {
             for diagnostic in error.diagnostics() {
@@ -314,45 +311,20 @@ impl ServerState {
         &mut self,
         root: &Path,
         overrides: &BTreeMap<PathBuf, String>,
-    ) -> Result<Option<ProjectSymbolIndex>, String> {
+    ) -> Result<ProjectSymbolIndex, String> {
         let project = self.load_project(root, overrides)?;
-        if let Ok(ast) = compiler::ond::parse_project(&project) {
-            self.store_symbol_index(root, project, ast);
-        } else {
-            self.seed_symbol_index_from_disk(root);
-        }
-        Ok(self
-            .symbol_indexes
-            .get(&normalize_path(root.to_path_buf()))
-            .cloned())
+        Ok(self.refresh_symbol_index(root, project))
     }
 
-    fn store_symbol_index(
+    fn refresh_symbol_index(
         &mut self,
         root: &Path,
         project: compiler::LoadedProject,
-        ast: ast::Project,
-    ) {
-        self.symbol_indexes.insert(
-            normalize_path(root.to_path_buf()),
-            ProjectSymbolIndex::new(project, ast),
-        );
-    }
-
-    fn seed_symbol_index_from_disk(&mut self, root: &Path) {
+    ) -> ProjectSymbolIndex {
         let key = normalize_path(root.to_path_buf());
-        if self.symbol_indexes.contains_key(&key) {
-            return;
-        }
-        let overrides = BTreeMap::new();
-        let Ok(project) = self.load_project(root, &overrides) else {
-            return;
-        };
-        let Ok(ast) = compiler::ond::parse_project(&project) else {
-            return;
-        };
-        self.symbol_indexes
-            .insert(key, ProjectSymbolIndex::new(project, ast));
+        let index = ProjectSymbolIndex::refresh(project, self.symbol_indexes.get(&key));
+        self.symbol_indexes.insert(key, index.clone());
+        index
     }
 
     fn apply_content_changes(
@@ -519,24 +491,6 @@ impl ServerState {
     ) -> Result<Vec<Value>, String> {
         let base_overrides = self.collect_overrides();
         let cached_index = self.symbol_index(root, &base_overrides)?;
-        let mut index = cached_index.clone();
-        if index.is_none() {
-            let project = self
-                .load_project(root, &base_overrides)
-                .or_else(|_| self.load_project(root, &BTreeMap::new()))?;
-            let (mut ast, _) = parse_project_for_index(&project);
-            let current_file_parsed = ast
-                .packages
-                .iter()
-                .flat_map(|package| &package.files)
-                .any(|file| same_path(project.sources.file(file.file_id).path(), path));
-            if current_file_parsed {
-                index = Some(ProjectSymbolIndex::new(project, ast));
-            } else if let Ok(disk_project) = self.load_project(root, &BTreeMap::new()) {
-                ast = parse_project_for_index(&disk_project).0;
-                index = Some(ProjectSymbolIndex::new(disk_project, ast));
-            }
-        }
         let mut overrides = base_overrides;
         let completion_marker = self.documents.get(path).and_then(|document| {
             completion_text_with_placeholder(&document.text, line, character).map(
@@ -556,20 +510,22 @@ impl ServerState {
         if let Some(text) = &value_placeholder {
             overrides.insert(path.to_path_buf(), text.clone());
         }
-        let mut repaired_parse_failures = BTreeSet::new();
         let repaired_index = if completion_marker.is_some() || value_placeholder.is_some() {
             self.load_project(root, &overrides)
                 .ok()
                 .and_then(|project| {
-                    let (ast, failed_packages) = parse_project_for_index(&project);
-                    let current_file_parsed = ast
-                        .packages
-                        .iter()
-                        .flat_map(|package| &package.files)
-                        .any(|file| same_path(project.sources.file(file.file_id).path(), path));
-                    if failed_packages.is_empty() || current_file_parsed {
-                        repaired_parse_failures = failed_packages;
-                        Some(ProjectSymbolIndex::new(project, ast))
+                    let repaired = ProjectSymbolIndex::refresh(project, Some(&cached_index));
+                    let current_file_parsed = !repaired.file_failed_to_parse(path)
+                        && repaired
+                            .ast
+                            .packages
+                            .iter()
+                            .flat_map(|package| &package.files)
+                            .any(|file| {
+                                same_path(repaired.loaded.sources.file(file.file_id).path(), path)
+                            });
+                    if current_file_parsed {
+                        Some(repaired)
                     } else {
                         None
                     }
@@ -577,17 +533,16 @@ impl ServerState {
         } else {
             None
         };
-        let index = if index.as_ref().is_some_and(|index| {
-            index
-                .ast
-                .packages
-                .iter()
-                .flat_map(|package| &package.files)
-                .any(|file| same_path(index.loaded.sources.file(file.file_id).path(), path))
-        }) {
-            index
+        let index = if cached_index
+            .ast
+            .packages
+            .iter()
+            .flat_map(|package| &package.files)
+            .any(|file| same_path(cached_index.loaded.sources.file(file.file_id).path(), path))
+        {
+            cached_index
         } else {
-            repaired_index.clone().or(index)
+            repaired_index.clone().unwrap_or(cached_index)
         };
         let completion_qualifier = self
             .documents
@@ -603,13 +558,19 @@ impl ServerState {
         let mut items = keyword_completion_items();
         append_builtin_type_completion_items(&mut items);
 
-        let Some(index) = index else {
+        let contains_current_file = index
+            .ast
+            .packages
+            .iter()
+            .flat_map(|package| &package.files)
+            .any(|file| same_path(index.loaded.sources.file(file.file_id).path(), path));
+        if !contains_current_file {
             if completion_marker.is_some() {
                 return Ok(Vec::new());
             }
             append_builtin_function_completion_items(&mut items);
             return Ok(items);
-        };
+        }
         let project = &index.loaded;
         let ast = &index.ast;
 
@@ -689,25 +650,11 @@ impl ServerState {
                             ) {
                                 return Ok(Vec::new());
                             }
-                            let member_index = match &base {
-                                ast::Expr::Name(path) if path.segments.len() == 1 => {
-                                    completion_imported_package(
-                                        &selector_index.ast,
-                                        selector_file,
-                                        &path.segments[0].name,
-                                    )
-                                    .filter(|package| {
-                                        repaired_parse_failures.contains(&package.logical_path)
-                                    })
-                                    .map_or(selector_index, |_| {
-                                        cached_index.as_ref().unwrap_or(&index)
-                                    })
-                                }
-                                _ => selector_index,
-                            };
-                            if let Some(items) =
-                                package_member_completion_items(member_index, selector_file, &base)
-                            {
+                            if let Some(items) = package_member_completion_items(
+                                selector_index,
+                                selector_file,
+                                &base,
+                            ) {
                                 return Ok(items);
                             }
                         }
@@ -722,8 +669,32 @@ impl ServerState {
                         completion_qualifier.as_deref(),
                         cursor_offset,
                         self.documents.get(path),
-                    ) {
-                        let span = Span::new(current_file.file_id, offset, offset);
+                    ) && let Some((selector_index, selector_package, selector_file)) =
+                        repaired_index
+                            .as_ref()
+                            .and_then(|repaired| {
+                                repaired.ast.packages.iter().find_map(|package| {
+                                    package
+                                        .files
+                                        .iter()
+                                        .find(|file| {
+                                            same_path(
+                                                repaired.loaded.sources.file(file.file_id).path(),
+                                                path,
+                                            )
+                                        })
+                                        .map(|file| (repaired, package, file))
+                                })
+                            })
+                            .or_else(|| {
+                                (!index.file_failed_to_parse(path)).then_some((
+                                    &index,
+                                    package,
+                                    current_file,
+                                ))
+                            })
+                    {
+                        let span = Span::new(selector_file.file_id, offset, offset);
                         let base = ast::Expr::Name(ast::Path {
                             segments: vec![ast::Ident {
                                 name: name.to_string(),
@@ -732,21 +703,21 @@ impl ServerState {
                             span,
                         });
                         let function = completion_function_for_incomplete_member(
-                            current_file,
+                            selector_file,
                             &document.text,
                             offset,
                         );
                         let methods = resolve_project_completion_methods(
-                            &index.ast,
-                            package,
-                            current_file,
+                            &selector_index.ast,
+                            selector_package,
+                            selector_file,
                             function,
                             &base,
                         );
                         if let Some(fields) = resolve_project_completion_struct_fields(
-                            &index.ast,
-                            package,
-                            current_file,
+                            &selector_index.ast,
+                            selector_package,
+                            selector_file,
                             function,
                             &base,
                         ) {
@@ -772,14 +743,16 @@ impl ServerState {
                             })
                         })
                     })
-                    .unwrap_or(current_file);
+                    .or_else(|| (!index.file_failed_to_parse(path)).then_some(current_file));
                 let offset = cursor_offset.unwrap_or_else(|| {
                     project
                         .sources
                         .file(current_file.file_id)
                         .offset_at_line_col(line as usize + 1, character as usize + 1)
                 });
-                append_local_completion_items(&mut items, completion_file, offset);
+                if let Some(completion_file) = completion_file {
+                    append_local_completion_items(&mut items, completion_file, offset);
+                }
             }
 
             break;
@@ -896,9 +869,7 @@ impl ServerState {
         character: u32,
     ) -> Result<Value, String> {
         let overrides = self.collect_overrides();
-        let Some(index) = self.symbol_index(root, &overrides)? else {
-            return Ok(Value::Null);
-        };
+        let index = self.symbol_index(root, &overrides)?;
         let project = &index.loaded;
         let ast = &index.ast;
         for package in &ast.packages {
@@ -951,9 +922,10 @@ impl ServerState {
         character: u32,
     ) -> Result<Value, String> {
         let overrides = self.collect_overrides();
-        let Some(index) = self.symbol_index(root, &overrides)? else {
+        let index = self.symbol_index(root, &overrides)?;
+        if index.file_failed_to_parse(path) {
             return Ok(Value::Null);
-        };
+        }
         let project = &index.loaded;
         let ast = &index.ast;
 
@@ -997,9 +969,7 @@ impl ServerState {
 
     fn project_document_symbols(&mut self, path: &Path, root: &Path) -> Result<Value, String> {
         let overrides = self.collect_overrides();
-        let Some(index) = self.symbol_index(root, &overrides)? else {
-            return Ok(Value::Array(Vec::new()));
-        };
+        let index = self.symbol_index(root, &overrides)?;
         let project = &index.loaded;
 
         for package in &index.ast.packages {
@@ -1095,39 +1065,6 @@ fn completion_function_for_incomplete_member<'a>(
                 .max_by_key(|(start, _)| *start)
                 .map(|(_, scope)| scope)
         })
-}
-
-fn parse_project_for_index(project: &compiler::LoadedProject) -> (ast::Project, BTreeSet<String>) {
-    let mut failed_packages = BTreeSet::new();
-    let packages = project
-        .packages
-        .iter()
-        .map(|package| {
-            let mut package_failed = false;
-            let files = package
-                .files
-                .iter()
-                .filter_map(|file_id| {
-                    let file = project.sources.file(*file_id);
-                    match compiler::parse_source_file(*file_id, file.text()) {
-                        Ok(ast) => Some(ast),
-                        Err(_) => {
-                            package_failed = true;
-                            None
-                        }
-                    }
-                })
-                .collect();
-            if package_failed {
-                failed_packages.insert(package.logical_path.clone());
-            }
-            ast::Package {
-                logical_path: package.logical_path.clone(),
-                files,
-            }
-        })
-        .collect();
-    (ast::Project { packages }, failed_packages)
 }
 
 fn incomplete_completion_function_name(text: &str, offset: usize) -> Option<&str> {
@@ -1379,6 +1316,56 @@ mod tests {
         assert_eq!(
             published_diagnostics(&output, &renamed_uri),
             vec![serde_json::json!([])]
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn closing_document_revalidates_project_disk_and_clears_standalone_diagnostics() {
+        let assert_project_close =
+            |name: &str, disk_text: &str, buffer_text: &str, has_errors: bool| {
+                let root = test_project_root(name);
+                std::fs::write(root.join("ond.toml"), "[project]\nname = \"lsp\"\n").unwrap();
+                let file = root.join("main.ond");
+                std::fs::write(&file, disk_text).unwrap();
+                let uri = uri_from_path(&file).unwrap();
+                let mut state = ServerState::default();
+                let mut output = Vec::new();
+                state
+                    .open_document(uri.clone(), buffer_text.to_string(), &mut output)
+                    .unwrap();
+
+                output.clear();
+                state.close_document(&uri, &mut output).unwrap();
+                let published = published_diagnostics(&output, &uri);
+                assert_eq!(
+                    published.last().unwrap().as_array().unwrap().is_empty(),
+                    !has_errors
+                );
+                std::fs::remove_dir_all(root).unwrap();
+            };
+
+        let valid = "package main\nfunc main() {}\n";
+        let invalid = "package main\nfunc main( {\n";
+        // The closed document is the only open file when didClose is handled.
+        assert_project_close("close-disk-invalid", invalid, invalid, true);
+        assert_project_close("close-disk-valid", valid, invalid, false);
+        assert_project_close("close-buffer-valid", invalid, valid, true);
+
+        let root = test_project_root("close-standalone");
+        let file = root.join("standalone.ond");
+        std::fs::write(&file, "").unwrap();
+        let uri = uri_from_path(&file).unwrap();
+        let mut state = ServerState::default();
+        let mut output = Vec::new();
+        state
+            .open_document(uri.clone(), String::new(), &mut output)
+            .unwrap();
+        output.clear();
+        state.close_document(&uri, &mut output).unwrap();
+        assert_eq!(
+            published_diagnostics(&output, &uri).last().unwrap(),
+            &serde_json::json!([])
         );
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -2152,7 +2139,7 @@ mod tests {
             .open_document(uri.clone(), valid.to_string(), &mut output)
             .unwrap();
 
-        let source = valid.replace("_ = box.Read()", "box.");
+        let source = valid.replace("_ = box.Read()", "_ = box.");
         state
             .change_document(
                 uri.clone(),
@@ -2173,7 +2160,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(labels, vec!["Value", "value", "Read", "read"]);
 
-        let nested_source = valid.replace("_ = box.value.hidden", "box.value.");
+        let nested_source = valid.replace("_ = box.value.hidden", "_ = box.value.");
         state
             .change_document(
                 uri.clone(),
@@ -2299,7 +2286,7 @@ mod tests {
             .open_document(uri.clone(), valid.to_string(), &mut output)
             .unwrap();
 
-        let member_source = "package main\ntype Counter struct { Value: u32; value: u32 }\nfunc (counter: *Counter) Reset() {}\nfunc (counter: *Counter) reset() {}\nfunc (counter: *Counter) Tick(delta: u32) { counter. }\nfunc main() {}\n";
+        let member_source = "package main\ntype Counter struct { Value: u32; value: u32 }\nfunc (counter: *Counter) Reset() {}\nfunc (counter: *Counter) reset() {}\nfunc (counter: *Counter) Tick(delta: u32) { _ = counter. }\nfunc main() {}\n";
         state
             .change_document(
                 uri.clone(),
@@ -2320,10 +2307,10 @@ mod tests {
         }
 
         for incomplete_body in [
-            "if counter.",
-            "if delta > 0 && counter.",
+            "if counter. {}",
+            "if delta > 0 && counter. {}",
             "var total = delta + counter.",
-            "delta + counter.",
+            "_ = delta + counter.",
         ] {
             let source = format!(
                 "package main\ntype Counter struct {{ Value: u32; value: u32 }}\nfunc (counter: *Counter) Reset() {{}}\nfunc (counter: *Counter) reset() {{}}\nfunc (counter: *Counter) Tick(delta: u32) {{ {incomplete_body} }}\nfunc main() {{}}\n"
@@ -2338,7 +2325,8 @@ mod tests {
                     &mut output,
                 )
                 .unwrap();
-            let character = source.lines().nth(4).unwrap().find(" }").unwrap() as u32;
+            let line = source.lines().nth(4).unwrap();
+            let character = line.find("counter.").unwrap() as u32 + "counter.".len() as u32;
             let items = state.completions(&uri, 4, character).unwrap();
             for expected in ["Value", "value", "Reset", "reset", "Tick"] {
                 assert!(
@@ -2348,7 +2336,7 @@ mod tests {
             }
         }
 
-        let multiline_source = "package main\ntype Counter struct { Value: u32; value: u32 }\nfunc (counter: *Counter) Reset() {}\nfunc (counter: *Counter) reset() {}\nfunc (counter: *Counter) Tick(delta: u32) {\n    if delta > 0 &&\n        counter.\n}\nfunc main() {}\n";
+        let multiline_source = "package main\ntype Counter struct { Value: u32; value: u32 }\nfunc (counter: *Counter) Reset() {}\nfunc (counter: *Counter) reset() {}\nfunc (counter: *Counter) Tick(delta: u32) {\n    if delta > 0 &&\n        counter. {}\n}\nfunc main() {}\n";
         state
             .change_document(
                 uri.clone(),
@@ -2359,7 +2347,9 @@ mod tests {
                 &mut output,
             )
             .unwrap();
-        let multiline_character = multiline_source.lines().nth(6).unwrap().len() as u32;
+        let multiline_line = multiline_source.lines().nth(6).unwrap();
+        let multiline_character =
+            multiline_line.find("counter.").unwrap() as u32 + "counter.".len() as u32;
         let multiline_items = state.completions(&uri, 6, multiline_character).unwrap();
         for expected in ["Value", "value", "Reset", "reset", "Tick"] {
             assert!(
@@ -2979,15 +2969,22 @@ mod tests {
         assert!(String::from_utf8_lossy(&output).contains("publishDiagnostics"));
         let baseline_line = baseline.lines().nth(2).unwrap();
         let init_character = baseline_line.find("Init").unwrap() as u32 + 1;
-        assert!(state.hover(&uri, 2, init_character).unwrap().is_null());
-        assert!(state.definition(&uri, 2, init_character).unwrap().is_null());
         assert!(
-            state
+            !state.hover(&uri, 2, init_character).unwrap().is_null(),
+            "valid file hover should survive an unrelated package parse error"
+        );
+        assert!(
+            !state.definition(&uri, 2, init_character).unwrap().is_null(),
+            "valid file definition should survive an unrelated package parse error"
+        );
+        assert!(
+            !state
                 .document_symbols(&uri)
                 .unwrap()
                 .as_array()
                 .unwrap()
-                .is_empty()
+                .is_empty(),
+            "valid file symbols should survive an unrelated package parse error"
         );
         state
             .change_document(
@@ -3032,6 +3029,275 @@ mod tests {
         assert!(
             completions.iter().all(|item| item["label"] != "hidden"),
             "private member was exposed: {completions:?}"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn project_file_index_refreshes_files_independently_and_drops_stale_declarations() {
+        let root = test_project_root("per-file-index");
+        std::fs::create_dir_all(root.join("model")).unwrap();
+        std::fs::write(root.join("ond.toml"), "[project]\nname=\"app\"\n").unwrap();
+        let main = root.join("main.ond");
+        let same = root.join("same.ond");
+        let model = root.join("model/item.ond");
+        let initial = "package main\nimport \"model\"\nfunc Use(stale: model.Item) { var staleLocal: model.Item; _ = staleLocal.Field }\nfunc main() { Shared() }\n";
+        let updated = "package main\nimport \"model\"\nconst Fresh: u32 = 1\nfunc Use(current: model.Item) { var local: model.Item; _ = current; _ = local }\nfunc main() { Shared() }\n";
+        std::fs::write(&main, initial).unwrap();
+        std::fs::write(&same, "package main\nfunc Shared() {}\n").unwrap();
+        std::fs::write(&model, "package model\ntype Item struct { Field: u32 }\n").unwrap();
+
+        let uri = uri_from_path(&main).unwrap();
+        let mut state = ServerState::default();
+        let mut output = Vec::new();
+        state
+            .open_document(uri.clone(), initial.to_string(), &mut output)
+            .unwrap();
+
+        // A new file shifts source slots while the other package fails to parse.
+        std::fs::write(root.join("aaa.ond"), "package main\nfunc Earlier() {}\n").unwrap();
+        std::fs::write(&same, "package main\nfunc Shared() {}\nfunc Broken(\n").unwrap();
+        std::fs::write(
+            &model,
+            "package model\ntype Item struct { Field: u32 }\nfunc Broken(\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("model/extra.ond"),
+            "package model\nfunc NewModel() {}\n",
+        )
+        .unwrap();
+        state
+            .change_document(
+                uri.clone(),
+                vec![TextDocumentContentChangeEvent {
+                    text: updated.to_string(),
+                    range: None,
+                }],
+                &mut output,
+            )
+            .unwrap();
+
+        let fresh_line = updated.lines().nth(2).unwrap();
+        let fresh_hover = state
+            .hover(&uri, 2, fresh_line.find("Fresh").unwrap() as u32 + 1)
+            .unwrap();
+        assert!(
+            fresh_hover["contents"]["value"]
+                .as_str()
+                .is_some_and(|value| value.contains("Fresh")),
+            "updated valid file was not indexed: {fresh_hover}"
+        );
+        let shared_line = updated.lines().nth(4).unwrap();
+        let shared_character = shared_line.find("Shared").unwrap() as u32 + 1;
+        assert!(
+            !state.hover(&uri, 4, shared_character).unwrap().is_null(),
+            "last-good declaration from the failed file was not available"
+        );
+        let definition = state.definition(&uri, 4, shared_character).unwrap();
+        assert!(
+            definition[0]["targetUri"]
+                .as_str()
+                .is_some_and(|target| target.ends_with("same.ond")),
+            "failed-file declaration mapped to the wrong source: {definition}"
+        );
+
+        let use_line = updated.lines().nth(3).unwrap();
+        let completions = state
+            .completions(
+                &uri,
+                3,
+                use_line.rfind("local").unwrap() as u32 + "local".len() as u32,
+            )
+            .unwrap();
+        for expected in ["current", "local"] {
+            assert!(
+                completions.iter().any(|item| item["label"] == expected),
+                "missing current local/parameter {expected}: {completions:?}"
+            );
+        }
+        assert!(
+            completions
+                .iter()
+                .all(|item| { item["label"] != "stale" && item["label"] != "staleLocal" }),
+            "locals from the previous file text leaked: {completions:?}"
+        );
+
+        let member_completion =
+            updated.replace("_ = current; _ = local", "_ = current.Field; _ = local.");
+        state
+            .change_document(
+                uri.clone(),
+                vec![TextDocumentContentChangeEvent {
+                    text: member_completion.clone(),
+                    range: None,
+                }],
+                &mut output,
+            )
+            .unwrap();
+        let use_line = member_completion.lines().nth(3).unwrap();
+        let completions = state
+            .completions(
+                &uri,
+                3,
+                use_line.find("local.").unwrap() as u32 + "local.".len() as u32,
+            )
+            .unwrap();
+        assert!(
+            completions.iter().any(|item| item["label"] == "Field"),
+            "imported type information was not available for the current local: {completions:?}"
+        );
+        let package_completion = updated.replace("_ = current; _ = local", "model.");
+        state
+            .change_document(
+                uri.clone(),
+                vec![TextDocumentContentChangeEvent {
+                    text: package_completion.clone(),
+                    range: None,
+                }],
+                &mut output,
+            )
+            .unwrap();
+        let use_line = package_completion.lines().nth(3).unwrap();
+        let completions = state
+            .completions(
+                &uri,
+                3,
+                use_line.find("model.").unwrap() as u32 + "model.".len() as u32,
+            )
+            .unwrap();
+        for expected in ["Item", "NewModel"] {
+            assert!(
+                completions.iter().any(|item| item["label"] == expected),
+                "missing retained/new imported member {expected}: {completions:?}"
+            );
+        }
+
+        let changed_type = format!(
+            "{}func Broken(\n",
+            updated
+                .replace("current: model.Item", "current: model.Other")
+                .replace("_ = current; _ = local", "_ = current.; _ = local")
+        );
+        state
+            .change_document(
+                uri.clone(),
+                vec![TextDocumentContentChangeEvent {
+                    text: changed_type.clone(),
+                    range: None,
+                }],
+                &mut output,
+            )
+            .unwrap();
+        let changed_type_line = changed_type.lines().nth(3).unwrap();
+        let completions = state
+            .completions(
+                &uri,
+                3,
+                changed_type_line.find("current.").unwrap() as u32 + "current.".len() as u32,
+            )
+            .unwrap();
+        assert!(
+            completions.iter().all(|item| item["label"] != "Field"),
+            "member from the last-good type leaked after the current local type changed: {completions:?}"
+        );
+
+        let malformed_locals = format!(
+            "{}func Broken(\n",
+            updated
+                .replace("Use(current:", "Use(renamed:")
+                .replace("var local:", "var newLocal:")
+                .replace("_ = current;", "_ = renamed;")
+                .replace("_ = local", "_ = newLocal")
+        );
+        state
+            .change_document(
+                uri.clone(),
+                vec![TextDocumentContentChangeEvent {
+                    text: malformed_locals.clone(),
+                    range: None,
+                }],
+                &mut output,
+            )
+            .unwrap();
+        let malformed_line = malformed_locals.lines().nth(3).unwrap();
+        let completions = state
+            .completions(
+                &uri,
+                3,
+                malformed_line.rfind("newLocal").unwrap() as u32 + "newLocal".len() as u32,
+            )
+            .unwrap();
+        assert!(
+            completions.iter().all(|item| {
+                item["label"] != "current"
+                    && item["label"] != "local"
+                    && item["label"] != "stale"
+                    && item["label"] != "staleLocal"
+            }),
+            "malformed current file reused old parameters or locals: {completions:?}"
+        );
+        assert!(
+            state
+                .hover(&uri, 2, fresh_line.find("Fresh").unwrap() as u32 + 1)
+                .unwrap()
+                .is_null(),
+            "hover used stale spans from the last-good version of an invalid file"
+        );
+        assert_eq!(
+            state.symbol_indexes[&normalize_path(root.clone())].last_good_source(&main),
+            Some(updated),
+            "temporary completion repair replaced the last-good source snapshot"
+        );
+        state
+            .change_document(
+                uri.clone(),
+                vec![TextDocumentContentChangeEvent {
+                    text: updated.to_string(),
+                    range: None,
+                }],
+                &mut output,
+            )
+            .unwrap();
+        let repaired = updated.replace("Shared()", "Repaired()");
+        state
+            .change_document(
+                uri.clone(),
+                vec![TextDocumentContentChangeEvent {
+                    text: repaired.clone(),
+                    range: None,
+                }],
+                &mut output,
+            )
+            .unwrap();
+        std::fs::write(&same, "package main\nfunc Repaired() {}\n").unwrap();
+        state.watched_files_changed(&mut output).unwrap();
+        let repaired_line = repaired.lines().nth(4).unwrap();
+        let repaired_character = repaired_line.find("Repaired").unwrap() as u32 + 1;
+        assert!(!state.hover(&uri, 4, repaired_character).unwrap().is_null());
+        assert!(
+            state
+                .hover(&uri, 4, repaired_line.find("Repaired").unwrap() as u32 + 1)
+                .unwrap()["contents"]["value"]
+                .as_str()
+                .is_some_and(|value| value.contains("Repaired"))
+        );
+
+        let renamed = root.join("renamed.ond");
+        std::fs::rename(&same, &renamed).unwrap();
+        state.watched_files_changed(&mut output).unwrap();
+        let definition = state.definition(&uri, 4, repaired_character).unwrap();
+        assert!(
+            definition[0]["targetUri"]
+                .as_str()
+                .is_some_and(|target| target.ends_with("renamed.ond")),
+            "rename left a stale declaration location: {definition}"
+        );
+        std::fs::remove_file(&renamed).unwrap();
+        state.watched_files_changed(&mut output).unwrap();
+        assert!(
+            state.hover(&uri, 4, repaired_character).unwrap().is_null(),
+            "deleted declaration remained in the index"
         );
         std::fs::remove_dir_all(root).unwrap();
     }

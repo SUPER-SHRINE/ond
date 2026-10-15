@@ -1,5 +1,7 @@
 use compiler::ir::ast;
-use std::collections::BTreeMap;
+use compiler::source::{FileId, SourceDb};
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IndexedSymbolKind {
@@ -17,14 +19,21 @@ pub struct IndexedSymbol {
 }
 
 #[derive(Debug, Clone)]
-pub struct ProjectSymbolIndex {
-    pub loaded: compiler::LoadedProject,
-    pub ast: ast::Project,
+pub(crate) struct ProjectSymbolIndex {
+    pub(crate) loaded: compiler::LoadedProject,
+    pub(crate) ast: ast::Project,
     packages: BTreeMap<String, Vec<IndexedSymbol>>,
+    last_good_sources: BTreeMap<PathBuf, String>,
+    failed_files: BTreeSet<PathBuf>,
 }
 
 impl ProjectSymbolIndex {
-    pub fn new(loaded: compiler::LoadedProject, ast: ast::Project) -> Self {
+    fn with_file_state(
+        loaded: compiler::LoadedProject,
+        ast: ast::Project,
+        last_good_sources: BTreeMap<PathBuf, String>,
+        failed_files: BTreeSet<PathBuf>,
+    ) -> Self {
         let packages = ast
             .packages
             .iter()
@@ -42,7 +51,74 @@ impl ProjectSymbolIndex {
             loaded,
             ast,
             packages,
+            last_good_sources,
+            failed_files,
         }
+    }
+
+    pub(crate) fn refresh(loaded: compiler::LoadedProject, previous: Option<&Self>) -> Self {
+        let mut last_good_sources = BTreeMap::new();
+        let mut failed_files = BTreeSet::new();
+        let mut sources = SourceDb::default();
+        let mut parsed_files = BTreeMap::new();
+        for (index, source) in loaded.sources.files().iter().enumerate() {
+            let path = source.path().to_path_buf();
+            let text = source.text().to_string();
+            let file_id = FileId(index);
+            let indexed_text = match compiler::parse_source_file(file_id, &text) {
+                Ok(file) => {
+                    last_good_sources.insert(path.clone(), text.clone());
+                    parsed_files.insert(file_id, file);
+                    text
+                }
+                Err(_) => {
+                    failed_files.insert(path.clone());
+                    if let Some(previous) =
+                        previous.and_then(|previous| previous.last_good_sources.get(&path))
+                    {
+                        last_good_sources.insert(path.clone(), previous.clone());
+                        if let Ok(file) = compiler::parse_source_file(file_id, previous) {
+                            parsed_files.insert(file_id, file);
+                        }
+                        previous.clone()
+                    } else {
+                        text
+                    }
+                }
+            };
+            sources.add_file(path, indexed_text);
+        }
+
+        let mut loaded = loaded;
+        loaded.sources = sources;
+        let packages = loaded
+            .packages
+            .iter()
+            .map(|package| ast::Package {
+                logical_path: package.logical_path.clone(),
+                files: package
+                    .files
+                    .iter()
+                    .filter_map(|file_id| parsed_files.remove(file_id))
+                    .collect(),
+            })
+            .collect();
+        let ast = ast::Project { packages };
+        Self::with_file_state(loaded, ast, last_good_sources, failed_files)
+    }
+
+    pub(crate) fn file_failed_to_parse(&self, path: &std::path::Path) -> bool {
+        self.failed_files
+            .iter()
+            .any(|failed| crate::util::same_path(failed, path))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn last_good_source(&self, path: &std::path::Path) -> Option<&str> {
+        self.last_good_sources
+            .iter()
+            .find(|(candidate, _)| crate::util::same_path(candidate, path))
+            .map(|(_, source)| source.as_str())
     }
 
     pub fn package_symbols(&self, logical_path: &str) -> &[IndexedSymbol] {
