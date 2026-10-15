@@ -91,6 +91,8 @@ pub fn compile_loaded_project(loaded: LoadedProject) -> Result<Compilation, Fron
 }
 
 #[cfg(test)]
+mod array_layout_tests;
+#[cfg(test)]
 mod call_tests;
 #[cfg(test)]
 mod completion_tests;

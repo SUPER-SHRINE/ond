@@ -111,6 +111,19 @@ var inferred = [...]u32{10, 20, 30}
 var count: u32 = len(values)
 ```
 
+Kagura target の配列型は、長さに加えて byte size にも上限がある。\
+`N * sizeof(T)` が `2^32-1` byte を超える型は、未使用の宣言でも compile error となる。
+
+```ond
+type ByteLimit [4294967295]u8 // size の上限内
+type WordLimit [1073741823]u32 // size は 4294967292 byte
+// type TooLarge [1073741824]u32 // 4294967296 byte なので compile error
+```
+
+入れ子の配列と generic の具体化結果にも同じ制約が適用され、要素型が struct の場合は padding も size に含む。\
+`[0]u32` や `[4294967295]struct {}` は size が `0` なので上限内となる。\
+型の上限内であっても、実際の memory 配置や heap 確保の成功を保証するものではない。
+
 実行時に決まるarray indexはbounds checkされる。raw pointerのindexはcheckされない。
 
 ## structとmethod

@@ -5,6 +5,7 @@ use crate::project::{LoadedProject, PackageId};
 use crate::source::Span;
 use std::collections::{BTreeMap, BTreeSet};
 
+mod array_layout;
 mod body;
 mod body_names;
 mod control_flow;
@@ -498,11 +499,13 @@ pub(crate) fn lower_to_hir(
                                 &decl.type_params,
                                 &placeholders,
                             );
+                            // Placeholder instances are only for declaration checks.
+                            let mut validation_types = types.clone();
                             let Some(validation_signature) = resolve_signature(
                                 source_package.id,
                                 &validation_source,
                                 &type_universe,
-                                &mut types,
+                                &mut validation_types,
                                 &mut diagnostics,
                             ) else {
                                 continue;
@@ -731,23 +734,28 @@ pub(crate) fn lower_to_hir(
                                         )
                                     },
                                 );
+                            // Keep artificial generic arguments out of the real
+                            // type table, including receiver and parameter types.
+                            let mut placeholder_types =
+                                generic_receiver.as_ref().map(|_| types.clone());
+                            let validation_types = placeholder_types.as_mut().unwrap_or(&mut types);
                             let Some(validation_signature) = resolve_method_signature(
                                 source_package.id,
                                 &validation_receiver,
                                 &validation_signature_source,
                                 &type_universe,
-                                &mut types,
+                                validation_types,
                                 &mut diagnostics,
                             ) else {
                                 continue;
                             };
                             let receiver_type = validation_signature.parameters[0].ty;
-                            let receiver_base_type = match types.kind(receiver_type) {
+                            let receiver_base_type = match validation_types.kind(receiver_type) {
                                 Some(crate::semantic::TypeKind::Pointer(pointee)) => *pointee,
                                 _ => receiver_type,
                             };
                             if matches!(
-                                types.underlying_kind(receiver_base_type),
+                                validation_types.underlying_kind(receiver_base_type),
                                 Some(crate::semantic::TypeKind::Interface(_))
                             ) {
                                 diagnostics.push(Diagnostic::error(
@@ -768,7 +776,7 @@ pub(crate) fn lower_to_hir(
                                 continue;
                             }
                             if let Some(crate::semantic::TypeKind::Struct(structure)) =
-                                types.underlying_kind(receiver_base_type)
+                                validation_types.underlying_kind(receiver_base_type)
                                 && structure
                                     .fields
                                     .iter()
@@ -949,6 +957,7 @@ pub(crate) fn lower_to_hir(
         &loaded.sources,
         &mut diagnostics,
     );
+    array_layout::validate(&types, &mut diagnostics);
 
     // Semantic analysis consumes the loaded snapshot, including in-memory inputs.
     // Filesystem discovery/validation belongs to the project loader.

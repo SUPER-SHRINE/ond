@@ -157,6 +157,9 @@ Kagura target における型のサイズ、alignment、zero value は [Ond for 
 - 固定長配列と推論長配列に共通して、長さ `N` は整数で `0 <= N <= 2^32-1` とする
   - 配列要素の有効な index は `0 <= index < N` とする
   - `N = 0` の配列に有効な index はない
+- Kagura target では `N * sizeof(T) <= 2^32-1` byte を満たさない配列型を compile error とする
+  - 推論長配列、defined type、入れ子の配列、generic の具体化結果にも同じ上限を適用する
+  - 使用箇所に関係なく型を検査し、要素型の padding とゼロサイズの扱いは [Data Layout](../targets/kagura-v1/machine.md#5-data-layout) に従う
 - 配列の長さはコンパイル時定数でなければならない。
 - 配列アクセスは `array[index]` とする。
 - index は integer でなければならない。
