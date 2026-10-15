@@ -1257,14 +1257,16 @@ mod tests {
     }
 
     fn test_project_root(name: &str) -> PathBuf {
-        normalize_path(std::env::temp_dir().join(format!(
+        let path = std::env::temp_dir().join(format!(
             "ond-lsp-{name}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_nanos()
-        )))
+        ));
+        std::fs::create_dir_all(&path).unwrap();
+        std::fs::canonicalize(path).unwrap()
     }
 
     #[test]
