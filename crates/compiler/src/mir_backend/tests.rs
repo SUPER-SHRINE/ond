@@ -119,6 +119,86 @@ fn interface_dispatch_and_identity_execute() {
 }
 
 #[test]
+fn nil_interface_calls_fault_before_arguments_even_with_a_mapped_method_table() {
+    let mut failures = Vec::new();
+    for method in ["First", "Second"] {
+        let fixture = Fixture::new(&format!(
+            "package main
+type Methods interface {{ First(value: u32) -> u32; Second(value: u32) -> u32; }}
+type Device struct {{}}
+var Trace: u32
+func (device: *Device) First(value: u32) -> u32 {{ Trace = Trace * 10 + 3; return value; }}
+func (device: *Device) Second(value: u32) -> u32 {{ Trace = Trace * 10 + 3; return value; }}
+func receiver() -> Methods {{ Trace = Trace * 10 + 1; var empty: Methods; return empty; }}
+func argument() -> u32 {{ Trace = Trace * 10 + 2; return 42; }}
+func main() {{ *({OUTPUT} as u32 as *u32) = receiver().{method}(argument()); Trace = Trace * 10 + 4; }}
+"
+        ));
+        let image = crate::test_support::compile_image(&fixture.0).unwrap();
+        for mapped_zero in [false, true] {
+            let (mut cpu, mut bus, _) = machine(&image);
+            if mapped_zero {
+                bus.map_device(0, 8, Ram::new(8)).unwrap();
+                for (index, name) in ["First", "Second"].iter().enumerate() {
+                    let suffix = format!("\u{1f}method.Device.{name}");
+                    let entry = image
+                        .symbols
+                        .iter()
+                        .find(|(symbol, _)| symbol.ends_with(&suffix))
+                        .unwrap()
+                        .1;
+                    // A nil table must fault even when its entries are valid code.
+                    bus.write32(index as u32 * 4, *entry).unwrap();
+                }
+            }
+            let mut faulted = false;
+            for _ in 0..200_000 {
+                if cpu.step(&mut bus).is_err() {
+                    faulted = true;
+                    break;
+                }
+                if bus.read32(EXIT).unwrap() != 0xdeadbeef {
+                    break;
+                }
+            }
+            let trace = bus.read32(image.symbols["main.Trace"]).unwrap();
+            if !faulted || trace != 1 {
+                failures.push(format!(
+                    "{method}, mapped_zero={mapped_zero}: faulted={faulted}, trace={trace}, output={}",
+                    bus.read32(OUTPUT).unwrap()
+                ));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn typed_nil_interfaces_preserve_dispatch_order_through_aggregate_and_stack_abi() {
+    run(
+        r#"type Methods[T] interface { First(value: T) -> T; Second(value: T) -> T; }
+type Device[T] struct {}
+type Holder struct { values: [2]Methods[u32]; }
+var Trace: u32
+func (device: *Device[T]) First(value: T) -> T { return value; }
+func (device: *Device[T]) Second(value: T) -> T { Trace = Trace * 10 + 3; if device != nil { trap "expected typed nil"; }; return value; }
+func pass(a: u32, b: u32, c: u32, d: u32, e: u32, f: u32, value: Methods[u32]) -> Methods[u32] { return value; }
+func receiver() -> Methods[u32] {
+    Trace = Trace * 10 + 1;
+    var pointer: *Device[u32];
+    var typed = pointer as Methods[u32];
+    if typed != nil { trap "expected nil comparison"; };
+    var holder = Holder { values: [2]Methods[u32] { typed, typed } };
+    return pass(1, 2, 3, 4, 5, 6, holder.values[1]);
+}
+func argument() -> u32 { Trace = Trace * 10 + 2; return 42; }
+func calc() -> u32 { var result = receiver().Second(argument()); return Trace + result; }"#,
+        "calc()",
+        165,
+    );
+}
+
+#[test]
 fn methods_preserve_exact_receivers_nil_and_evaluation_order() {
     run(
         "type S struct { value: i32; }\nvar Instance: S\nvar Trace: i32\nfunc make() -> *S { Trace = Trace * 10 + 1; return &Instance; }\nfunc argument() -> i32 { Trace = Trace * 10 + 2; return 7; }\nfunc (value: *S) Set(next: i32) -> i32 { Trace = Trace * 10 + 3; value.value = next; return Trace; }",

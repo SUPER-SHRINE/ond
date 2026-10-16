@@ -927,6 +927,37 @@ impl FunctionBuilder<'_> {
         self.store_value(storage.clone(), value, span);
         let data = self.load_interface_field(storage.clone(), 0, interface.data_pointer, span);
         let table = self.load_interface_field(storage, 1, interface.vtable, span);
+        let nil = self.emit_value(
+            interface.vtable,
+            mir::InstructionKind::Constant(mir::Constant::Nil(interface.vtable)),
+            span,
+        );
+        let table_nil = self.emit_value(
+            mir::TypeId::BOOL,
+            mir::InstructionKind::Binary {
+                op: mir::BinaryOp::Equal,
+                lhs: table,
+                rhs: nil,
+                overflow: mir::OverflowBehavior::Wrap,
+            },
+            span,
+        );
+        let fault = self.new_block(span);
+        let dispatch = self.new_block(span);
+        self.terminate(
+            mir::TerminatorKind::Branch {
+                condition: table_nil,
+                then_edge: edge(fault),
+                else_edge: edge(dispatch),
+            },
+            span,
+        );
+        self.current = Some(fault);
+        self.terminate(
+            mir::TerminatorKind::Trap(mir::TrapKind::Explicit("nil interface method call".into())),
+            span,
+        );
+        self.current = Some(dispatch);
         let method_place = mir::Place {
             base: mir::PlaceBase::Pointer(table),
             projections: vec![mir::Projection::Field {
