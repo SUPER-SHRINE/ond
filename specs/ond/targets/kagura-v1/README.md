@@ -1,7 +1,7 @@
 # Ond for Kagura v1
 <!-- ond-spec-id: targets/kagura-v1/index -->
 
-この target profile は [Ond Language v1](../../v1/README.md) の program を、`kagura` リポジトリで規定される Kagura v1 上で実行するための契約を定義する。
+この target profile は [Ond Language v1](../../v1/README.md) の program を Kagura v1 上で実行するための、Ond側の契約を定義する。
 
 - [Target Runtime Contract](./machine.md)
 - [ABI](./abi.md)

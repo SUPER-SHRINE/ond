@@ -2,9 +2,33 @@
 
 このファイルには、Ondの利用者に影響する主な変更を記録する。
 
-## 未リリース
+## 0.2.0
 
-## 0.1.3 - 未リリース
+### Added
+
+- method receiverで1段階の暗黙的なアドレス取得と参照外しを追加
+
+### Changed
+
+- generic型の識別とsymbolを安定化
+- operator宣言構文を変更し、所有packageに基づいて候補を選択して、旧形式`operator[T] [](values: *Vec[T], index: u32)`から新形式`operator (values: *Vec[T]) [](index: u32)`へ移行
+- 配列長の上限`2^32 - 1`要素を明文化し、Kaguraでは`N * sizeof(T) > 2^32 - 1` byteとなるlayoutを拒否
+- 単純代入のbounds checkを各write直前に行い、後続writeがtrapしても先に完了したwriteを保持
+- specのsemantic ID検証を追加
+
+### Fixed
+
+- specialization cacheが具体化集合・型構造・生成定数・公開interfaceの変化を検出するよう修正
+- nil interfaceへのmethod callでvtable不在を検査するよう修正
+- pointer変数のmethod補完とpointer深度の型推論を修正
+- LSPで依存packageのsourceを読み込み、未オープンファイルを含むプロジェクト診断を維持し、タブ終了後も診断を保持するとともにfile-level index更新とlibrary／executableのroot判定を修正
+
+### Removed
+
+- `load32`／`store32`を削除し、型付きpointerのindex読み書きへ移行
+- machine／device管理の将来設計文書をGakudenへ移管し、Ondの配布archiveから除外
+
+## 0.1.3
 
 ### Added
 
@@ -14,9 +38,12 @@
 ### Changed
 
 - Windows／Linux配布archiveとLanguage Server、全workspace packageのversionを0.1.3へ更新。
-- machine／device管理の将来設計文書をGakudenへ移管し、Ondの配布archiveから除外。
 
-## 0.1.2 - 移行前の履歴
+---
+## リポジトリ移行前のバージョン履歴
+以下はこのリポジトリにアップロードする以前の内容のため release, tag としては存在していない
+
+## 0.1.2
 
 ### Added
 
@@ -29,7 +56,7 @@
 - 同じReleaseの再実行では同一hashのassetを再利用し、異なるassetの上書きを停止する。
 - native smoke testでLSPが返すversionをworkspace versionと照合する。
 
-## 0.1.1 - 移行前の履歴
+## 0.1.1
 
 ### Added
 
@@ -43,7 +70,7 @@
 - Git tagとworkspace version、mainへの到達性を検証してからreleaseを作成。
 
 
-## 0.1.0 - 移行前の履歴
+## 0.1.0
 
 最初の開発者向けリリース。
 
@@ -71,4 +98,5 @@
 - ROM生成、asset配置、実行環境はEnbuなどの機種SDKから提供する。
 - 差分buildのcache garbage collectionは未実装である。
 
-0.1.0〜0.1.2の変更記録は移行前の履歴から引き継いだものです。対応するtagとReleaseはこのrepositoryへ移行していません。0.1.3も未リリースです。
+0.1.3は本リポジトリで最初のリリースです。\
+0.1.0〜0.1.2の変更記録は移行前の履歴で、対応するtagとReleaseは本リポジトリへ移行していません。
