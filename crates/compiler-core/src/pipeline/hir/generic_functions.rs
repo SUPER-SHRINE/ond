@@ -198,7 +198,7 @@ pub(super) fn instantiate_generic_functions(
                 declaration: declaration_index,
                 arguments,
             },
-        )) = specialization
+        )) = specialization.clone()
         {
             let Some(declaration) = source_package.operators.get(declaration_index) else {
                 report_generic_diagnostic(
@@ -303,27 +303,13 @@ pub(super) fn instantiate_generic_functions(
             generated.insert(symbol);
             continue;
         }
-        let Some((package_path, name, arguments)) = parse_generic_symbol(&symbol) else {
+        let Some((source_package, GenericSpecialization::Function { name, arguments })) =
+            specialization
+        else {
             generated.insert(symbol);
             continue;
         };
-        let Some(source_package) = universe.iter().find(|package| {
-            package.logical_path == package_path
-                || package_path == "main" && package.logical_path == "."
-        }) else {
-            report_generic_diagnostic(
-                diagnostics,
-                Diagnostic::error(
-                    Span::synthetic(),
-                    format!("generic function package `{package_path}` is unavailable"),
-                ),
-                &chains,
-                "generic function",
-            );
-            failed.insert(symbol.clone());
-            continue;
-        };
-        let Some(declaration) = source_package.generic_functions.get(name) else {
+        let Some(declaration) = source_package.generic_functions.get(&name) else {
             report_generic_diagnostic(
                 diagnostics,
                 Diagnostic::error(
@@ -473,16 +459,6 @@ fn report_generic_diagnostic(
     }
     diagnostic.related.extend(previous_related);
     output.push(diagnostic);
-}
-
-fn parse_generic_symbol(symbol: &str) -> Option<(&str, &str, Vec<crate::semantic::TypeId>)> {
-    let (package, tail) = symbol.split_once(".\u{1f}generic.")?;
-    let (name, arguments) = tail.split_once('.')?;
-    let arguments = arguments
-        .split('.')
-        .map(|argument| argument.parse::<u32>().ok().map(crate::semantic::TypeId))
-        .collect::<Option<Vec<_>>>()?;
-    Some((package, name, arguments))
 }
 
 fn collect_generic_symbols_block(

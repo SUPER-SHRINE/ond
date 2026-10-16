@@ -133,12 +133,19 @@ build_idは次を正規順にJSON化したSHA-256:
 - パッケージの論理パス、ソース相対パスと各内容のSHA-256
 - 直接import先のbuild_id
 
-compiler_idは実行ファイル全体のSHA-256。CLIの再ビルドで変化すれば再コンパイルする。
-依存先の本体だけの変更でもbuild_idが変わり、推移的な依存元を全て再生成する。
-依存しないパッケージのObjectは再利用する。mtimeには依存しない。
+generic宣言があるprojectでは、owner packageが生成する特殊化function/static symbol、MIRから参照される型構造、生成定数の値、公開interfaceもbuild_idへ含める。\
+`sizeof(T)`や`alignof(T)`の評価後に型argumentがMIRから消える場合も、function・initializer・staticの定数値によって評価結果の変化を検出する。\
+型構造はTypeIdやPackageIdの採番値、source位置に依存せず、field・method・underlying typeを含めて正規化する。\
+呼出元が新しい特殊化を要求した場合はowner packageのbuild_idが変わり、既存要求だけならowner packageを再利用する。
+
+project全体のsource相対pathと内容hashは、contract・compiler・manifest設定・import graphとともにprivate project manifest keyへ含める。\
+全artifactの参照先、checksum、package集合、依存関係を検証できた場合だけfrontendを省略する。\
+source状態が変わればfrontendで特殊化集合、MIR型構造、生成定数の値を再確認し、package build_idが変わったObjectだけを生成する。\
+compiler_idは実行ファイル全体のSHA-256。CLIの再ビルドで変化すれば再コンパイルする。\
+mtimeには依存しない。
 
 成果物は `<build_id>-<content_hash>.ondpkg`、
-キャッシュ索引は `<build_id>.json`。content_hashは成果物bytesのSHA-256。
+package索引は `<build_id>.json`、project索引は `project-<key>.ondmanifest`。content_hashは成果物bytesのSHA-256。
 一時ファイルを同じディレクトリに作成し、書込完了後renameで公開する。
 壊れた索引・checksum不一致・不適合なキャッシュはmissとして再生成する。
 明示的なlink入力の破損／不一致はエラーであり、暗黙に再コンパイルしない。
@@ -160,6 +167,7 @@ debug sidecarのrange、fault分類、unwind規則は[Ond Debug Metadata v1](./d
 driverの単体／プロセステストで次を検証する:
 
 - cold/warm、diamond依存、実装だけの変更と推移的再生成、非依存Object再利用
+- 同型・新型のgeneric特殊化追加、nested generic、TypeId変化後のcache混在拒否とfresh link一致
 - ソース追加・削除・rename、manifest／compiler変更、仮想ソースと衝突
 - 壊れたキャッシュからの復旧、診断位置、失敗後の既存成果物保持、循環import拒否
 - startup初期化順、runtime helperを含む既存全量コード生成とのLinkedImage一致

@@ -6,11 +6,30 @@ pub struct Graph {
     pub imports: BTreeMap<String, Vec<String>>,
     pub order: Vec<String>,
     pub initialization_order: Vec<String>,
+    pub has_generic_declarations: bool,
 }
 impl Graph {
     pub fn load(loaded: &LoadedProject) -> DriverResult<Self> {
         let ast =
             ond_compiler_core::ond::parse_project(loaded).map_err(|e| input::errors(e, loaded))?;
+        let has_generic_declarations = ast.packages.iter().any(|package| {
+            package
+                .files
+                .iter()
+                .flat_map(|file| &file.decls)
+                .any(|declaration| {
+                    use ond_compiler_core::ir::ast::TopLevelDecl;
+                    match declaration {
+                        TopLevelDecl::Type(declaration) => declaration
+                            .specs
+                            .iter()
+                            .any(|spec| !spec.type_params.is_empty()),
+                        TopLevelDecl::Func(declaration) => !declaration.type_params.is_empty(),
+                        TopLevelDecl::Operator(declaration) => !declaration.type_params.is_empty(),
+                        TopLevelDecl::Const(_) | TopLevelDecl::Var(_) => false,
+                    }
+                })
+        });
         let mut imports = BTreeMap::new();
         for package in ast.packages {
             let mut paths = Vec::new();
@@ -23,7 +42,7 @@ impl Graph {
             }
             imports.insert(package.logical_path, paths);
         }
-        Self::from_imports(imports).map_err(|errors| {
+        let mut graph = Self::from_imports(imports).map_err(|errors| {
             errors
                 .into_iter()
                 .map(|error| {
@@ -42,8 +61,10 @@ impl Graph {
                         None => error,
                     }
                 })
-                .collect()
-        })
+                .collect::<Vec<_>>()
+        })?;
+        graph.has_generic_declarations = has_generic_declarations;
+        Ok(graph)
     }
     pub fn from_imports(imports: BTreeMap<String, Vec<String>>) -> DriverResult<Self> {
         if !imports.contains_key(".") {
@@ -53,6 +74,7 @@ impl Graph {
             imports,
             order: Vec::new(),
             initialization_order: Vec::new(),
+            has_generic_declarations: false,
         };
         let mut visiting = BTreeSet::new();
         let mut visited = BTreeSet::new();

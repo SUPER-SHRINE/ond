@@ -1,10 +1,17 @@
 use crate::{CompileRequest, CompileResult};
-use crate::{DriverResult, cache, graph::Graph, input};
+use crate::{DriverResult, cache, cache_identity, graph::Graph, input};
 use ond_protocol::{ArtifactRef, CompilationManifest, PackageArtifact, ProgramMetadata};
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
 };
+
+#[derive(Serialize, Deserialize)]
+struct ProjectCache {
+    key: String,
+    manifest: CompilationManifest,
+}
 
 /// Compile with a fingerprint covering this compiler and its runtime implementation.
 /// Production callers should use `compiler_identity()`; a version string is insufficient.
@@ -26,44 +33,80 @@ pub fn compile(request: CompileRequest, compiler_id: &str) -> DriverResult<Compi
     let directory = directory.canonicalize().map_err(|e| vec![e.to_string()])?;
     let manifest_bytes = fs::read(&loaded.manifest_path).map_err(|e| vec![e.to_string()])?;
     let context = (&request.contract, compiler_id, cache::hash(&manifest_bytes));
+    let project_sources: BTreeMap<_, _> = loaded
+        .packages
+        .iter()
+        .map(|package| {
+            let sources = package
+                .files
+                .iter()
+                .map(|id| {
+                    let file = loaded.sources.file(*id);
+                    (
+                        file.path()
+                            .strip_prefix(&loaded.root)
+                            .expect("project source")
+                            .to_string_lossy()
+                            .replace('\\', "/"),
+                        cache::hash(file.text().as_bytes()),
+                    )
+                })
+                .collect::<Vec<_>>();
+            (package.logical_path.clone(), sources)
+        })
+        .collect();
+    let project_key = cache::hash(&cache::encode(&(
+        &context,
+        &project_sources,
+        &graph.imports,
+    ))?);
+    if let Some(result) = load_project_cache(&directory, &project_key, &context, &graph) {
+        return Ok(result);
+    }
+
+    let mut frontend = if graph.has_generic_declarations {
+        Some(
+            ond_compiler_core::compile_loaded_project(loaded.clone())
+                .map_err(|e| input::errors(e, &loaded))?,
+        )
+    } else {
+        None
+    };
+    let generic_inputs = if let Some(frontend) = &frontend {
+        Some(generic_build_inputs(frontend, &graph)?)
+    } else {
+        None
+    };
     let mut ids = BTreeMap::<String, String>::new();
     let mut dependencies = BTreeMap::new();
     let mut artifacts = BTreeMap::<String, PackageArtifact>::new();
     let mut references = BTreeMap::<String, ArtifactRef>::new();
     let mut missing = BTreeSet::new();
+
     for path in &graph.order {
-        let package = loaded
-            .packages
-            .iter()
-            .find(|p| &p.logical_path == path)
-            .expect("graph package");
-        let sources: Vec<_> = package
-            .files
-            .iter()
-            .map(|id| {
-                let file = loaded.sources.file(*id);
-                (
-                    file.path()
-                        .strip_prefix(&loaded.root)
-                        .expect("project source")
-                        .to_string_lossy()
-                        .replace('\\', "/"),
-                    cache::hash(file.text().as_bytes()),
-                )
+        let sources = &project_sources[path];
+        let deps = dependency_ids(path, &graph, &ids);
+        let id =
+            if let Some(package_identity) = generic_inputs.as_ref().and_then(|all| all.get(path)) {
+                cache::hash(&cache::encode(&(
+                    &context,
+                    path,
+                    sources,
+                    &deps,
+                    package_identity,
+                ))?)
+            } else {
+                cache::hash(&cache::encode(&(&context, path, sources, &deps))?)
+            };
+        if let Some((reference, artifact)) =
+            cache::lookup(&directory, &id).filter(|(_, artifact)| {
+                artifact.compiler_id == compiler_id
+                    && artifact.package == *path
+                    && artifact.build_id == id
+                    && artifact.dependencies == deps
+                    && artifact.imports == graph.imports[path]
             })
-            .collect();
-        let deps: BTreeMap<_, _> = graph.imports[path]
-            .iter()
-            .map(|dep| (dep.clone(), ids[dep].clone()))
-            .collect();
-        let id = cache::hash(&cache::encode(&(&context, path, sources, &deps))?);
-        if let Some((reference, artifact)) = cache::lookup(&directory, &id).filter(|(_, a)| {
-            a.compiler_id == compiler_id
-                && a.package == *path
-                && a.build_id == id
-                && a.dependencies == deps
-                && a.imports == graph.imports[path]
-        }) {
+        {
             references.insert(path.clone(), reference);
             artifacts.insert(path.clone(), artifact);
         } else {
@@ -72,28 +115,18 @@ pub fn compile(request: CompileRequest, compiler_id: &str) -> DriverResult<Compi
         ids.insert(path.clone(), id);
         dependencies.insert(path.clone(), deps);
     }
-    if !missing.is_empty() {
-        // Until export-data import exists, semantic analysis/MIR lowering stays whole-project.
-        let frontend = ond_compiler_core::compile_loaded_project(loaded.clone())
-            .map_err(|e| input::errors(e, &loaded))?;
-        let mut debug_paths = BTreeMap::new();
-        for package in &frontend.loaded.packages {
-            for file_id in &package.files {
-                let file = frontend.loaded.sources.file(*file_id);
-                let relative = file
-                    .path()
-                    .strip_prefix(&package.directory)
-                    .unwrap_or(file.path())
-                    .to_string_lossy()
-                    .replace('\\', "/");
-                let path = if package.logical_path == "." {
-                    relative
-                } else {
-                    format!("{}/{relative}", package.logical_path)
-                };
-                debug_paths.insert(*file_id, path);
-            }
-        }
+
+    if frontend.is_none() && !missing.is_empty() {
+        frontend = Some(
+            ond_compiler_core::compile_loaded_project(loaded.clone())
+                .map_err(|e| input::errors(e, &loaded))?,
+        );
+    }
+
+    if let Some(frontend) = &frontend
+        && !missing.is_empty()
+    {
+        let debug_paths = debug_paths(&frontend.loaded);
         let generated = ond_compiler::mir_backend::codegen_selected_with_debug(
             &frontend.mir,
             &missing,
@@ -111,7 +144,7 @@ pub fn compile(request: CompileRequest, compiler_id: &str) -> DriverResult<Compi
                 .mir
                 .packages
                 .iter()
-                .find(|p| p.logical_path == path)
+                .find(|package| package.logical_path == path)
                 .expect("emitted package");
             artifacts.insert(
                 path.clone(),
@@ -137,6 +170,7 @@ pub fn compile(request: CompileRequest, compiler_id: &str) -> DriverResult<Compi
             references.insert(path.clone(), cache::publish(&directory, &artifacts[path])?);
         }
     }
+
     let program = ProgramMetadata {
         entry_symbol: "main.main".into(),
         initializers: graph
@@ -150,15 +184,160 @@ pub fn compile(request: CompileRequest, compiler_id: &str) -> DriverResult<Compi
         .filter(|p| !missing.contains(*p))
         .cloned()
         .collect();
-    Ok(CompileResult {
-        manifest: CompilationManifest {
-            contract: request.contract,
-            compiler_id: compiler_id.into(),
-            packages: references.into_values().collect(),
-            program,
-        },
-        frontend_ran: !missing.is_empty(),
+    let manifest = CompilationManifest {
+        contract: request.contract,
+        compiler_id: compiler_id.into(),
+        packages: references.into_values().collect(),
+        program,
+    };
+    let result = CompileResult {
+        manifest: manifest.clone(),
+        frontend_ran: frontend.is_some(),
         rebuilt: missing.into_iter().collect(),
         reused,
+    };
+    cache::atomic_write(
+        &directory.join(format!("project-{project_key}.ondmanifest")),
+        &cache::encode(&ProjectCache {
+            key: project_key,
+            manifest,
+        })?,
+    )?;
+    Ok(result)
+}
+
+fn dependency_ids(
+    path: &str,
+    graph: &Graph,
+    ids: &BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    graph.imports[path]
+        .iter()
+        .map(|dep| (dep.clone(), ids[dep].clone()))
+        .collect()
+}
+
+fn generic_build_inputs(
+    frontend: &ond_compiler_core::Compilation,
+    graph: &Graph,
+) -> DriverResult<BTreeMap<String, String>> {
+    graph
+        .order
+        .iter()
+        .map(|path| {
+            let package = frontend
+                .mir
+                .packages
+                .iter()
+                .find(|package| package.logical_path == *path)
+                .expect("frontend package");
+            let generated_inputs = cache_identity::package_inputs(&frontend.mir, package);
+            let interface =
+                ond_compiler_core::export::package(&frontend.hir, path).map_err(|e| vec![e])?;
+            let identity = cache::hash(&cache::encode(&(
+                generated_inputs,
+                cache::hash(&cache::encode(&interface)?),
+            ))?);
+            Ok((path.clone(), identity))
+        })
+        .collect()
+}
+
+fn debug_paths(
+    loaded: &ond_compiler_core::LoadedProject,
+) -> BTreeMap<ond_compiler_core::source::FileId, String> {
+    let mut paths = BTreeMap::new();
+    for package in &loaded.packages {
+        for file_id in &package.files {
+            let file = loaded.sources.file(*file_id);
+            let relative = file
+                .path()
+                .strip_prefix(&package.directory)
+                .unwrap_or(file.path())
+                .to_string_lossy()
+                .replace('\\', "/");
+            let path = if package.logical_path == "." {
+                relative
+            } else {
+                format!("{}/{relative}", package.logical_path)
+            };
+            paths.insert(*file_id, path);
+        }
+    }
+    paths
+}
+
+fn load_project_cache(
+    directory: &std::path::Path,
+    key: &str,
+    context: &(&ond_protocol::Contract, &str, String),
+    graph: &Graph,
+) -> Option<CompileResult> {
+    let cache: ProjectCache =
+        cache::read_json(&directory.join(format!("project-{key}.ondmanifest"))).ok()?;
+    let manifest = cache.manifest;
+    if cache.key != key
+        || manifest.contract != *context.0
+        || manifest.compiler_id != context.1
+        || manifest.packages.len() != graph.order.len()
+        || manifest.program.entry_symbol != "main.main"
+    {
+        return None;
+    }
+    let mut references = BTreeMap::new();
+    for reference in &manifest.packages {
+        let reference = reference.clone();
+        if references
+            .insert(reference.package.clone(), reference)
+            .is_some()
+        {
+            return None;
+        }
+    }
+    if references.keys().collect::<BTreeSet<_>>() != graph.imports.keys().collect::<BTreeSet<_>>() {
+        return None;
+    }
+    let mut artifacts = BTreeMap::new();
+    for path in &graph.order {
+        let expected = references.get(path)?;
+        let (actual, artifact) = cache::lookup(directory, &expected.build_id)?;
+        if cache::encode(&actual).ok()? != cache::encode(expected).ok()?
+            || artifact.compiler_id != context.1
+            || artifact.contract != *context.0
+            || artifact.package != *path
+            || artifact.imports != graph.imports[path]
+        {
+            return None;
+        }
+        let dependencies = dependency_ids_from_references(path, graph, &references);
+        if artifact.dependencies != dependencies {
+            return None;
+        }
+        artifacts.insert(path.clone(), artifact);
+    }
+    let initializers = graph
+        .initialization_order
+        .iter()
+        .filter_map(|path| artifacts[path].initializer.clone())
+        .collect::<Vec<_>>();
+    if manifest.program.initializers != initializers {
+        return None;
+    }
+    Some(CompileResult {
+        manifest,
+        frontend_ran: false,
+        rebuilt: Vec::new(),
+        reused: references.keys().cloned().collect(),
     })
+}
+
+fn dependency_ids_from_references(
+    path: &str,
+    graph: &Graph,
+    references: &BTreeMap<String, ArtifactRef>,
+) -> BTreeMap<String, String> {
+    graph.imports[path]
+        .iter()
+        .map(|dep| (dep.clone(), references[dep].build_id.clone()))
+        .collect()
 }

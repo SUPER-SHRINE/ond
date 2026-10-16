@@ -568,6 +568,25 @@ impl BodyLowerer<'_> {
             return None;
         }
         let signature = signature?;
+        let symbol = super::super::canonical_generic_symbol(
+            &logical_path,
+            &declaration.name.name,
+            &concrete_types,
+            self.types,
+            self.universe,
+        );
+        self.universe
+            .iter()
+            .find(|package| package.id == package_id)?
+            .specializations
+            .borrow_mut()
+            .insert(
+                symbol.clone(),
+                super::super::types::GenericSpecialization::Function {
+                    name: declaration.name.name.clone(),
+                    arguments: concrete_types,
+                },
+            );
         if arguments.len() != signature.parameters.len() {
             return self.fail(
                 span,
@@ -598,11 +617,7 @@ impl BodyLowerer<'_> {
         let function_ty = self.types.function(function_type.clone(), span);
         Some(hir::Call {
             callee: Box::new(hir::Expr {
-                kind: hir::ExprKind::Function(super::super::canonical_generic_symbol(
-                    &logical_path,
-                    &declaration.name.name,
-                    &concrete_types,
-                )),
+                kind: hir::ExprKind::Function(symbol),
                 ty: function_ty,
                 span,
             }),

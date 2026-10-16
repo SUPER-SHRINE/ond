@@ -1041,23 +1041,22 @@ fn canonical_symbol_name(package_path: &str, identifier: &str) -> String {
     }
 }
 
-pub(super) fn canonical_generic_symbol(
+pub(in crate::pipeline::hir) fn canonical_generic_symbol(
     package_path: &str,
     name: &str,
     arguments: &[crate::semantic::TypeId],
+    types: &crate::semantic::TypeTable,
+    universe: &[TypePackage],
 ) -> String {
     let package = if package_path == "." {
         "main"
     } else {
         package_path
     };
+    let arguments = identity::arguments(arguments, types, universe);
     format!(
-        "{package}.\u{1f}generic.{name}.{}",
-        arguments
-            .iter()
-            .map(|argument| argument.0.to_string())
-            .collect::<Vec<_>>()
-            .join(".")
+        "{}:{package}.\u{1f}generic.{name}.{arguments};",
+        package.len()
     )
 }
 
