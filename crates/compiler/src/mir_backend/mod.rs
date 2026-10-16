@@ -4,6 +4,8 @@ mod branch_tests;
 mod calls;
 #[cfg(test)]
 mod conformance;
+#[cfg(test)]
+mod debug_tests;
 mod emit;
 mod frame;
 #[cfg(test)]
