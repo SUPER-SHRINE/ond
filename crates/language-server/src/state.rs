@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use compiler::ir::ast;
 use compiler::source::{SourceDb, Span};
@@ -25,6 +25,8 @@ use crate::navigation::{definition_for_file, definition_for_project};
 use crate::protocol::{
     TextDocumentContentChangeEvent, cursor_is_in_comment, lsp_offset, publish_diagnostics,
 };
+#[path = "project_loading.rs"]
+mod project_loading;
 use crate::semantic_tokens::{
     indexed_semantic_tokens, package_semantic_tokens, project_semantic_tokens,
 };
@@ -131,7 +133,7 @@ impl ServerState {
         if let Some(error) = validation_error {
             for diagnostic in error.diagnostics() {
                 let path = if diagnostic.primary.span.is_synthetic() {
-                    project.root.join("main.ond")
+                    project_loading::synthetic_diagnostic_path(root, &project)
                 } else {
                     project
                         .sources
@@ -207,73 +209,7 @@ impl ServerState {
         root: &Path,
         overrides: &BTreeMap<PathBuf, String>,
     ) -> Result<compiler::LoadedProject, String> {
-        let resolved =
-            ond_cli::resolve_dependencies(root).map_err(|diagnostics| diagnostics.join("\n"))?;
-        let normalized_root = normalize_path(root.to_path_buf());
-        let library_roots = self
-            .library_roots
-            .iter()
-            .filter(|library| !same_path(library, &normalized_root))
-            .cloned()
-            .collect::<Vec<_>>();
-        let mut libraries = compiler::load_library_sources(root, &library_roots, overrides)
-            .map_err(render_frontend_error)?;
-        let mut excluded_library_roots = library_roots
-            .iter()
-            .map(|library| normalize_path(library.clone()))
-            .filter(|library| {
-                library.starts_with(&normalized_root) && !same_path(library, &normalized_root)
-            })
-            .collect::<Vec<_>>();
-        let mut required_sources = BTreeMap::new();
-        excluded_library_roots.extend(resolved.ignored_directories);
-        merge_external_sources(&mut libraries, resolved.sources, overrides)?;
-
-        let has_root_sources = std::fs::read_dir(root)
-            .map_err(|error| error.to_string())?
-            .filter_map(Result::ok)
-            .any(|entry| {
-                entry.path().is_file()
-                    && entry
-                        .path()
-                        .extension()
-                        .and_then(|extension| extension.to_str())
-                        == Some("ond")
-            });
-        if !has_root_sources && let Ok(self_sources) = ond_cli::resolve_project_sources(root) {
-            let packages = self_sources
-                .sources
-                .keys()
-                .filter_map(|name| name.rsplit_once('/').map(|(package, _)| package))
-                .collect::<BTreeSet<_>>();
-            let mut synthetic_main = String::from("package main\n");
-            for (index, package) in packages.into_iter().enumerate() {
-                synthetic_main.push_str(&format!("import __ond_lsp_{index} \"{package}\"\n"));
-            }
-            synthetic_main.push_str("func main() {}\n");
-            required_sources.insert("main.ond".to_string(), synthetic_main);
-            for source in self_sources.sources.values() {
-                if let Ok(relative) = source.path.strip_prefix(root)
-                    && let Some(Component::Normal(directory)) = relative.components().next()
-                {
-                    let directory = root.join(directory);
-                    if directory.is_dir() && !excluded_library_roots.contains(&directory) {
-                        excluded_library_roots.push(directory);
-                    }
-                }
-            }
-            excluded_library_roots.extend(self_sources.ignored_directories);
-            merge_external_sources(&mut libraries, self_sources.sources, overrides)?;
-        }
-        compiler::load_project_with_inputs_allow_incomplete(
-            root,
-            overrides,
-            &excluded_library_roots,
-            &required_sources,
-            &BTreeMap::new(),
-            &libraries,
-        )
-        .map_err(render_frontend_error)
+        project_loading::load_project(root, overrides, &self.library_roots)
     }
 
     pub(crate) fn load_current_project(
@@ -1115,30 +1051,6 @@ fn incomplete_completion_function_name(text: &str, offset: usize) -> Option<&str
 
 fn is_identifier_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || byte == b'_'
-}
-
-fn merge_external_sources(
-    target: &mut compiler::ExternalSources,
-    sources: compiler::ExternalSources,
-    overrides: &BTreeMap<PathBuf, String>,
-) -> Result<(), String> {
-    for (name, mut source) in sources {
-        if let Some(text) = overrides.get(&source.path).or_else(|| {
-            source
-                .path
-                .canonicalize()
-                .ok()
-                .and_then(|path| overrides.get(&path))
-        }) {
-            source.text = text.clone();
-        }
-        if let Some(previous) = target.insert(name.clone(), source.clone())
-            && previous != source
-        {
-            return Err(format!("conflicting external source: {name}"));
-        }
-    }
-    Ok(())
 }
 
 fn project_error_diagnostic(message: &str) -> Value {
@@ -3398,6 +3310,310 @@ mod tests {
             .unwrap();
         let output = String::from_utf8(output).unwrap();
         assert!(output.contains("requires bool type"), "{output}");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn library_root_source_uses_manifest_namespace_with_open_buffer_features() {
+        let root = test_project_root("library-root");
+        std::fs::write(root.join("ond.toml"), "[project]\nname = \"console_v1\"\n").unwrap();
+        let source = "package console_v1\nfunc Value() -> i32 { return 1; }\nfunc use() { var value: bool = Value(); }\n";
+        std::fs::write(
+            root.join("main.ond"),
+            "package console_v1\nfunc Base() {}\n",
+        )
+        .unwrap();
+        let path = root.join("api.ond");
+        std::fs::write(&path, source).unwrap();
+        let uri = uri_from_path(&path).unwrap();
+        let mut state = ServerState::default();
+        let mut output = Vec::new();
+        state
+            .open_document(uri.clone(), source.to_string(), &mut output)
+            .unwrap();
+        let diagnostics = String::from_utf8(output).unwrap();
+        assert!(diagnostics.contains("type mismatch"), "{diagnostics}");
+        assert!(
+            !diagnostics.contains("must declare package main"),
+            "{diagnostics}"
+        );
+
+        let repaired = source.replace("value: bool", "value: i32");
+        let mut repaired_output = Vec::new();
+        state
+            .change_document(
+                uri.clone(),
+                vec![TextDocumentContentChangeEvent {
+                    text: repaired.clone(),
+                    range: None,
+                }],
+                &mut repaired_output,
+            )
+            .unwrap();
+        let repaired_published = published_diagnostics(&repaired_output, &uri);
+        assert!(!repaired_published.is_empty());
+        assert!(
+            repaired_published
+                .iter()
+                .all(|diagnostics| { diagnostics.as_array().is_some_and(Vec::is_empty) })
+        );
+        let project = state.load_current_project(&root).unwrap();
+        assert!(compiler::compile_loaded_project(project).is_ok());
+
+        let incomplete = "package console_v1\nfunc unfinished(";
+        let mut incomplete_output = Vec::new();
+        state
+            .change_document(
+                uri.clone(),
+                vec![TextDocumentContentChangeEvent {
+                    text: incomplete.to_string(),
+                    range: None,
+                }],
+                &mut incomplete_output,
+            )
+            .unwrap();
+        assert!(!published_diagnostics(&incomplete_output, &uri).is_empty());
+
+        let mut restored_output = Vec::new();
+        state
+            .change_document(
+                uri.clone(),
+                vec![TextDocumentContentChangeEvent {
+                    text: repaired.clone(),
+                    range: None,
+                }],
+                &mut restored_output,
+            )
+            .unwrap();
+        let restored_published = published_diagnostics(&restored_output, &uri);
+        assert!(!restored_published.is_empty());
+        assert!(
+            restored_published
+                .iter()
+                .all(|diagnostics| { diagnostics.as_array().is_some_and(Vec::is_empty) })
+        );
+        let use_line = repaired.lines().nth(2).unwrap();
+        let call_character = use_line.find("Value").unwrap() as u32;
+        let completions = state.completions(&uri, 2, call_character).unwrap();
+        assert!(
+            completions.iter().any(|item| item["label"] == "Value"),
+            "{completions:?}"
+        );
+        let definition = state.definition(&uri, 2, call_character).unwrap();
+        assert!(
+            definition[0]["targetUri"]
+                .as_str()
+                .unwrap()
+                .ends_with("api.ond"),
+            "{definition}"
+        );
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn external_library_inside_library_root_keeps_its_package_namespace() {
+        let root = test_project_root("library-root-external-package");
+        let libraries = root.join("vendor");
+        std::fs::create_dir_all(libraries.join("shared")).unwrap();
+        std::fs::write(root.join("ond.toml"), "[project]\nname = \"console_v1\"\n").unwrap();
+        std::fs::write(
+            root.join("api.ond"),
+            "package console_v1\nimport \"shared\"\nfunc Value() -> i32 { return shared.Value() }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            libraries.join("shared/lib.ond"),
+            "package shared\nfunc Value() -> i32 { return 7 }\n",
+        )
+        .unwrap();
+
+        let state = ServerState::with_library_roots(vec![libraries]);
+        let project = state.load_current_project(&root).unwrap();
+        assert!(compiler::compile_loaded_project(project.clone()).is_ok());
+        assert!(
+            project
+                .packages
+                .iter()
+                .any(|package| package.logical_path == "shared")
+        );
+        assert!(
+            !project
+                .packages
+                .iter()
+                .any(|package| package.logical_path == "console_v1/shared")
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn library_root_can_import_local_and_external_same_named_packages() {
+        let root = test_project_root("library-root-local-and-external");
+        let libraries = root.join("vendor");
+        std::fs::create_dir_all(root.join("internal")).unwrap();
+        std::fs::create_dir_all(libraries.join("internal")).unwrap();
+        std::fs::write(root.join("ond.toml"), "[project]\nname = \"console_v1\"\n").unwrap();
+        std::fs::write(
+            root.join("api.ond"),
+            "package console_v1\nimport ext \"internal\"\nimport own \"console_v1/internal\"\nfunc Value() -> i32 { return ext.External() + own.Local() }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("internal/local.ond"),
+            "package internal\nfunc Local() -> i32 { return 3 }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            libraries.join("internal/api.ond"),
+            "package internal\nfunc External() -> i32 { return 4 }\n",
+        )
+        .unwrap();
+
+        let project = ServerState::with_library_roots(vec![libraries.clone()])
+            .load_current_project(&root)
+            .unwrap();
+        assert!(compiler::compile_loaded_project(project).is_ok());
+
+        let conflicting = root.join("conflicting-vendor");
+        std::fs::create_dir_all(conflicting.join("console_v1/internal")).unwrap();
+        std::fs::write(
+            conflicting.join("console_v1/internal/api.ond"),
+            "package internal\nfunc Other() -> i32 { return 5 }\n",
+        )
+        .unwrap();
+        let error = ServerState::with_library_roots(vec![conflicting])
+            .load_current_project(&root)
+            .unwrap_err();
+        assert!(
+            error.contains("library conflicts with project package"),
+            "{error}"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn project_internal_package_stays_separate_from_same_named_dependency() {
+        let base = test_project_root("library-root-same-package");
+        let root = base.join("lib");
+        let dependency = base.join("dep");
+        std::fs::create_dir_all(root.join("internal")).unwrap();
+        std::fs::create_dir_all(&dependency).unwrap();
+        std::fs::write(
+            root.join("ond.toml"),
+            "[project]\nname = \"console_v1\"\n[dependencies]\ninternal = { path = \"../dep\" }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dependency.join("ond.toml"),
+            "[project]\nname = \"internal\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("api.ond"),
+            "package console_v1\nimport ext \"internal\"\nimport own \"console_v1/internal\"\nfunc Value() -> i32 { return ext.External() + own.Local() }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("internal/local.ond"),
+            "package internal\nfunc Local() -> i32 { return 3 }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dependency.join("api.ond"),
+            "package internal\nfunc External() -> i32 { return 4 }\n",
+        )
+        .unwrap();
+
+        let project = ServerState::default().load_current_project(&root).unwrap();
+        assert!(compiler::compile_loaded_project(project.clone()).is_ok());
+        let local = project
+            .packages
+            .iter()
+            .find(|package| package.logical_path == "console_v1/internal")
+            .unwrap();
+        assert!(
+            project
+                .sources
+                .file(local.files[0])
+                .path()
+                .ends_with("local.ond")
+        );
+        let external = project
+            .packages
+            .iter()
+            .find(|package| package.logical_path == "internal")
+            .unwrap();
+        assert!(
+            project
+                .sources
+                .file(external.files[0])
+                .path()
+                .ends_with("api.ond")
+        );
+        assert!(
+            project
+                .sources
+                .file(external.files[0])
+                .path()
+                .starts_with(&dependency)
+        );
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn executable_root_still_reports_a_missing_main_function() {
+        let root = test_project_root("executable-root");
+        std::fs::write(root.join("ond.toml"), "[project]\nname = \"console_v1\"\n").unwrap();
+        let source = "package main\nfunc helper() {}\n";
+        let path = root.join("main.ond");
+        std::fs::write(&path, source).unwrap();
+        let uri = uri_from_path(&path).unwrap();
+        let mut state = ServerState::default();
+        let mut output = Vec::new();
+        state
+            .open_document(uri, source.to_string(), &mut output)
+            .unwrap();
+        let diagnostics = String::from_utf8(output).unwrap();
+        assert!(
+            diagnostics.contains("must define `func main()`"),
+            "{diagnostics}"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn library_import_cycle_diagnostic_is_published_to_physical_source() {
+        let root = test_project_root("library-import-cycle");
+        std::fs::write(root.join("ond.toml"), "[project]\nname = \"console_v1\"\n").unwrap();
+        std::fs::create_dir_all(root.join("internal")).unwrap();
+        let source =
+            "package console_v1\nimport \"console_v1/internal\"\nfunc Base() { internal.Use() }\n";
+        let path = root.join("main.ond");
+        std::fs::write(&path, source).unwrap();
+        std::fs::write(
+            root.join("internal/internal.ond"),
+            "package internal\nimport \"console_v1\"\nfunc Use() { console_v1.Base() }\n",
+        )
+        .unwrap();
+        let uri = uri_from_path(&path).unwrap();
+        let mut state = ServerState::default();
+        let mut output = Vec::new();
+        state
+            .open_document(uri.clone(), source.to_string(), &mut output)
+            .unwrap();
+        let diagnostics = published_diagnostics(&output, &uri);
+        assert!(
+            diagnostics
+                .iter()
+                .any(|items| items.as_array().is_some_and(|items| {
+                    items.iter().any(|item| {
+                        item["message"]
+                            .as_str()
+                            .is_some_and(|message| message.contains("import cycle detected"))
+                    })
+                })),
+            "{output:?}"
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 
