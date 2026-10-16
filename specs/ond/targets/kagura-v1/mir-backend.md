@@ -51,6 +51,7 @@ arrayのstrideはstruct末尾paddingを含む。この例の配列2要素はsize
 pointer経由の再帰でlayout計算を続けない。値としての循環はvalidatorで拒否する。
 
 サイズ・offset・乗算・alignment切上げはcheckedな広い整数で計算し、32-bit表現へ切り詰めない。
+固定長配列は [Data Layout](./machine.md#5-data-layout) に従い、`N * sizeof(T) > 2^32-1` なら frontend で compile error とする。\
 型がu32サイズ内でもframe/object/startupが容量を超える場合は該当工程で拒否する。
 raw pointerの実行時offsetだけは仕様どおりmod 2^32であり、静的layoutのoverflow拒否とは別。
 zeroは全byte 0。paddingの値は意味を持たないが、Ordered accessをpaddingへの追加accessに拡張しない。

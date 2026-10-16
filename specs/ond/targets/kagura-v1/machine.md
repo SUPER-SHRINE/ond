@@ -77,11 +77,20 @@ header は allocator の内部表現であり、Ond program へ返す pointer �
 - `*T` は 32-bit bus address で、`nil` は `0x00000000` とする。
 - interfaceはoffset 0にdata pointer、offset 4にvtable pointerを持つ。zero valueは両方が`0x00000000`である。
 - `[N]T` は header のない連続した `N` 要素とし、alignment は `alignof(T)`、size は `N * sizeof(T)` とする。
+- 固定長配列の `N * sizeof(T)` が `2^32-1` byte を超える場合は compile error とする
+  - 積は数学的な整数として判定し、32 bit への切り詰めや折り返しを行わない
+  - 推論長配列も長さの確定後に同じ上限を適用する
+  - 要素が defined type、struct、配列の場合も、padding を含む要素型の size を使う
+  - 未使用の型宣言、pointer の参照先、generic の具体化結果も検査する
+  - `N = 0` または `sizeof(T) = 0` の積は `0` とし、入れ子に含まれる各配列型もそれぞれ検査する
 - struct field は宣言順に置き、各 field をその alignment へ揃える。struct の alignment は field の最大値、size はその alignment の倍数へ切り上げる。
 - 空structはsize=0、alignment=1とする。`[0]T`はsize=0、alignment=`alignof(T)`とする。address取得用slot・Indirect引数temporary等のゼロサイズstorageは最低1 byteを予約してnilと区別し、型のsizeは0を維持する。異なるゼロサイズ値のアドレス同一性について追加保証はしない。ゼロサイズheap allocationは§3.1に従う。
 - padding byte の値は観測可能な意味を持たない。
 
 全型の zero value は全 byte が `0` の表現とする。
+
+例えば `[4294967295]u8` の size は上限内だが、`[1073741824]u32` の size は `2^32` byte なので型として拒否する。\
+上限内の配列型であっても、実際の storage 配置や heap 確保が成功するとは限らない。
 
 ## 6. Raw Pointer Access
 <!-- ond-spec-id: targets/kagura-v1/raw-pointer-access -->

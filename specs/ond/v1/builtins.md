@@ -33,6 +33,9 @@
 | layout | `sizeof(T)`, `alignof(T)` | 型の size / alignment を `u32` で返す |
 | `trap` | `trap "reason"` | 理由をdebug metadataへ記録し、回復不能なCPU trapで停止する |
 
+配列型の byte size が [Data Layout](../targets/kagura-v1/machine.md#5-data-layout) の上限を超える場合は、`len`、`sizeof`、`alignof` だけで参照しても compile error とする。\
+`new` の型 operand や `alloc[T]` の型 argument にも同じ型の制約を適用する。
+
 ## 2. `alloc`
 <!-- ond-spec-id: builtins/alloc -->
 
