@@ -10,6 +10,9 @@ mod body;
 mod body_names;
 mod control_flow;
 mod generic_functions;
+mod identity;
+#[cfg(test)]
+mod identity_tests;
 mod operators;
 mod types;
 use body::{BodyLowerer, lower_typed_body};
@@ -591,6 +594,8 @@ pub(crate) fn lower_to_hir(
                             &package.logical_path,
                             decl.name,
                             &parameter_types,
+                            &types,
+                            &type_universe,
                         );
                         items.push(hir::Item::Func(hir::FuncItem {
                             name: canonical_name.clone(),
@@ -1065,24 +1070,24 @@ pub(super) fn canonical_method_symbol(package_path: &str, receiver: &str, method
     format!("{package}.\u{1f}method.{receiver}.{method}")
 }
 
-pub(super) fn canonical_generic_method_symbol(
+fn canonical_generic_method_symbol(
     package_path: &str,
     receiver: &str,
     method: &str,
-    declaration_index: usize,
     arguments: &[crate::semantic::TypeId],
+    types: &crate::semantic::TypeTable,
+    universe: &[TypePackage],
 ) -> String {
     let package = if package_path == "." {
         "main"
     } else {
         package_path
     };
-    let arguments = arguments
-        .iter()
-        .map(|argument| argument.0.to_string())
-        .collect::<Vec<_>>()
-        .join("_");
-    format!("{package}.\u{1f}generic_method.{receiver}.{method}.{declaration_index}.{arguments}")
+    let arguments = identity::arguments(arguments, types, universe);
+    format!(
+        "{}:{package}.\u{1f}generic_method.{receiver}.{method}.{arguments};",
+        package.len()
+    )
 }
 
 fn constant_is_string_literal(
