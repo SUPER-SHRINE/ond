@@ -113,8 +113,8 @@ fn matrix_inventory() {
     for (name, rows, expected) in [
         ("conversions and nil", conversions::rows(), 866),
         ("operators", operators::rows(), 322),
-        ("builtins", builtins::rows(), 117),
-        ("declarations", declarations::rows(), 61),
+        ("builtins", builtins::rows(), 67),
+        ("declarations", declarations::rows(), 60),
     ] {
         assert_eq!(
             rows.len(),
@@ -130,5 +130,5 @@ fn matrix_inventory() {
             "{name}: missing positive controls"
         );
     }
-    assert_eq!(ids().len(), 1366);
+    assert_eq!(ids().len(), 1315);
 }

@@ -32,7 +32,7 @@ pub(super) fn input_run(bytes: &crate::linker::LinkedImage, a: u32, b: u32) -> u
     }
     panic!("CPU step limit");
 }
-const BITS: &str = "func bits(x:f32)->u32{return load32((&x) as u32)}\nfunc frombits(x:u32)->f32{var f:f32;store32((&f) as u32,x);return f}";
+const BITS: &str = "func bits(x:f32)->u32{return *((&x) as u32 as *u32)}\nfunc frombits(x:u32)->f32{var f:f32;*((&f) as u32 as *u32) = x;return f}";
 
 #[test]
 fn float_operations_match_binary32_vectors() {
@@ -57,7 +57,7 @@ fn float_operations_match_binary32_vectors() {
     }
     for op in ["+", "-", "*", "/"] {
         let f = Fixture::new(&format!(
-            "package main\n{BITS}\nfunc main(){{var a=frombits(load32(536870912));var b=frombits(load32(536870916));store32(4294934608,bits(a {op} b))}}"
+            "package main\n{BITS}\nfunc main(){{var addressA:u32=536870912;var addressB:u32=536870916;var pointerA = addressA as *u32;var pointerB = addressB as *u32;var a=frombits(*pointerA);var b=frombits(*pointerB);*(4294934608 as u32 as *u32) = bits(a {op} b)}}"
         ));
         let bytes = crate::test_support::compile_image(&f.0).unwrap();
         for &(a, b) in &values {
@@ -82,7 +82,7 @@ fn float_operations_match_binary32_vectors() {
 fn float_comparison_casts_negation_and_storage_execute() {
     for op in ["==", "!=", "<", "<=", ">", ">="] {
         let f = Fixture::new(&format!(
-            "package main\n{BITS}\nfunc main(){{var a=frombits(load32(536870912));var b=frombits(load32(536870916));var result:u32;if a {op} b{{result=1}};store32(4294934608,result)}}"
+            "package main\n{BITS}\nfunc main(){{var addressA:u32=536870912;var addressB:u32=536870916;var pointerA = addressA as *u32;var pointerB = addressB as *u32;var a=frombits(*pointerA);var b=frombits(*pointerB);var result:u32;if a {op} b{{result=1}};*(4294934608 as u32 as *u32) = result}}"
         ));
         let bytes = crate::test_support::compile_image(&f.0).unwrap();
         for (a, b) in [
@@ -186,7 +186,7 @@ fn integer_division_remainder_widths_and_boundaries_execute() {
     }
     for op in ["/", "%"] {
         let f = Fixture::new(&format!(
-            "package main\nfunc main(){{var a=load32(536870912);var b=load32(536870916);store32(4294934608,a {op} b)}}"
+            "package main\nfunc main(){{var addressA:u32=536870912;var addressB:u32=536870916;var pointerA = addressA as *u32;var pointerB = addressB as *u32;var a=*pointerA;var b=*pointerB;*(4294934608 as u32 as *u32) = a {op} b}}"
         ));
         let bytes = crate::test_support::compile_image(&f.0).unwrap();
         for (a, b) in [
@@ -226,7 +226,7 @@ fn integer_division_remainder_widths_and_boundaries_execute() {
 fn signed_division_vectors_cover_all_sign_combinations() {
     for op in ["/", "%"] {
         let f = Fixture::new(&format!(
-            "package main\nfunc main(){{var a=load32(536870912) as i32;var b=load32(536870916) as i32;store32(4294934608,(a {op} b) as u32)}}"
+            "package main\nfunc main(){{var addressA:u32=536870912;var addressB:u32=536870916;var pointerA = addressA as *u32;var pointerB = addressB as *u32;var a=(*pointerA) as i32;var b=(*pointerB) as i32;*(4294934608 as u32 as *u32) = (a {op} b) as u32}}"
         ));
         let bytes = crate::test_support::compile_image(&f.0).unwrap();
         let mut seed = 771u32;

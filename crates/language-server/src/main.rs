@@ -19,7 +19,7 @@ use protocol::{
     CompletionParams, DefinitionParams, DidChangeTextDocumentParams, DidChangeWatchedFilesParams,
     DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentSymbolParams, HoverParams,
     PrepareRenameParams, ReferenceParams, RenameParams, SemanticTokensParams, deserialize_params,
-    publish_diagnostics, read_message, write_json,
+    read_message, write_json,
 };
 use serde_json::{Value, json};
 use state::ServerState;
@@ -136,8 +136,7 @@ fn run_transport(
                         deserialize_params(message.get("params"))?;
                     let path = normalize_path(path_from_uri(&params.text_document.uri)?);
                     log_stderr(&format!("didClose: {}", path.display()));
-                    state.close_document(&params.text_document.uri)?;
-                    publish_diagnostics(&mut writer, &params.text_document.uri, Vec::new())
+                    state.close_document(&params.text_document.uri, &mut writer)
                 }
                 Some("workspace/didChangeWatchedFiles") => {
                     let params: DidChangeWatchedFilesParams =

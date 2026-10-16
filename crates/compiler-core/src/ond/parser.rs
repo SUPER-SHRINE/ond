@@ -74,7 +74,32 @@ impl Parser {
 
     fn parse_operator_decl(&mut self) -> Result<ast::OperatorDecl, Diagnostics> {
         let start = self.bump().span;
-        let type_params = self.parse_type_parameters(start)?;
+        self.expect(TokenKind::LParen, "`(`")?;
+        let receiver_name = self.expect_binding_ident()?;
+        self.expect(TokenKind::Colon, "`:`")?;
+        let receiver_ty = self.parse_type()?;
+        let receiver = ast::Field {
+            span: join_spans(receiver_name.span, type_span(&receiver_ty)),
+            name: receiver_name,
+            ty: receiver_ty,
+        };
+        self.expect(TokenKind::RParen, "`)`")?;
+        let receiver_base = match &receiver.ty {
+            ast::Type::Pointer(inner, _) => inner.as_ref(),
+            ty => ty,
+        };
+        let type_params = match receiver_base {
+            ast::Type::Apply { arguments, .. } => arguments
+                .iter()
+                .filter_map(|argument| match argument {
+                    ast::Type::Named(path) if path.segments.len() == 1 => {
+                        Some(path.segments[0].clone())
+                    }
+                    _ => None,
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
         let name = match self.current().kind {
             TokenKind::Plus => {
                 self.bump();
@@ -112,7 +137,8 @@ impl Parser {
             }
             _ => return Err(self.error_here("expected overloadable operator")),
         };
-        let signature = self.parse_signature()?;
+        let mut signature = self.parse_signature()?;
+        signature.params.insert(0, receiver);
         let body = self.parse_block()?;
         Ok(ast::OperatorDecl {
             name,

@@ -3,46 +3,46 @@
 func __ond_alloc(n:u32,base:u32,bottom:u32,state:u32)->u32 {
     if n==0 || n>4294967288 { return 0 }
     var need=((n+3)&4294967292)+4
-    var cursor=load32(state)
-    if cursor==0 { cursor=base; store32(state,cursor) }
+    var cursor=*(state as *u32)
+    if cursor==0 { cursor=base; *(state as *u32) = cursor }
     var at=base
     for at<cursor {
-        var header=load32(at)
+        var header=*(at as *u32)
         var size=header&4294967292
         if (header&1)==0 && size>=need {
             if size-need>=8 {
-                store32(at,need|1)
-                store32(at+need,size-need)
-            } else { store32(at,size|1) }
+                *(at as *u32) = need|1
+                *((at+need) as *u32) = size-need
+            } else { *(at as *u32) = size|1 }
             return at+4
         }
         at=at+size
     }
     if cursor>bottom || need>bottom-cursor { return 0 }
-    store32(cursor,need|1)
-    store32(state,cursor+need)
+    *(cursor as *u32) = need|1
+    *(state as *u32) = cursor+need
     return cursor+4
 }
 func __ond_free(p:u32,base:u32,state:u32) {
     if p==0 { return }
-    var cursor=load32(state)
+    var cursor=*(state as *u32)
     var at=base
     var prev:u32
     for at<cursor {
-        var header=load32(at)
+        var header=*(at as *u32)
         var size=header&4294967292
         if at+4==p {
-            store32(at,size)
+            *(at as *u32) = size
             var next=at+size
             if next<cursor {
-                var after=load32(next)
-                if (after&1)==0 { size=size+(after&4294967292); store32(at,size) }
+                var after=*(next as *u32)
+                if (after&1)==0 { size=size+(after&4294967292); *(at as *u32) = size }
             }
             if prev!=0 {
-                var before=load32(prev)
-                if (before&1)==0 { size=size+(before&4294967292); at=prev; store32(at,size) }
+                var before=*(prev as *u32)
+                if (before&1)==0 { size=size+(before&4294967292); at=prev; *(at as *u32) = size }
             }
-            if at+size==cursor { store32(state,at) }
+            if at+size==cursor { *(state as *u32) = at }
             return
         }
         prev=at

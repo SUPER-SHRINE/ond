@@ -1,5 +1,6 @@
 //! Host-side incremental build orchestration. MIR never crosses this boundary.
 mod cache;
+mod cache_identity;
 mod compile;
 mod dependencies;
 mod graph;

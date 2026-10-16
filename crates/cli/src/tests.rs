@@ -111,6 +111,343 @@ fn compiler_manifest_and_source_set_changes_invalidate_cache() {
     f.put("ond.toml", "# changed project settings\n");
     assert_eq!(compile(f.request(), "compiler-b").unwrap().rebuilt.len(), 5);
 }
+
+#[test]
+fn generic_specializations_are_part_of_cache_identity() {
+    let f = Fixture::new();
+    f.put(
+        "main.ond",
+        "package main\nimport \"shared\"\nimport \"types\"\nfunc main(){\nvar model: types.Model\nvar number: i32 = shared.Outer[i32](1)\n}",
+    );
+    f.put(
+        "shared/shared.ond",
+        "package shared\nfunc Inner[T](value:T)->T{return value}\nfunc Outer[T](value:T)->T{return Inner[T](value)}",
+    );
+    f.put("types/types.ond", "package types\ntype Model struct{}\n");
+
+    let id = compiler_identity().unwrap();
+    let cold = compile(f.request(), &id).unwrap();
+    link(request_link(cold.manifest.clone())).unwrap();
+    f.put(
+        "main.ond",
+        "package main\nimport \"shared\"\nimport \"types\"\nfunc main(){\nvar model: types.Model\nvar number: i32 = shared.Outer[i32](1)\nvar again: i32 = shared.Outer[i32](2)\n}\n// caller edit without a new specialization\n",
+    );
+    let same_specializations = compile(f.request(), &id).unwrap();
+    assert_eq!(same_specializations.rebuilt, ["."]);
+    assert!(same_specializations.reused.contains(&"shared".into()));
+    let original_shared = cold
+        .manifest
+        .packages
+        .iter()
+        .find(|package| package.package == "shared")
+        .unwrap();
+    assert_eq!(
+        original_shared.build_id,
+        same_specializations
+            .manifest
+            .packages
+            .iter()
+            .find(|package| package.package == "shared")
+            .unwrap()
+            .build_id
+    );
+
+    f.put(
+        "main.ond",
+        "package main\nimport \"shared\"\nimport \"types\"\nfunc main(){\nvar model: types.Model\nvar number: i32 = shared.Outer[i32](1)\nvar copy: types.Model = shared.Outer[types.Model](model)\n}",
+    );
+    let changed = compile(f.request(), &id).unwrap();
+    let old_shared = cold
+        .manifest
+        .packages
+        .iter()
+        .find(|package| package.package == "shared")
+        .unwrap();
+    let new_shared = changed
+        .manifest
+        .packages
+        .iter()
+        .find(|package| package.package == "shared")
+        .unwrap();
+    assert_ne!(old_shared.build_id, new_shared.build_id);
+    link(request_link(changed.manifest.clone())).unwrap();
+    let mut mixed = changed.manifest.clone();
+    *mixed
+        .packages
+        .iter_mut()
+        .find(|package| package.package == "shared")
+        .unwrap() = old_shared.clone();
+    assert!(
+        link(request_link(mixed))
+            .unwrap_err()
+            .join(" ")
+            .contains("stale")
+    );
+
+    let warm = compile(f.request(), &id).unwrap();
+    assert!(warm.rebuilt.is_empty());
+    assert!(!warm.frontend_ran);
+    let warm_image = link(request_link(warm.manifest)).unwrap();
+
+    f.put("aaa/aaa.ond", "package aaa\ntype Added struct{}\n");
+    let shifted = compile(f.request(), &id).unwrap();
+    assert!(shifted.reused.contains(&"shared".into()));
+    let shifted_image = link(request_link(shifted.manifest)).unwrap();
+
+    let mut fresh_request = f.request();
+    fresh_request.cache_dir = Some(f.0.join("fresh-cache"));
+    let fresh = compile(fresh_request, &id).unwrap();
+    let fresh_image = link(request_link(fresh.manifest)).unwrap();
+    assert_eq!(
+        cache::encode(&shifted_image).unwrap(),
+        cache::encode(&fresh_image).unwrap()
+    );
+    assert_eq!(
+        cache::encode(&warm_image).unwrap(),
+        cache::encode(&link(request_link(changed.manifest)).unwrap()).unwrap()
+    );
+}
+
+#[test]
+fn nested_generic_cache_tracks_caller_type_layout_and_signatureless_arguments() {
+    let f = Fixture::new();
+    f.put(
+        "main.ond",
+        r#"package main
+import "shared"
+import "inner"
+type Token struct { Value:u32 }
+type Box[T] struct { Value:T }
+func main() {
+    var token: Token
+    var box: Box[u32]
+    _ = shared.Outer[Token](token)
+    _ = shared.Outer[Box[u32]](box)
+    _ = inner.Zero[i32]()
+}
+"#,
+    );
+    f.put(
+        "shared/shared.ond",
+        "package shared\nimport \"inner\"\nfunc Outer[T](value:T)->T{return inner.Identity[T](value)}\n",
+    );
+    f.put(
+        "inner/inner.ond",
+        "package inner\nfunc Identity[T](value:T)->T{return value}\nfunc Zero[T]()->i32{return 0}\n",
+    );
+    let id = compiler_identity().unwrap();
+    let cold = compile(f.request(), &id).unwrap();
+    link(request_link(cold.manifest.clone())).unwrap();
+
+    f.put(
+        "main.ond",
+        r#"package main
+import "shared"
+import "inner"
+type Token struct { Value:u32; Next:*Token }
+type Box[T] struct { Value:T }
+func main() {
+    var token: Token
+    var box: Box[u32]
+    _ = shared.Outer[Token](token)
+    _ = shared.Outer[Box[u32]](box)
+    _ = inner.Zero[i32]()
+}
+"#,
+    );
+    let token_changed = compile(f.request(), &id).unwrap();
+    for owner in ["shared", "inner"] {
+        let before = cold
+            .manifest
+            .packages
+            .iter()
+            .find(|package| package.package == owner)
+            .unwrap();
+        let after = token_changed
+            .manifest
+            .packages
+            .iter()
+            .find(|package| package.package == owner)
+            .unwrap();
+        assert_ne!(before.build_id, after.build_id, "{owner}");
+        assert!(token_changed.rebuilt.contains(&owner.to_owned()));
+    }
+    link(request_link(token_changed.manifest.clone())).unwrap();
+
+    f.put(
+        "main.ond",
+        r#"package main
+import "shared"
+import "inner"
+type Token struct { Value:u32; Next:*Token }
+type Box[T] struct { Value:T; Extra:u32 }
+func main() {
+    var token: Token
+    var box: Box[u32]
+    _ = shared.Outer[Token](token)
+    _ = shared.Outer[Box[u32]](box)
+    _ = inner.Zero[i32]()
+}
+"#,
+    );
+    let layout_changed = compile(f.request(), &id).unwrap();
+    for owner in ["shared", "inner"] {
+        let before = token_changed
+            .manifest
+            .packages
+            .iter()
+            .find(|package| package.package == owner)
+            .unwrap();
+        let after = layout_changed
+            .manifest
+            .packages
+            .iter()
+            .find(|package| package.package == owner)
+            .unwrap();
+        assert_ne!(before.build_id, after.build_id, "{owner}");
+        assert!(layout_changed.rebuilt.contains(&owner.to_owned()));
+    }
+    link(request_link(layout_changed.manifest.clone())).unwrap();
+
+    f.put(
+        "main.ond",
+        r#"package main
+import "shared"
+import "inner"
+type Token struct { Value:u32; Next:*Token }
+type Box[T] struct { Value:T; Extra:u32 }
+type Added struct { Value:u32 }
+func main() {
+    var token: Token
+    var box: Box[u32]
+    var added: Added
+    _ = shared.Outer[Token](token)
+    _ = shared.Outer[Box[u32]](box)
+    _ = shared.Outer[Added](added)
+    _ = inner.Zero[i32]()
+    _ = inner.Zero[u32]()
+}
+"#,
+    );
+    let new_specializations = compile(f.request(), &id).unwrap();
+    for owner in ["shared", "inner"] {
+        assert!(new_specializations.rebuilt.contains(&owner.to_owned()));
+    }
+    link(request_link(new_specializations.manifest.clone())).unwrap();
+    let warm = compile(f.request(), &id).unwrap();
+    assert!(!warm.frontend_ran);
+    assert!(warm.rebuilt.is_empty());
+    link(request_link(warm.manifest)).unwrap();
+
+    let mut fresh_request = f.request();
+    fresh_request.cache_dir = Some(f.0.join("fresh-cache"));
+    let fresh = compile(fresh_request, &id).unwrap();
+    let fresh_image = link(request_link(fresh.manifest)).unwrap();
+    let mixed_image = link(request_link(new_specializations.manifest)).unwrap();
+    assert_eq!(
+        cache::encode(&mixed_image).unwrap(),
+        cache::encode(&fresh_image).unwrap()
+    );
+}
+
+#[test]
+fn generic_cache_tracks_folded_layout_query_results() {
+    let f = Fixture::new();
+    f.put(
+        "shared/shared.ond",
+        "package shared\nimport \"inner\"\nfunc Size[T]()->u32{return sizeof(T)}\nfunc Outer[T]()->u32{return inner.Align[T]()}\n",
+    );
+    f.put(
+        "inner/inner.ond",
+        "package inner\nfunc Align[T]()->u32{return alignof(T)}\n",
+    );
+    let id = compiler_identity().unwrap();
+    let source = |token: &str, extra: &str| {
+        format!(
+            r#"package main
+import "shared"
+type Token struct {{ Value:{token} }}
+type Box[T] struct {{ Value:T; {extra} }}
+func main() {{
+    _ = shared.Size[Token]()
+    _ = shared.Outer[Token]()
+    _ = shared.Size[Box[Token]]()
+    _ = shared.Outer[Box[Token]]()
+}}
+"#
+        )
+    };
+    f.put("main.ond", &source("u8", ""));
+    let mut before = compile(f.request(), &id).unwrap();
+    link(request_link(before.manifest.clone())).unwrap();
+    for (index, (token, extra)) in [("u32", ""), ("u32", "Extra:u32")].into_iter().enumerate() {
+        f.put("main.ond", &source(token, extra));
+        let changed = compile(f.request(), &id).unwrap();
+        // The second edit changes size alone; the alignment-only inner owner can be reused.
+        let owners: &[&str] = if index == 0 {
+            &["shared", "inner"]
+        } else {
+            &["shared"]
+        };
+        for owner in owners {
+            let old = before
+                .manifest
+                .packages
+                .iter()
+                .find(|package| package.package == *owner)
+                .unwrap();
+            let new = changed
+                .manifest
+                .packages
+                .iter()
+                .find(|package| package.package == *owner)
+                .unwrap();
+            assert_ne!(old.build_id, new.build_id, "{owner}");
+            assert!(changed.rebuilt.contains(&(*owner).to_owned()));
+        }
+        let changed_image = link(request_link(changed.manifest.clone())).unwrap();
+        let warm = compile(f.request(), &id).unwrap();
+        assert!(!warm.frontend_ran);
+        assert!(warm.rebuilt.is_empty());
+        assert_eq!(
+            cache::encode(&changed_image).unwrap(),
+            cache::encode(&link(request_link(warm.manifest)).unwrap()).unwrap()
+        );
+        let mut fresh_request = f.request();
+        fresh_request.cache_dir = Some(f.0.join(format!("fresh-layout-{index}")));
+        let fresh = compile(fresh_request, &id).unwrap();
+        assert_eq!(
+            cache::encode(&changed_image).unwrap(),
+            cache::encode(&link(request_link(fresh.manifest)).unwrap()).unwrap()
+        );
+        before = changed;
+    }
+}
+
+#[test]
+fn corrupt_project_cache_manifest_reuses_valid_package_objects() {
+    let f = Fixture::new();
+    let id = compiler_identity().unwrap();
+    let cold = compile(f.request(), &id).unwrap();
+    let cache_dir = f.0.join("target/ond-cache");
+    let manifest = fs::read_dir(&cache_dir)
+        .unwrap()
+        .map(Result::unwrap)
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("project-") && name.ends_with(".ondmanifest"))
+        })
+        .unwrap();
+    fs::write(manifest, b"broken").unwrap();
+
+    let recovered = compile(f.request(), &id).unwrap();
+    assert!(!recovered.frontend_ran);
+    assert!(recovered.rebuilt.is_empty());
+    assert_eq!(recovered.reused.len(), cold.manifest.packages.len());
+}
+
 #[test]
 fn virtual_sources_conflicts_diagnostics_and_failed_build() {
     let f = Fixture::new();
@@ -340,5 +677,70 @@ fn serialized_packages_link_identically_to_full_codegen_without_runtime_initiali
             .unwrap_err()
             .join(" ")
             .contains("stale")
+    );
+}
+
+#[test]
+fn cached_generic_owner_links_rebuilt_caller_after_type_id_shift() {
+    let f = Fixture::new();
+    let main = r#"package main
+import "api"
+func main() {
+    cell := api.Cell[api.Token]{}
+    _ = cell.Get()
+    var reader: api.Reader[api.Token] = (&cell) as api.Reader[api.Token]
+    _ = reader.Get()
+    _ = len(cell)
+    _ = api.Plain{} + cell
+}
+"#;
+    f.put("main.ond", main);
+    f.put(
+        "api/api.ond",
+        r#"package api
+type Token struct { Value:u32 }
+type Plain struct {}
+type Cell[T] struct { Value:T }
+type Reader[T] interface { Get()->T }
+func (cell: *Cell[T]) Get()->T { return cell.Value }
+operator (cell: Cell[T]) len()->u32 { return 1 }
+operator (plain: Plain) + (cell: Cell[Token])->u32 { return cell.Value.Value }
+"#,
+    );
+    let id = compiler_identity().unwrap();
+    let before = compile(f.request(), &id).unwrap();
+    link(request_link(before.manifest.clone())).unwrap();
+    let owner = before
+        .manifest
+        .packages
+        .iter()
+        .find(|p| p.package == "api")
+        .unwrap();
+    f.put(
+        "aaa/extra.ond",
+        "package aaa\ntype Extra struct { Value:u32 }",
+    );
+    f.put("main.ond", &format!("{main}\n// rebuild caller\n"));
+    let after = compile(f.request(), &id).unwrap();
+    assert!(after.reused.iter().any(|p| p == "api"));
+    assert!(after.rebuilt.iter().any(|p| p == "."));
+    assert_eq!(
+        owner.path,
+        after
+            .manifest
+            .packages
+            .iter()
+            .find(|p| p.package == "api")
+            .unwrap()
+            .path
+    );
+    let mixed = link(request_link(after.manifest)).unwrap();
+    let mut fresh_request = f.request();
+    fresh_request.cache_dir = Some(f.0.join("fresh-cache"));
+    let fresh = compile(fresh_request, &id).unwrap();
+    let cold = link(request_link(fresh.manifest)).unwrap();
+    assert_eq!(
+        cache::encode(&mixed).unwrap(),
+        cache::encode(&cold).unwrap()
     );
 }

@@ -3,6 +3,7 @@ use crate::diagnostic::{Diagnostic, Diagnostics};
 use crate::ir::{ast, hir};
 use crate::project::{LoadedProject, PackageId};
 use crate::source::{FileId, Span};
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{body::BodyLowerer, canonical_symbol_name};
@@ -71,7 +72,25 @@ pub(super) struct TypeDeclaration {
     pub(super) type_id: Option<crate::semantic::TypeId>,
 }
 
+// Current compilation data stays separate from the stable emitted symbol.
+#[derive(Clone)]
+pub(super) enum GenericSpecialization {
+    Function {
+        name: String,
+        arguments: Vec<crate::semantic::TypeId>,
+    },
+    Method {
+        declaration: usize,
+        arguments: Vec<crate::semantic::TypeId>,
+    },
+    Operator {
+        declaration: usize,
+        arguments: Vec<crate::semantic::TypeId>,
+    },
+}
+
 pub(super) struct TypePackage {
+    pub(super) specializations: RefCell<BTreeMap<String, GenericSpecialization>>,
     pub(super) id: PackageId,
     pub(super) logical_path: String,
     pub(super) imports: BTreeMap<FileId, BTreeMap<String, PackageId>>,
@@ -200,6 +219,7 @@ pub(super) fn collect_type_universe(
                 }
             }
             Some(TypePackage {
+                specializations: RefCell::default(),
                 id: source.id,
                 logical_path: package.logical_path.clone(),
                 imports,
@@ -527,16 +547,9 @@ fn resolve_applied_type(
             )
         })
         .collect::<Option<Vec<_>>>()?;
-    let instance_name = format!(
-        "{}.{}[{}]",
-        owner.logical_path,
-        name,
-        resolved_arguments
-            .iter()
-            .map(|ty| ty.0.to_string())
-            .collect::<Vec<_>>()
-            .join(",")
-    );
+    let declaration_name = format!("{}.{}", owner.logical_path, name);
+    let instance_name =
+        super::identity::generic_name(&declaration_name, &resolved_arguments, types, universe);
     let existing = types.find_named(&instance_name);
     if let Some(id) = existing {
         if !matches!(types.kind(id), Some(crate::semantic::TypeKind::Pending)) {
@@ -553,7 +566,6 @@ fn resolve_applied_type(
             return None;
         }
     }
-    let declaration_name = format!("{}.{}", owner.logical_path, name);
     let type_id = existing.unwrap_or_else(|| {
         types.reserve_generic_defined(
             instance_name,

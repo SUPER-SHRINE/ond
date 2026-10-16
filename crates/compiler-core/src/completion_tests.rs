@@ -53,9 +53,9 @@ fn instructions(f: &mut Function) -> impl Iterator<Item = &mut Instruction> {
 }
 
 #[test]
-fn memory_builtins_have_explicit_typed_intrinsics() {
+fn allocation_builtins_have_explicit_typed_intrinsics() {
     let p = project(
-        "package main\nfunc main() {\nvar p = new(u32)\nstore32(p, 7)\nvar x = load32(p)\nfree(p)\nvar bytes = alloc[u8](12)\nfree(bytes)\nfree(nil)\n}\n",
+        "package main\nfunc main() {\nvar p = new(u32)\n*(p as *u32) = 7\nvar x = *(p as *u32)\nfree(p)\nvar bytes = alloc[u8](12)\nfree(bytes)\nfree(nil)\n}\n",
     );
     let ops = p.packages[0].functions[0]
         .blocks
@@ -77,8 +77,6 @@ fn memory_builtins_have_explicit_typed_intrinsics() {
         ops,
         [
             Intrinsic::New(TypeId::U32),
-            Intrinsic::Store32,
-            Intrinsic::Load32,
             Intrinsic::Free,
             Intrinsic::Alloc(TypeId::U8),
             Intrinsic::Free,
@@ -91,8 +89,7 @@ fn memory_builtins_have_explicit_typed_intrinsics() {
 #[test]
 fn builtin_names_cannot_be_shadowed() {
     for name in [
-        "alloc", "free", "len", "trap", "sizeof", "alignof", "load32", "store32", "thisFile",
-        "thisLine", "new",
+        "alloc", "free", "len", "trap", "sizeof", "alignof", "thisFile", "thisLine", "new",
     ] {
         let source = format!("package main\nfunc {name}() {{}}\nfunc main() {{}}\n");
         let error = compile(&source, None).unwrap_err();
@@ -174,10 +171,8 @@ fn invalid_literals_and_intrinsics_are_source_errors() {
         ("var x = (1.0 / 0.0) as i32", "conversion"),
         ("var x = alloc[u8](true)", "type"),
         ("free(1)", "pointer"),
-        ("var x = load32(false)", "address"),
         ("var x = thisFile(1)", "thisFile expects 0 arguments"),
         ("var x = thisLine(1)", "thisLine expects 0 arguments"),
-        ("store32(0)", "arguments"),
         ("var x = missing()", "unknown"),
     ] {
         let error =

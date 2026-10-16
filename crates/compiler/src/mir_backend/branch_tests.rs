@@ -99,7 +99,7 @@ fn far_startup_initializer_calls_stack_arguments_and_function_addresses_execute(
         func sum(a:u32,b:u32,c:u32,d:u32,e:u32,f:u32,g:u32)->u32 {return a+b+c+d+e+f+g+State}
         func padding(){var buf:[2000]u8;buf[1999]=1}
         func main(){var direct=sum(1,2,3,4,5,6,7);var indirect= sum;
-            store32(4294934608,direct+indirect(7,6,5,4,3,2,1))}",
+            *(4294934608 as u32 as *u32) = direct+indirect(7,6,5,4,3,2,1)}",
     );
     let project = fixture.core();
     let objects = codegen_objects(&project).unwrap();
@@ -119,7 +119,7 @@ fn large_loop_and_conditional_edges_execute_from_source() {
                 if flag {{var buf:[1600]u8;buf[1599]=1}}
                 n=n+1
             }};return n}}
-            func main(){{store32(4294934608,loop({flag}))}}"
+            func main(){{*(4294934608 as u32 as *u32) = loop({flag})}}"
         ));
         let project = fixture.core();
         let objects = codegen_objects(&project).unwrap();

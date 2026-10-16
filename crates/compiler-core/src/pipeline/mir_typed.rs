@@ -295,16 +295,34 @@ impl FunctionBuilder<'_> {
                     let targets = targets
                         .iter()
                         .map(|target| match target {
-                            Some(target) => self.lower_place(target).map(Some),
+                            Some(target) => {
+                                let mut checks = Vec::new();
+                                let place = if op.is_none() {
+                                    self.lower_place_with_checks(target, Some(&mut checks))?
+                                } else {
+                                    self.lower_place(target)?
+                                };
+                                Some(Some((place, checks)))
+                            }
                             None => Some(None),
                         })
                         .collect::<Option<Vec<_>>>()?;
                     if let Some(op) = op {
-                        let [Some(place)] = targets.as_slice() else {
+                        let [Some((place, _))] = targets.as_slice() else {
                             return None;
                         };
                         let place = place.clone();
                         let lhs = self.load_place_value(place.clone(), *span);
+                        let receiver = if let Some(call) = overloaded {
+                            Some(self.resolved_receiver_value(
+                                call.arguments.first()?,
+                                lhs,
+                                Some(&place),
+                                *span,
+                            )?)
+                        } else {
+                            None
+                        };
                         let evaluated = self.lower_values(values)?;
                         let [rhs] = evaluated.as_slice() else {
                             return None;
@@ -319,6 +337,7 @@ impl FunctionBuilder<'_> {
                             if *result_ty != place.ty {
                                 return None;
                             }
+                            let receiver = receiver?;
                             let result = mir::ValueId(self.values.len() as u32);
                             self.values.push(mir::Value {
                                 id: result,
@@ -330,7 +349,7 @@ impl FunctionBuilder<'_> {
                                 mir::InstructionKind::Call {
                                     callee: mir::Callee::Direct(symbol.clone()),
                                     signature: call.signature.clone(),
-                                    arguments: vec![lhs, *rhs],
+                                    arguments: vec![receiver, *rhs],
                                     effects: mir::CallEffects::Unknown,
                                 },
                                 *span,
@@ -378,7 +397,10 @@ impl FunctionBuilder<'_> {
                         return None;
                     }
                     for (place, value) in targets.into_iter().zip(evaluated) {
-                        if let Some(place) = place {
+                        if let Some((place, checks)) = place {
+                            for (check, check_span) in checks {
+                                self.emit_effect(mir::InstructionKind::Check(check), check_span);
+                            }
                             self.store_value(place, value, *span);
                         }
                     }
@@ -394,14 +416,45 @@ impl FunctionBuilder<'_> {
                         setter,
                         span,
                     } = statement.as_ref();
-                    let base = self.lower_expr(base)?;
+                    let base_place = self.lower_place(base)?;
+                    let base = self.load_place_value(base_place.clone(), base.span);
+                    let getter_receiver = self.resolved_receiver_value(
+                        getter.arguments.first()?,
+                        base,
+                        Some(&base_place),
+                        *span,
+                    )?;
+                    let setter_receiver =
+                        if getter.arguments.first()?.ty == setter.arguments.first()?.ty {
+                            getter_receiver
+                        } else {
+                            self.resolved_receiver_value(
+                                setter.arguments.first()?,
+                                base,
+                                Some(&base_place),
+                                *span,
+                            )?
+                        };
                     let index = self.lower_expr(index)?;
-                    let got = self.emit_pre_evaluated_call(getter, vec![base, index], *span)?;
+                    let got =
+                        self.emit_pre_evaluated_call(getter, vec![getter_receiver, index], *span)?;
                     let [lhs] = got.as_slice() else { return None };
+                    let receiver = if let Some(call) = overloaded {
+                        Some(self.resolved_receiver_value(
+                            call.arguments.first()?,
+                            *lhs,
+                            None,
+                            *span,
+                        )?)
+                    } else {
+                        None
+                    };
                     let rhs = self.lower_values(values)?;
                     let [rhs] = rhs.as_slice() else { return None };
                     let result = if let Some(call) = overloaded {
-                        let result = self.emit_pre_evaluated_call(call, vec![*lhs, *rhs], *span)?;
+                        let receiver = receiver?;
+                        let result =
+                            self.emit_pre_evaluated_call(call, vec![receiver, *rhs], *span)?;
                         let [result] = result.as_slice() else {
                             return None;
                         };
@@ -427,7 +480,11 @@ impl FunctionBuilder<'_> {
                             *span,
                         )
                     };
-                    self.emit_pre_evaluated_call(setter, vec![base, index, result], *span)?;
+                    self.emit_pre_evaluated_call(
+                        setter,
+                        vec![setter_receiver, index, result],
+                        *span,
+                    )?;
                 }
                 hir::Stmt::Expr(expr) => {
                     self.lower_expr(expr)?;
@@ -824,6 +881,36 @@ impl FunctionBuilder<'_> {
         Some(results)
     }
 
+    fn resolved_receiver_value(
+        &mut self,
+        receiver: &hir::Expr,
+        value: mir::ValueId,
+        place: Option<&mir::Place>,
+        span: Span,
+    ) -> Option<mir::ValueId> {
+        if self.values.get(value.0 as usize)?.ty == receiver.ty {
+            return Some(value);
+        }
+        match &receiver.kind {
+            hir::ExprKind::AddressOf(_) => {
+                let place = place?.clone();
+                if let mir::PlaceBase::Local(id) = place.base {
+                    self.locals[id.0 as usize].address_taken = true;
+                }
+                Some(self.emit_value(receiver.ty, mir::InstructionKind::AddressOf(place), span))
+            }
+            hir::ExprKind::Dereference(_) => Some(self.load_place_value(
+                mir::Place {
+                    base: mir::PlaceBase::Pointer(value),
+                    projections: Vec::new(),
+                    ty: receiver.ty,
+                },
+                span,
+            )),
+            _ => Some(value),
+        }
+    }
+
     fn lower_interface_callee(
         &mut self,
         receiver: &hir::Expr,
@@ -840,6 +927,37 @@ impl FunctionBuilder<'_> {
         self.store_value(storage.clone(), value, span);
         let data = self.load_interface_field(storage.clone(), 0, interface.data_pointer, span);
         let table = self.load_interface_field(storage, 1, interface.vtable, span);
+        let nil = self.emit_value(
+            interface.vtable,
+            mir::InstructionKind::Constant(mir::Constant::Nil(interface.vtable)),
+            span,
+        );
+        let table_nil = self.emit_value(
+            mir::TypeId::BOOL,
+            mir::InstructionKind::Binary {
+                op: mir::BinaryOp::Equal,
+                lhs: table,
+                rhs: nil,
+                overflow: mir::OverflowBehavior::Wrap,
+            },
+            span,
+        );
+        let fault = self.new_block(span);
+        let dispatch = self.new_block(span);
+        self.terminate(
+            mir::TerminatorKind::Branch {
+                condition: table_nil,
+                then_edge: edge(fault),
+                else_edge: edge(dispatch),
+            },
+            span,
+        );
+        self.current = Some(fault);
+        self.terminate(
+            mir::TerminatorKind::Trap(mir::TrapKind::Explicit("nil interface method call".into())),
+            span,
+        );
+        self.current = Some(dispatch);
         let method_place = mir::Place {
             base: mir::PlaceBase::Pointer(table),
             projections: vec![mir::Projection::Field {

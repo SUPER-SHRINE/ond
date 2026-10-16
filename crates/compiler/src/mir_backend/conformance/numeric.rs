@@ -2,7 +2,7 @@ use super::runner::*;
 use kagura::FaultCode;
 use ond_compiler_core::test_vectors::{INTEGERS, floats, integers};
 use std::collections::BTreeMap;
-const BITS: &str = "func bits(x:f32)->u32{return load32((&x) as u32)}\nfunc frombits(x:u32)->f32{var f:f32;store32((&f) as u32,x);return f}";
+const BITS: &str = "func bits(x:f32)->u32{return *((&x) as u32 as *u32)}\nfunc frombits(x:u32)->f32{var f:f32;*((&f) as u32 as *u32) = x;return f}";
 
 #[test]
 fn shared_336_integer_vectors_execute_on_kagura() {
@@ -26,14 +26,14 @@ fn shared_336_integer_vectors_execute_on_kagura() {
             op => format!("a {op} b"),
         };
         let result = if comparison {
-            format!("var r:u32;if {expression}{{r=1}};store32({OUTPUT},r)")
+            format!("var r:u32;if {expression}{{r=1}};*({OUTPUT} as u32 as *u32) = r")
         } else {
-            format!("store32({OUTPUT},({expression}) as u32)")
+            format!("*({OUTPUT} as u32 as *u32) = ({expression}) as u32")
         };
         let source = format!(
-            "package main\nfunc main(){{var a=load32({INPUT}) as {};var b=load32({}) as {b_ty};{result}}}",
-            v.source_ty,
-            INPUT + 4
+            "package main\nfunc main(){{var addressA:u32={INPUT};var addressB:u32={};var pointerA = addressA as *u32;var pointerB = addressB as *u32;var a=(*pointerA) as {};var b=(*pointerB) as {b_ty};{result}}}",
+            INPUT + 4,
+            v.source_ty
         );
         let bytes = cache
             .entry(source.clone())
@@ -62,7 +62,7 @@ fn shared_25_float_bit_vectors_execute_on_kagura() {
     let mut cache = BTreeMap::new();
     for v in floats::VECTORS {
         let source = format!(
-            "package main\n{BITS}\nfunc main(){{var a=frombits(load32({INPUT}));var b=frombits(load32({}));store32({OUTPUT},bits(a {} b))}}",
+            "package main\n{BITS}\nfunc main(){{var a=frombits(*({INPUT} as u32 as *u32));var b=frombits(*({} as u32 as *u32));*({OUTPUT} as u32 as *u32) = bits(a {} b)}}",
             INPUT + 4,
             v.op
         );
@@ -96,7 +96,7 @@ fn all_twelve_float_conversion_directions_and_boundaries_execute() {
     ] {
         let t = INTEGERS.iter().find(|t| t.name == ty).unwrap();
         let source = format!(
-            "package main\n{BITS}\nfunc main(){{var a=load32({INPUT}) as {ty};store32({OUTPUT},bits(a as f32))}}"
+            "package main\n{BITS}\nfunc main(){{var address:u32={INPUT};var input=address as *u32;var a=(*input) as {ty};*({OUTPUT} as u32 as *u32) = bits(a as f32)}}"
         );
         let bytes = compile(&[("main.ond", &source)]);
         let mut rows = vec![(t.min as u32, min), (t.max as u32, max)];
@@ -140,7 +140,7 @@ fn all_twelve_float_conversion_directions_and_boundaries_execute() {
     ] {
         let t = INTEGERS.iter().find(|t| t.name == ty).unwrap();
         let source = format!(
-            "package main\n{BITS}\nfunc main(){{var a=frombits(load32({INPUT}));var p={OUTPUT} as *{ty};*p=a as {ty}}}"
+            "package main\n{BITS}\nfunc main(){{var address:u32={INPUT};var input=address as *u32;var a=frombits(*input);var p={OUTPUT} as *{ty};*p=a as {ty}}}"
         );
         // Read narrow stores as raw words: the untouched upper bytes stay sentinel.
         let bytes = compile(&[("main.ond", &source)]);

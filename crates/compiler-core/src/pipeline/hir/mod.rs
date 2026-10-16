@@ -5,20 +5,21 @@ use crate::project::{LoadedProject, PackageId};
 use crate::source::Span;
 use std::collections::{BTreeMap, BTreeSet};
 
+mod array_layout;
 mod body;
 mod body_names;
 mod control_flow;
 mod generic_functions;
+mod identity;
+#[cfg(test)]
+mod identity_tests;
 mod operators;
 mod types;
 use body::{BodyLowerer, lower_typed_body};
 use body_names::validate_generic_body_names;
 use control_flow::{block_can_complete_normally, return_diagnostics};
 use generic_functions::instantiate_generic_functions;
-use operators::{
-    canonical_generic_operator_symbol, canonical_operator_symbol, operator_type_owner,
-    type_mentions_parameter,
-};
+use operators::{canonical_generic_operator_symbol, canonical_operator_symbol};
 use types::{
     TypePackage, collect_type_universe, generic_method_receiver, method_receiver_name,
     resolve_all_defined_types, resolve_defined_type, resolve_method_signature, resolve_signature,
@@ -386,6 +387,82 @@ pub(crate) fn lower_to_hir(
                         }
                     }
                     ast::TopLevelDecl::Operator(decl) => {
+                        let receiver = &decl.signature.params[0];
+                        let Some((receiver_name, _)) = method_receiver_name(receiver) else {
+                            diagnostics.push(Diagnostic::error(
+                                receiver.span,
+                                "operator receiver must be a local named type or pointer to one",
+                            ));
+                            continue;
+                        };
+                        let Some(type_declaration) = type_universe
+                            .iter()
+                            .find(|candidate| candidate.id == source_package.id)
+                            .and_then(|candidate| candidate.declarations.get(receiver_name))
+                        else {
+                            diagnostics.push(Diagnostic::error(
+                                receiver.span,
+                                "operator receiver type must be declared in the same package",
+                            ));
+                            continue;
+                        };
+                        if type_declaration.type_params.is_empty() {
+                            if matches!(&receiver.ty, ast::Type::Apply { .. })
+                                || matches!(&receiver.ty, ast::Type::Pointer(inner, _) if matches!(inner.as_ref(), ast::Type::Apply { .. }))
+                            {
+                                diagnostics.push(Diagnostic::error(
+                                    receiver.span,
+                                    "non-generic operator receiver cannot have type arguments",
+                                ));
+                                continue;
+                            }
+                        } else {
+                            let Some(generic) = generic_method_receiver(receiver) else {
+                                diagnostics.push(Diagnostic::error(receiver.span, "generic operator receiver must apply fresh type parameter names to a local generic type"));
+                                continue;
+                            };
+                            if generic.parameters.len() != type_declaration.type_params.len() {
+                                diagnostics.push(Diagnostic::error(receiver.span, format!("generic operator receiver expects {} type parameters, found {}", type_declaration.type_params.len(), generic.parameters.len())));
+                                continue;
+                            }
+                            let mut names = BTreeSet::new();
+                            if generic.parameters.iter().any(|parameter| {
+                                parameter.name == "_"
+                                    || matches!(
+                                        parameter.name.as_str(),
+                                        "bool"
+                                            | "u8"
+                                            | "i8"
+                                            | "u16"
+                                            | "i16"
+                                            | "u32"
+                                            | "i32"
+                                            | "f32"
+                                    )
+                                    || type_universe
+                                        .iter()
+                                        .find(|candidate| candidate.id == source_package.id)
+                                        .is_some_and(|package| {
+                                            package.declarations.contains_key(&parameter.name)
+                                        })
+                                    || !names.insert(parameter.name.clone())
+                            }) {
+                                diagnostics.push(Diagnostic::error(receiver.span, "generic operator receiver type parameters must be fresh, distinct non-blank identifiers"));
+                                continue;
+                            }
+                        }
+                        let key = (
+                            receiver_name.to_string(),
+                            decl.name,
+                            decl.signature.params.len(),
+                        );
+                        if !seen_operators.insert(key) {
+                            diagnostics.push(Diagnostic::error(
+                                decl.span,
+                                "duplicate operator declaration for the same receiver and arity",
+                            ));
+                            continue;
+                        }
                         if !decl.type_params.is_empty() {
                             let parameter_count = decl.signature.params.len();
                             let valid_arity = match decl.name {
@@ -418,20 +495,6 @@ pub(crate) fn lower_to_hir(
                                 ));
                                 continue;
                             }
-                            if let Some(parameter) = decl.type_params.iter().find(|parameter| {
-                                !decl.signature.params.iter().any(|operand| {
-                                    type_mentions_parameter(&operand.ty, &parameter.name)
-                                })
-                            }) {
-                                diagnostics.push(Diagnostic::error(
-                                    parameter.span,
-                                    format!(
-                                        "operator type parameter `{}` cannot be inferred from its operands",
-                                        parameter.name
-                                    ),
-                                ));
-                                continue;
-                            }
                             let placeholders =
                                 vec![crate::semantic::TypeId::U8; decl.type_params.len()];
                             let validation_source = types::substitute_signature(
@@ -439,11 +502,13 @@ pub(crate) fn lower_to_hir(
                                 &decl.type_params,
                                 &placeholders,
                             );
+                            // Placeholder instances are only for declaration checks.
+                            let mut validation_types = types.clone();
                             let Some(validation_signature) = resolve_signature(
                                 source_package.id,
                                 &validation_source,
                                 &type_universe,
-                                &mut types,
+                                &mut validation_types,
                                 &mut diagnostics,
                             ) else {
                                 continue;
@@ -456,16 +521,6 @@ pub(crate) fn lower_to_hir(
                                     "operator len must return u32",
                                 ));
                                 continue;
-                            }
-                            let owner = validation_signature
-                                .parameters
-                                .iter()
-                                .find_map(|parameter| operator_type_owner(&types, parameter.ty));
-                            if owner.as_deref() != Some(package.logical_path.as_str()) {
-                                diagnostics.push(Diagnostic::error(
-                                    decl.signature.span,
-                                    "generic operator must be declared by the package owning its leftmost user-defined operand",
-                                ));
                             }
                             continue;
                         }
@@ -523,24 +578,6 @@ pub(crate) fn lower_to_hir(
                             .iter()
                             .map(|parameter| parameter.ty)
                             .collect::<Vec<_>>();
-                        let owner = parameter_types
-                            .iter()
-                            .find_map(|ty| operator_type_owner(&types, *ty));
-                        if owner.as_deref() != Some(package.logical_path.as_str()) {
-                            diagnostics.push(Diagnostic::error(
-                                decl.signature.span,
-                                "operator must be declared by the package owning its leftmost user-defined operand",
-                            ));
-                            continue;
-                        }
-                        let key = (decl.name, parameter_types.clone());
-                        if !seen_operators.insert(key) {
-                            diagnostics.push(Diagnostic::error(
-                                decl.span,
-                                "duplicate operator declaration for the same operand types",
-                            ));
-                            continue;
-                        }
                         let Some((body, function_statics)) = lower_typed_body(
                             source_package.id,
                             &signature,
@@ -557,6 +594,8 @@ pub(crate) fn lower_to_hir(
                             &package.logical_path,
                             decl.name,
                             &parameter_types,
+                            &types,
+                            &type_universe,
                         );
                         items.push(hir::Item::Func(hir::FuncItem {
                             name: canonical_name.clone(),
@@ -700,23 +739,28 @@ pub(crate) fn lower_to_hir(
                                         )
                                     },
                                 );
+                            // Keep artificial generic arguments out of the real
+                            // type table, including receiver and parameter types.
+                            let mut placeholder_types =
+                                generic_receiver.as_ref().map(|_| types.clone());
+                            let validation_types = placeholder_types.as_mut().unwrap_or(&mut types);
                             let Some(validation_signature) = resolve_method_signature(
                                 source_package.id,
                                 &validation_receiver,
                                 &validation_signature_source,
                                 &type_universe,
-                                &mut types,
+                                validation_types,
                                 &mut diagnostics,
                             ) else {
                                 continue;
                             };
                             let receiver_type = validation_signature.parameters[0].ty;
-                            let receiver_base_type = match types.kind(receiver_type) {
+                            let receiver_base_type = match validation_types.kind(receiver_type) {
                                 Some(crate::semantic::TypeKind::Pointer(pointee)) => *pointee,
                                 _ => receiver_type,
                             };
                             if matches!(
-                                types.underlying_kind(receiver_base_type),
+                                validation_types.underlying_kind(receiver_base_type),
                                 Some(crate::semantic::TypeKind::Interface(_))
                             ) {
                                 diagnostics.push(Diagnostic::error(
@@ -737,7 +781,7 @@ pub(crate) fn lower_to_hir(
                                 continue;
                             }
                             if let Some(crate::semantic::TypeKind::Struct(structure)) =
-                                types.underlying_kind(receiver_base_type)
+                                validation_types.underlying_kind(receiver_base_type)
                                 && structure
                                     .fields
                                     .iter()
@@ -918,6 +962,7 @@ pub(crate) fn lower_to_hir(
         &loaded.sources,
         &mut diagnostics,
     );
+    array_layout::validate(&types, &mut diagnostics);
 
     // Semantic analysis consumes the loaded snapshot, including in-memory inputs.
     // Filesystem discovery/validation belongs to the project loader.
@@ -996,23 +1041,22 @@ fn canonical_symbol_name(package_path: &str, identifier: &str) -> String {
     }
 }
 
-pub(super) fn canonical_generic_symbol(
+pub(in crate::pipeline::hir) fn canonical_generic_symbol(
     package_path: &str,
     name: &str,
     arguments: &[crate::semantic::TypeId],
+    types: &crate::semantic::TypeTable,
+    universe: &[TypePackage],
 ) -> String {
     let package = if package_path == "." {
         "main"
     } else {
         package_path
     };
+    let arguments = identity::arguments(arguments, types, universe);
     format!(
-        "{package}.\u{1f}generic.{name}.{}",
-        arguments
-            .iter()
-            .map(|argument| argument.0.to_string())
-            .collect::<Vec<_>>()
-            .join(".")
+        "{}:{package}.\u{1f}generic.{name}.{arguments};",
+        package.len()
     )
 }
 
@@ -1025,24 +1069,24 @@ pub(super) fn canonical_method_symbol(package_path: &str, receiver: &str, method
     format!("{package}.\u{1f}method.{receiver}.{method}")
 }
 
-pub(super) fn canonical_generic_method_symbol(
+fn canonical_generic_method_symbol(
     package_path: &str,
     receiver: &str,
     method: &str,
-    declaration_index: usize,
     arguments: &[crate::semantic::TypeId],
+    types: &crate::semantic::TypeTable,
+    universe: &[TypePackage],
 ) -> String {
     let package = if package_path == "." {
         "main"
     } else {
         package_path
     };
-    let arguments = arguments
-        .iter()
-        .map(|argument| argument.0.to_string())
-        .collect::<Vec<_>>()
-        .join("_");
-    format!("{package}.\u{1f}generic_method.{receiver}.{method}.{declaration_index}.{arguments}")
+    let arguments = identity::arguments(arguments, types, universe);
+    format!(
+        "{}:{package}.\u{1f}generic_method.{receiver}.{method}.{arguments};",
+        package.len()
+    )
 }
 
 fn constant_is_string_literal(

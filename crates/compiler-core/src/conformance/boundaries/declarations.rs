@@ -58,7 +58,6 @@ pub(super) fn rows() -> Vec<Row> {
         ("call", "func f() -> i32 { return 0 }", "f()"),
         ("function", "func callable() {}", "callable"),
         ("global", "var g = 0", "g"),
-        ("load", "", "load32(0)"),
         ("alloc", "", "alloc[u8](4)"),
         ("new", "", "new(i32)"),
         ("address", "var g = 0", "&g"),

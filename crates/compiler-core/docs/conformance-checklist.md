@@ -37,7 +37,7 @@
 
 文字列仕様変更後に`cargo test --workspace`を再実行し、**全419テスト成功、ignored 0**。
 compiler-coreは311件、language-serverは48件。これはRust test関数数であり、仕様の達成率ではない。
-数値751ケース、型境界1,366ケース、制御/名前111ケース、診断6ケースはそれぞれテーブル内の件数で、Rust test関数数に加算しない。
+数値751ケース、型境界1,315ケース、制御/名前111ケース、診断6ケースはそれぞれテーブル内の件数で、Rust test関数数に加算しない。
 数値の独立oracle 336 vectorsは生成MIRの実行検証件数に含めない。
 
 ### 初回〜P0の実行履歴
@@ -134,7 +134,7 @@ Q-03短絡castの決定反映後: 同コマンドで全289テスト成功、comp
 | STR-01 | UTF-8・emoji・任意byte escapeとbyte len、raw string | 検証済 D/H/E: [MEM] string_literal_array_types_flow_through_globals_arguments_and_returns、[LEX] string検証 | import pathは値と別にvalid UTF-8を要求 |
 | STR-02 | `[N]u8`型、完全長一致、copy/mutation/addressability、pointer非変換 | 検証済 D/H/E: [MEM] string_literals_are_mutable_byte_array_values_and_copy_independently、string_literal_lengths_and_pointer_types_require_exact_matches | 新MIR backend/実機でのaggregate ABIは別工程。文字列専用MIRは撤去済み |
 | LEN-01 | len(array)は定数u32を返しoperandを1回評価 | 検証済 A/D/H/E: [CONST]/[VALUE] 副作用・faultを含むoperandの1回評価と型検査、[型境界表](./type-boundary-conformance.md) defined array | defined型とoperand評価は個別には追補済。両者を混ぜた組み合わせは追加候補 |
-| BI-01 | alloc/free/load32/store32/newの型・arity・戻り値 | 検証済 D/H: [型境界表](./type-boundary-conformance.md) 引数位置別14型・arity・void、[DONE] intrinsic形状 | new([4]u8)→*[4]u8受理、*u8拒否。MMIO/allocator実行はbackend工程 |
+| BI-01 | alloc/free/newの型・arity・戻り値 | 検証済 D/H: [型境界表](./type-boundary-conformance.md) 引数位置別14型・arity・void、[DONE] intrinsic形状 | new([4]u8)→*[4]u8受理、*u8拒否。allocator実行はbackend工程 |
 | BI-02 | lenの型・arity、builtin名の予約、str廃止 | 検証済 D/H/E: [型境界表](./type-boundary-conformance.md) arity/14型/defined型、[CALL]/[DONE] `len`のbinding拒否、[SPEC] strは通常識別子 | 組み込み名全体の予約規則はNAME-03 |
 | BI-03 | thisFile/thisLineの型・arity・論理位置 | 検証済 D/H/E: [型境界表](./type-boundary-conformance.md) arity・戻り値、backend実機テストで論理path・1始まり行・path共有を確認 | object間のpath共有は対象外 |
 | MEM-01 | new zero/alignment、alloc failure/0、free nil等 | 別工程: coreではIntrinsicとTypeIdを確認。Rは旧ケース62–65/78–80 | 新MIR backend経由でallocator/zero/alignmentを再検証 |
@@ -172,7 +172,7 @@ Q-03短絡castの決定反映後: 同コマンドで全289テスト成功、comp
 - **Q-01 決定済**: if条件の括弧は不要だが使用可能。通常の式のグループ化。仕様文言修正と実行結果テストを追加。
 - **Q-02 決定済**: 0戻り値はarrow省略だけ。関数宣言・関数型とも → () をparserで拒否。1件の括弧付き戻り値と末尾commaは維持。
 - **Q-03 基本規則を明文化**: 通常callは未評価の短絡側でもconstにできない。一方、false && (1/0 == 0) は除算しない。定数文字列のlenと配列長lenを許可するが、len(array)のoperandは通常どおり1回評価する。未評価部分も名前解決・型検査をする。追補: [constant_contexts.rs](../src/conformance/constant_contexts.rs)で通常/未評価call、算術短絡、配列call/要素/明示castのlen評価、未評価部分の名前/型エラー、評価されるcast範囲エラーを照合。短絡側の明示castは値と範囲検査を省略し、`false && ((250 + 6) as u8 == 0)` と対応する `true ||` を受理する。評価される側の範囲エラーは維持する。通常の値文脈は[constant_value_tests.rs](../src/constant_value_tests.rs)で代入/引数/return/global、短絡の未評価call/castのMIR除去、len operandの1回評価、評価抑止状態が後続へ漏れないことを検証。
-- **Q-04 更新済・実装済**: 組み込み型名と`alloc`、`free`、`len`、`trap`、`sizeof`、`alignof`、`load32`、`store32`、`thisFile`、`thisLine`、`new`はshadow不可。type/var/const/:=/関数/関数宣言parameterのbinding名を禁止する。field名と関数型の説明用parameter名はbindingを作らないので対象外。廃止した`str`は通常識別子として利用できる。
+- **Q-04 更新済・実装済**: 組み込み型名と`alloc`、`free`、`len`、`trap`、`sizeof`、`alignof`、`thisFile`、`thisLine`、`new`はshadow不可。type/var/const/:=/関数/関数宣言parameterのbinding名を禁止する。field名と関数型の説明用parameter名はbindingを作らないので対象外。廃止した`str`は通常識別子として利用できる。
 
 旧NAME-03の「事前定義型shadow許可」はこの決定で撤回した。既存実装をshadow可能に変えるのではなく、宣言を拒否する方針へ仕様を変更した。
 
@@ -184,7 +184,7 @@ Q-03短絡castの決定反映後: 同コマンドで全289テスト成功、comp
 - [x] **P0: scope/grammarの穴を先に固定** — SYN-07、PKG-01～03、INIT-03の共通ケース追加済。Q-01/02/04は§3の既存テストを利用。Q-03は25ケースを登録し、短絡側castの非評価も決定・実装・テストへ反映済。
 - [x] **P0: 数値の仕様表をテストデータ化** — [数値表](./numeric-conformance.md)に751共通ケース、336 runtime整数oracle vectorsを追加。6整数型・境界・全operator、180関数の動的MIR契約を明示。runtime結果のbackend検証は引き続き別工程。
 - [x] **P1: 制御フローと評価順の組み合わせ** — [制御表](./control-flow-conformance.md)の85ケースとMemoryVm層を追加。副作用traceと書込結果を照合。空blockのparser不具合を修正し、control header26ケースを通常実行（計111ケース、ignoredなし）。
-- [x] **P1: 型/値境界の負例行列** — [型境界表](./type-boundary-conformance.md)に1,366ケースを維持。CAST-01、NIL-01、OP-01、BI-01/02/03、DECL-01/02の受理/拒否・診断位置・型/zero値を検証。`str`型・constructor廃止を反映。
+- [x] **P1: 型/値境界の負例行列** — [型境界表](./type-boundary-conformance.md)に1,315ケースを維持。CAST-01、NIL-01、OP-01、BI-01/02/03、DECL-01/02の受理/拒否・診断位置・型/zero値を検証。`str`型・constructor廃止を反映。
 - [x] **P1: 診断の期待値強化** — [診断表](./diagnostic-conformance.md)。compiler-coreのis_errだけのテストを原因照合に置換。既存compile拒否は件数/severity/file-spanも検証し、Unicode・複数fileの6ケースと誤期待値の負例を追加。後続で同一本体の複数エラー、genericの定義時名前検査、具体化chainと重複抑制を追補。
 - [x] **P2: coreの適合状況を更新** — 文字列仕様変更後に証拠を再照合。全419テストを再実行し、古い不足記述・実行件数を更新。core内の残件とbackend待ちを下記に分離。完全適合の宣言ではない。
 - [ ] **別工程: MIR backend適合** — Rで検証している旧ケースを、新しいbackend経路で実行し直す。

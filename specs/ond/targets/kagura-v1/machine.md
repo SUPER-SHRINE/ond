@@ -1,8 +1,10 @@
 # Ond for Kagura Target Runtime Contract
+<!-- ond-spec-id: targets/kagura-v1/runtime-contract -->
 
 本書はOndのKagura backendが用いる型配置・runtimeの契約を定める。具体的なbus配置・ROM形式・起動は機種SDKが所有する。関数呼出規約は[ABI](./abi.md)を参照。
 
 ## 1. Machine Profile
+<!-- ond-spec-id: targets/kagura-v1/machine-profile -->
 
 - word size: 32 bit
 - address size: 32 bit
@@ -13,10 +15,12 @@
 - CPU fault は machine を停止して host へ返す。
 
 ## 2. Address Space
+<!-- ond-spec-id: targets/kagura-v1/address-space -->
 
 RAM base・容量・MMIO map・unmapped領域は機種SDKが定義し、LinkPlanに渡す。OndのKagura backendは固定の機種mapや終了deviceを要求しない。EnbuではEnbu SDKがROM window、RAM、BANK registerを管理する。
 
 ## 3. RAM Layout
+<!-- ond-spec-id: targets/kagura-v1/ram-layout -->
 
 RAM 内は低 address から次の順に配置する。
 
@@ -38,6 +42,7 @@ RAM 内は低 address から次の順に配置する。
 sectionの保存形式・load・zero初期化は機種SDKが定義する。
 
 ### 3.1 Heap allocator
+<!-- ond-spec-id: targets/kagura-v1/heap-allocator -->
 
 - heap は `heap_base` から `heap_cursor` までの連続した block 列として管理する。
 - 各 block は 4-byte header と 4-byte alignment へ切り上げた payload からなる。header は block 全体の size と使用中 flag を保持する。
@@ -52,10 +57,12 @@ header は allocator の内部表現であり、Ond program へ返す pointer �
 `alloc(0)`はnilを返す。`new(T)`は型のsizeに必要な領域を確保し、成功時にzero化する。size=0の型でも最低payload（現allocatorでは4-byte alignmentへ切り上げた領域）を確保し、成功時は非nil、確保失敗時はnilとする。型のsizeは0のままである。
 
 ## 4. Startup
+<!-- ond-spec-id: targets/kagura-v1/startup -->
 
 機種SDKがsectionのロードとzero初期化、SPの設定を行い、linkされたruntime entryへ制御を渡す。entryはMIRのpackage初期化順序に従ってinitializerを呼び、最後にmainを呼ぶ。mainから戻った際の処理はSDKが指定する。EnbuではROM内loaderが起動を行い、正常return後はRAM上のloopに入る。
 
 ## 5. Data Layout
+<!-- ond-spec-id: targets/kagura-v1/data-layout -->
 
 | Type | Size | Alignment |
 | --- | ---: | ---: |
@@ -70,13 +77,23 @@ header は allocator の内部表現であり、Ond program へ返す pointer �
 - `*T` は 32-bit bus address で、`nil` は `0x00000000` とする。
 - interfaceはoffset 0にdata pointer、offset 4にvtable pointerを持つ。zero valueは両方が`0x00000000`である。
 - `[N]T` は header のない連続した `N` 要素とし、alignment は `alignof(T)`、size は `N * sizeof(T)` とする。
+- 固定長配列の `N * sizeof(T)` が `2^32-1` byte を超える場合は compile error とする
+  - 積は数学的な整数として判定し、32 bit への切り詰めや折り返しを行わない
+  - 推論長配列も長さの確定後に同じ上限を適用する
+  - 要素が defined type、struct、配列の場合も、padding を含む要素型の size を使う
+  - 未使用の型宣言、pointer の参照先、generic の具体化結果も検査する
+  - `N = 0` または `sizeof(T) = 0` の積は `0` とし、入れ子に含まれる各配列型もそれぞれ検査する
 - struct field は宣言順に置き、各 field をその alignment へ揃える。struct の alignment は field の最大値、size はその alignment の倍数へ切り上げる。
 - 空structはsize=0、alignment=1とする。`[0]T`はsize=0、alignment=`alignof(T)`とする。address取得用slot・Indirect引数temporary等のゼロサイズstorageは最低1 byteを予約してnilと区別し、型のsizeは0を維持する。異なるゼロサイズ値のアドレス同一性について追加保証はしない。ゼロサイズheap allocationは§3.1に従う。
 - padding byte の値は観測可能な意味を持たない。
 
 全型の zero value は全 byte が `0` の表現とする。
 
+例えば `[4294967295]u8` の size は上限内だが、`[1073741824]u32` の size は `2^32` byte なので型として拒否する。\
+上限内の配列型であっても、実際の storage 配置や heap 確保が成功するとは限らない。
+
 ## 6. Raw Pointer Access
+<!-- ond-spec-id: targets/kagura-v1/raw-pointer-access -->
 
 - pointer の生成は memory を確保または予約しない。
 - `*T` の `pointer[index]` が使う実効 address は `(pointer + index * sizeof(T)) mod 2^32` とする。`index` は `u32` とする。
@@ -91,6 +108,7 @@ header は allocator の内部表現であり、Ond program へ返す pointer �
 - `.text` と `.rodata` は Ond の型検査上は書き込み不可だが、RAM の write protection は行わない。
 
 ## 7. Project Configuration
+<!-- ond-spec-id: targets/kagura-v1/project-configuration -->
 
 `ond.toml`があるdirectoryをproject rootとし、root自体がmain packageとなる。manifestは依存関係と
 source探索境界を定義する。RAM配置とstack予約量はmachine SDKまたは`ond link`の`LinkPlan`が決定し、

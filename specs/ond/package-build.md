@@ -1,6 +1,8 @@
 # パッケージ成果物・独立コンパイラ契約
+<!-- ond-spec-id: build/package-artifact-contract -->
 
 ## 責務
+<!-- ond-spec-id: build/responsibilities -->
 
 - compiler-core: source → 型付きHIR → target-neutral MIR。MIRは内部APIであり保存形式にしない。
 - compiler: MIR → Kagura Object、runtime helper供給、リンカ。
@@ -14,6 +16,7 @@ compiler/core依存は既存のin-process回帰テスト用dev-dependenciesに�
 `ond build`／`ond assets`は復活させない。
 
 ## 実装済みの単位と制約
+<!-- ond-spec-id: build/implemented-units-and-constraints -->
 
 1パッケージにつき1個の `.ondpkg`（UTF-8 JSON）を生成する。全パッケージを
 1つのObjectBundleに格納しない。コンパイル結果のmanifestが各ファイルを参照し、
@@ -32,6 +35,7 @@ compiler/core依存は既存のin-process回帰テスト用dev-dependenciesに�
 project-global TypeIdをそのまま永続化しない。
 
 ## コマンド
+<!-- ond-spec-id: build/commands -->
 
 `cargo build -p ond-cli --bin ond` で `target/debug/ond.exe` を生成する。
 要求・応答JSONラッパーは廃止。操作は引数、入力はファイル、stdinは入力ファイルの代替にする。
@@ -45,6 +49,7 @@ ond compile . -o - | ond link - --ram 0x10002000:0x03FFE000 --stack 1MiB --retur
 ```
 
 ### ond compile
+<!-- ond-spec-id: build/compile-command -->
 
 `ond compile [project] [-o FILE|-] [--library-dir DIR]... [--cache-dir DIR] [-v]`
 
@@ -84,6 +89,7 @@ ond compile . -o - | ond link - --ram 0x10002000:0x03FFE000 --stack 1MiB --retur
 - compileのstdinは使用しない。sourceをstdinから単独コンパイルするモードは提供しない。
 
 ### ond link
+<!-- ond-spec-id: build/link-command -->
 
 `ond link FILE|- --ram BASE:SIZE --stack SIZE --return-to ADDRESS [--read-only BASE:SIZE] [-o FILE|-]`
 
@@ -100,6 +106,7 @@ ond compile . -o - | ond link - --ram 0x10002000:0x03FFE000 --stack 1MiB --retur
 - compilerは共通startupを作り、要求されたruntime helperを一度だけ供給してリンクする。
 
 ### 入出力と失敗時
+<!-- ond-spec-id: build/io-and-failure -->
 
 -o -はstdout。通常ファイル出力は同一ディレクトリの一時ファイルからrenameで公開する。
 compile/linkが失敗しても指定先の以前の成果物を上書きしない。
@@ -113,6 +120,7 @@ SDKは一意な専用一時ディレクトリへ生成ソースを書き、--lib
 SDKはcompileのstdoutからmanifestを受け取り、そのmanifestだけをlinkのstdinに渡す。
 
 ## 成果物とキャッシュ
+<!-- ond-spec-id: build/artifacts-and-cache -->
 
 PackageArtifactのフィールドはcontract、compiler_id、package、build_id、
 dependencies（パッケージpath→build_id）、imports（ソース順）、
@@ -125,12 +133,19 @@ build_idは次を正規順にJSON化したSHA-256:
 - パッケージの論理パス、ソース相対パスと各内容のSHA-256
 - 直接import先のbuild_id
 
-compiler_idは実行ファイル全体のSHA-256。CLIの再ビルドで変化すれば再コンパイルする。
-依存先の本体だけの変更でもbuild_idが変わり、推移的な依存元を全て再生成する。
-依存しないパッケージのObjectは再利用する。mtimeには依存しない。
+generic宣言があるprojectでは、owner packageが生成する特殊化function/static symbol、MIRから参照される型構造、生成定数の値、公開interfaceもbuild_idへ含める。\
+`sizeof(T)`や`alignof(T)`の評価後に型argumentがMIRから消える場合も、function・initializer・staticの定数値によって評価結果の変化を検出する。\
+型構造はTypeIdやPackageIdの採番値、source位置に依存せず、field・method・underlying typeを含めて正規化する。\
+呼出元が新しい特殊化を要求した場合はowner packageのbuild_idが変わり、既存要求だけならowner packageを再利用する。
+
+project全体のsource相対pathと内容hashは、contract・compiler・manifest設定・import graphとともにprivate project manifest keyへ含める。\
+全artifactの参照先、checksum、package集合、依存関係を検証できた場合だけfrontendを省略する。\
+source状態が変わればfrontendで特殊化集合、MIR型構造、生成定数の値を再確認し、package build_idが変わったObjectだけを生成する。\
+compiler_idは実行ファイル全体のSHA-256。CLIの再ビルドで変化すれば再コンパイルする。\
+mtimeには依存しない。
 
 成果物は `<build_id>-<content_hash>.ondpkg`、
-キャッシュ索引は `<build_id>.json`。content_hashは成果物bytesのSHA-256。
+package索引は `<build_id>.json`、project索引は `project-<key>.ondmanifest`。content_hashは成果物bytesのSHA-256。
 一時ファイルを同じディレクトリに作成し、書込完了後renameで公開する。
 壊れた索引・checksum不一致・不適合なキャッシュはmissとして再生成する。
 明示的なlink入力の破損／不一致はエラーであり、暗黙に再コンパイルしない。
@@ -147,10 +162,12 @@ Enbuカートリッジヘッダにversionを追加するものではない。
 debug sidecarのrange、fault分類、unwind規則は[Ond Debug Metadata v1](./debug-metadata.md)に従う。
 
 ## 検証
+<!-- ond-spec-id: build/verification -->
 
 driverの単体／プロセステストで次を検証する:
 
 - cold/warm、diamond依存、実装だけの変更と推移的再生成、非依存Object再利用
+- 同型・新型のgeneric特殊化追加、nested generic、TypeId変化後のcache混在拒否とfresh link一致
 - ソース追加・削除・rename、manifest／compiler変更、仮想ソースと衝突
 - 壊れたキャッシュからの復旧、診断位置、失敗後の既存成果物保持、循環import拒否
 - startup初期化順、runtime helperを含む既存全量コード生成とのLinkedImage一致
@@ -158,6 +175,7 @@ driverの単体／プロセステストで次を検証する:
 - ファイルと実際のパイプでcompile → link、終了コード、Base64セクション、異常時のstdout分離・既存出力保持
 
 ## 公開情報（revision 3）
+<!-- ond-spec-id: build/public-metadata-revision-3 -->
 
 `interface`はpackage、types（型定義の配列）、exports（公開名→宣言）からなる。
 Objectとは独立したtarget-neutralデータで、本文・機械レイアウト・一時的なTypeId/PackageId/Spanを含めない。

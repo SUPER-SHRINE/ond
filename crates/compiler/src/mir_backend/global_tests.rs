@@ -163,7 +163,7 @@ fn null_terminated_literal_storage_shares_exact_and_suffix_values() {
 #[test]
 fn exported_aggregate_constant_address_links_across_packages() {
     let fixture = Fixture::new(
-        "package main\nimport \"shared\"\nfunc main(){var p=&shared.Data[0];store32(4294934608,p[0] as u32+p[1] as u32)}",
+        "package main\nimport \"shared\"\nfunc main(){var p=&shared.Data[0];*(4294934608 as u32 as *u32) = p[0] as u32+p[1] as u32}",
     );
     fs::create_dir(fixture.0.join("shared")).unwrap();
     fs::write(

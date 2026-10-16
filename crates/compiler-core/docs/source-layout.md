@@ -23,7 +23,7 @@ this organization does not change the public API or language behavior.
 | `pipeline/hir/body/globals.rs` | Resolve global storage types and check initializer values without capturing local scope |
 | `pipeline/hir/body/interfaces.rs` | Check explicit pointer-to-interface conversions, method sets and interface equality |
 | `pipeline/hir/initialization.rs` | Build package initializer bodies and source-import-ordered startup traversal |
-| `pipeline/hir/body/intrinsics.rs` | Type new/alloc/free/load32/store32 without target layout |
+| `pipeline/hir/body/intrinsics.rs` | Type new/alloc/free without target layout |
 | `pipeline/hir/body/strings.rs` | Builtin name lookup and type-level array `len` |
 | `string_literal.rs` | Decode UTF-8 source, raw strings and byte/Unicode escapes |
 | `identifier.rs` | Classify Unicode Letter/Nd identifier characters (not Alphabetic/XID) |

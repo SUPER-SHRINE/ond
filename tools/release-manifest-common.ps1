@@ -59,10 +59,6 @@ function Get-ReleaseArchivePaths {
     $suffix = if ($Target -ceq 'linux-x86_64') { '' } else { '.exe' }
     @('CHANGELOG.md', 'LICENSE.md', 'README.md', "ond-lsp$suffix", "ond$suffix")
     # 公開済み0.1.1の5ファイル契約は変更しない。
-    if ([version]$Version -ge [version]'0.1.2') {
-        @('docs/design/README.md', 'docs/design/device-assembly.md', 'docs/design/device-package.md',
-          'docs/design/machine-experience.md', 'docs/design/machine-roadmap.md', 'docs/design/machine-workflow.md')
-    }
     if ([version]$Version -ge [version]'0.1.3') { 'THIRD-PARTY-NOTICES.txt'; 'COPYRIGHT-library.html' }
 }
 

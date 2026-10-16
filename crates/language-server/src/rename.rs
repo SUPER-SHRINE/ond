@@ -851,7 +851,7 @@ mod tests {
         let text = r#"package main
 type Box[T] struct { Value: T }
 
-operator[T] +(left: Box[T], right: Box[T]) -> Box[T] {
+operator (left: Box[T]) + (right: Box[T]) -> Box[T] {
     result := Box[T]{Value: left.Value}
     {
         right := left
@@ -867,7 +867,7 @@ func main() {}
 
         for (needle, occurrence, new_name, expected_edits) in [
             ("Box", 0, "Container", 6),
-            ("T", 2, "Element", 6),
+            ("T", 2, "Element", 5),
             ("left", 0, "lhs", 3),
             ("right", 0, "rhs", 2),
             ("result", 0, "sum", 3),

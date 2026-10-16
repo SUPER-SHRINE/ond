@@ -91,6 +91,8 @@ pub fn compile_loaded_project(loaded: LoadedProject) -> Result<Compilation, Fron
 }
 
 #[cfg(test)]
+mod array_layout_tests;
+#[cfg(test)]
 mod call_tests;
 #[cfg(test)]
 mod completion_tests;
@@ -106,6 +108,8 @@ mod control_flow_tests;
 mod defer_tests;
 #[cfg(test)]
 mod function_type_tests;
+#[cfg(test)]
+mod generic_identity_tests;
 #[cfg(test)]
 mod global_tests;
 #[cfg(test)]

@@ -1,4 +1,5 @@
 # MIR → Kagura backend の境界設計
+<!-- ond-spec-id: targets/kagura-v1/mir-backend -->
 
 作成: 2026-09-20。状態: 境界設計と§8〜12の実装記録。全仕様への適合完了を意味しない。
 検証済み範囲・不足・追加順序は[適合チェックリスト](./conformance-checklist.md)を参照。
@@ -6,6 +7,7 @@
 未決定事項は§7に隔離する。新しい言語機能、Enbuのカートリッジ規格、最適化器は今回の対象外。
 
 ## 1. 入出力と責務
+<!-- ond-spec-id: targets/kagura-v1/mir-backend-io-and-responsibilities -->
 
 入力は検証済みの `ond_compiler_core::mir::Project`。型は同projectのTypeTableで解決する。
 AST/HIRから型や定数を再解釈しない。未対応MIRをAST backendへ暗黙fallbackさせない。
@@ -30,6 +32,7 @@ block parameterは実際に短絡式で使用されるため初期対応に含�
 Branchのedge copyは選択されたedgeだけで実行する。
 
 ## 2. DataLayout
+<!-- ond-spec-id: targets/kagura-v1/mir-data-layout -->
 
 | MIR型 | size / alignment | memory表現 |
 | --- | --- | --- |
@@ -48,6 +51,7 @@ arrayのstrideはstruct末尾paddingを含む。この例の配列2要素はsize
 pointer経由の再帰でlayout計算を続けない。値としての循環はvalidatorで拒否する。
 
 サイズ・offset・乗算・alignment切上げはcheckedな広い整数で計算し、32-bit表現へ切り詰めない。
+固定長配列は [Data Layout](./machine.md#5-data-layout) に従い、`N * sizeof(T) > 2^32-1` なら frontend で compile error とする。\
 型がu32サイズ内でもframe/object/startupが容量を超える場合は該当工程で拒否する。
 raw pointerの実行時offsetだけは仕様どおりmod 2^32であり、静的layoutのoverflow拒否とは別。
 zeroは全byte 0。paddingの値は意味を持たないが、Ordered accessをpaddingへの追加accessに拡張しない。
@@ -56,6 +60,7 @@ scalarのlocal slotはABIに従い4 byteを予約してよいが、addressable�
 予約サイズと型のsizeofを混同しない。文字列literalは通常のbyte配列でありstr型・descriptor・終端NULは存在しない。
 
 ## 3. ABI lowering
+<!-- ond-spec-id: targets/kagura-v1/mir-abi-lowering -->
 
 既存ABIを変更せず使用する。
 
@@ -92,6 +97,7 @@ frameは8-byte倍数。r15/callee-save保存、locals/spills/snapshot、child re
 SP減算underflowとSTACK_BOTTOMを、frameへ書く前に検査する。0-byte frameは省略可能。
 
 ## 4. MIR命令の対応
+<!-- ond-spec-id: targets/kagura-v1/mir-instruction-lowering -->
 
 Kagura ISAは12命令で、SUB/DIV/浮動小数点/CALL/RETは独立opcodeではない。
 以下のCALL/RET等は説明用の疑似操作であり、最終的にはJZ等へ展開する。
@@ -129,10 +135,10 @@ soft-floatの既存 [runtime_support.ond](../../../../crates/compiler/src/runtim
 helperの生成が同じhelperを要求する循環を避け、整数primitive等を基底として依存閉包を検査する。
 
 ## 5. Intrinsic / global / startup
+<!-- ond-spec-id: targets/kagura-v1/mir-intrinsic-global-startup -->
 
 - New(T): layoutのsize/alignmentで確保し、成功時のみzero化。failureはnil。ゼロサイズは§7。
 - Alloc / Free: machine profileのallocator。alloc(0)/failureはnil、free(nil)はno-op。
-- Load32 / Store32: addressを32-bitとしてLDW/STWを1回実行。alignment/MMIO faultはbus/CPUへ委ねる。
 - debug metadata: function/range/source/unwindをObjectと並行して生成する。linkerが最終addressへ解決し、VMは任意でfault理由とstack traceの表示に利用できる。metadataの有無は実行時意味論を変えない。
 - Global: 当初はzero storageをBssへ出す。初期値のsource再評価やData化による順序変更はしない。
 - initializer: MIRの内部関数を通常関数としてemitし、Project.initialization_orderを明示的なstartup計画へ渡す。
@@ -141,6 +147,7 @@ helperの生成が同じhelperを要求する循環を避け、整数primitive�
 - symbol/relocation/section形式を再利用しても、EnbuのbankやMMIOをcoreへ追加しない。現machine profileは既存Ond-Kagura用であり、Enbu対応済みとは扱わない。
 
 ## 6. 既存実装との差分と最初の実装単位
+<!-- ond-spec-id: targets/kagura-v1/mir-implementation-gap -->
 
 public入口 [pipeline/api.rs](../../../../crates/compiler/src/pipeline/api.rs) はcoreで生成・検証したMIRをKagura backendへ渡す。旧AST backendと独立した型/literal解釈は撤去済み。byte array文字列literalも標準経路で扱う。
 
@@ -156,22 +163,26 @@ MIR dumpの一致・簡易VM・独立oracleの成功をKagura実行の代用に�
 coreの意味/型/表現不足だけを再現テスト付きでcoreへ戻す。target layout/ABI/命令数制限はbackendの責務。
 
 ## 7. 決定済みの境界と残る決定事項
+<!-- ond-spec-id: targets/kagura-v1/mir-boundary-decisions -->
 
 以下はユーザー合意を反映した設計方針。実装済みを意味しない。
 
 ### 7.1 ゼロサイズ型
+<!-- ond-spec-id: targets/kagura-v1/mir-zero-sized-types -->
 
 型layoutは空structがsize=0/align=1、[0]Tがsize=0/align(T)で確定し、machine仕様へ反映した。
 address取得用slot・Indirect引数temporary等のゼロサイズstorageは最低1 byteを予約し、nilと区別する方針で確定した。型のsizeofは0のままとし、異なるゼロサイズ値のアドレス同一性に新しい言語保証は追加しない。frame内の予約はalignment等により1 byteより大きくてもよい。
 new(T)はsize=0でも最低payloadを確保し、成功時は非nil、失敗時はnilを返す。alloc(0)はnilを返す。この契約は§10の実行テストで確認している。
 
 ### 7.2 Ordered aggregate
+<!-- ond-spec-id: targets/kagura-v1/mir-ordered-aggregate -->
 
 宣言/index昇順で再帰的にscalar accessし、paddingへ触れず、source snapshotを完成後にdestinationへ書く方針を確定した。
 全体のatomicityは保証しない。途中faultで完了済みの書き込みやMMIOの副作用を巻き戻さない。
 結果が同じという理由でもOrdered accessの順序変更は許可しない。machine仕様にも同じ契約を記載する。
 
 ### 7.3 遠距離call/分岐
+<!-- ond-spec-id: targets/kagura-v1/mir-long-distance-control-flow -->
 
 **関数内はbackendの分岐拡張、関数間はリンカの中継コード（thunk/trampoline）**で対応する方針を確定した。
 
@@ -194,6 +205,7 @@ new(T)はsize=0でも最低payloadを確保し、成功時は非nil、失敗時�
 新backend経路の対応済み範囲は、これらの契約を満たすテストとともに段階的に更新する。
 
 ## 8. MIR backendの実装状況
+<!-- ond-spec-id: targets/kagura-v1/mir-implementation-status -->
 
 `ond-compiler::mir_backend` にASTを参照しないO0 backendを追加した。CLIでは `enbu build <project-dir> <cartridge.bin>` が唯一の標準経路である。`--mir`は廃止した。未対応機能で旧backendへfallbackしない。
 
@@ -204,7 +216,7 @@ new(T)はsize=0でも最低payloadを確保し、成功時は非nil、失敗時�
 - aggregate: ValueIdは独立したsnapshot。copyはsource読み取りを完了してからdestinationへ書き、再帰的に宣言/index順のscalar accessのみを発行する。paddingを読み書きしない。文字列literalも通常のbyte配列として実行できる。
 - 呼出し: 直接/間接call、Direct/Indirect引数、複数戻り値。先頭6 ABI wordはr1〜r6、残りはstack。aggregate引数はcaller-owned temporaryへコピーする。aggregateを含む戻り値または5個以上のDirect戻り値はhidden pointer付きreturn area、それ以外はr1〜r4。再帰対応。r7〜r11を変更せず、r15をframeへ保存する。
 - frame: 8-byte alignment、outgoing引数領域、local/value snapshot、edge copy一時領域、引数copy、callごとのreturn area、return address。各用途を分離し、stack下限検査後にSPを更新する。frameとincoming引数offsetは32-bit範囲で検査し、大きなoffsetは§12のアドレス生成を使用する。
-- intrinsic: load32/store32を単一LDW/STWへ変換する。alloc/free/newは§10のOnd製runtime helperへ接続する。
+- alloc/free/newは§10のOnd製runtime helperへ接続する。
 - global/startup: 全globalを自然alignmentでBSSへ配置し、文字列リテラルと配列・struct定数の静的実体を自然alignmentでRodataへ配置する。Static PlaceはAbs32 relocationで解決する。ゼロサイズglobalと静的実体にも物理identity用の最低1 byteを予約する。通常のglobal初期値は定数で書ける場合もDataへ先取りせず、MIR initializer内の処理として残す。machine loaderが全BSSをゼロ化した後、`Project.initialization_order`に従ってinitializerを一度ずつ呼び、最後にmain.mainを呼ぶ。Object順やimport名のソートから順序を再構成しない。mainから到達しないpackageのinitializerは呼ばない（object/storage自体の除去は未実装）。
 - 検証: 生成したLinkedImageをテストbusへloadしてKagura CPUで実行し、結果・短絡非評価・再帰・stack引数・SP復元・callee-save保持・stack overflowを確認する。pointer alias、自然layout/array stride、bounds、ゼロサイズ値、aggregate引数の非alias、評価途中のsnapshot、mixed return area、間接callも検査する。bus traceではアクセス幅・順序・padding非アクセス・重複copy・source/destination途中faultを確認する。layout/ABIの固定期待値、layout overflow、分岐距離の正負境界、frame上限、未対応診断も検査する。
 
@@ -217,6 +229,7 @@ globalの検証では、後方参照時のzero、初期化中に書かれた後�
 §6の段階3と段階4の数値runtime・長距離分岐・frame容量制限の緩和まで実装済み。全仕様ケースのbackend適合検証、Enbuのbanked ROM対応の完了を意味しない。
 
 ## 9. Runtime helper供給基盤
+<!-- ond-spec-id: targets/kagura-v1/runtime-helper-supply -->
 
 `mir_backend::runtime`はcompiler所有のOnd helperを、compiler-core → MIR backend → Objectの経路でビルドする。Ondの言語仕様やuser importにruntime専用機能を追加しない。
 
@@ -229,6 +242,7 @@ globalの検証では、後方参照時のzero、初期化中に書かれた後�
 - テストは全22 entryのMIR/Object生成、依存選択・重複排除・Function定数・再帰、未知要求・衝突・副作用拒否を確認する。Object境界でのhelper単体テストに加え、§10の通常のOndソースからの実行も検証する。hostのfloat MMIO deviceは使わない。
 
 ## 10. 数値命令・allocatorの接続
+<!-- ond-spec-id: targets/kagura-v1/numeric-and-allocator-lowering -->
 
 - `numeric`モジュールで整数除算/剰余、float演算/比較/negate、整数↔f32 castをhelperへ選択する。f32はstorage・引数・戻り値では32-bit patternをそのまま運ぶ。signed狭整数はhelper前にsign-extendし、結果を型幅へ正規化する。暗黙のhelper callも既存frameのr15保存・Value spillを使用する。helper引数は最大4 wordなので追加のoutgoing stack areaは不要。
 - 除算はinteger.ondの32段のunsigned long divisionを基底とし、最上位carryを落とさず比較する。signed処理は絶対値のunsigned bit patternと符号の復元で実装する。NonZero/SignedDivisionOverflowはMIRの位置でfaultを生成する。signed min/-1の除算はfault、剰余は0。helper自身は/や%を使わない。
@@ -241,10 +255,12 @@ globalの検証では、後方参照時のzero、初期化中に書かれた後�
 これらは対応命令の接続と回帰検証であり、binary32全bit組合せや全言語仕様ケースの網羅を主張するものではない。長距離call/branchは§11、frame容量制限の緩和は§12を参照。
 
 ## 11. 長距離分岐とObjectの中継slot
+<!-- ond-spec-id: targets/kagura-v1/long-branch-relocation-slots -->
 
 初期実装は**固定長の専用中継領域を各siteに予約する**。予約分を含めてblock label、symbol size、relocation offset、RAM/heap配置を決定し、link時には命令を書き換えるだけで挿入・削除しない。これにより、他の分岐距離やAbs32を再配置する必要がない。近距離も予約領域を保持するためコードサイズが増える。中継共有・不要領域の圧縮・可変長relaxationは後続の最適化とする。
 
 ### 11.1 関数内branch
+<!-- ond-spec-id: targets/kagura-v1/function-local-branches -->
 
 - `Emitter.branch`は7 word（28 byte）を予約する。word 0が条件付き/無条件JZ、word 1がword 7へのskip、word 2〜6が中継領域。
 - `(target - (site + 4))/4`がsigned 16-bitに収まる場合、word 0を直接patchする。それ以外ではword 0をword 2へ向ける。
@@ -253,6 +269,7 @@ globalの検証では、後方参照時のzero、初期化中に書かれた後�
 - prologueのfault skip等、命令列内で距離が固定された短いJZは従来どおり直接encodeする。
 
 ### 11.2 CallSlot / JumpSlot relocation
+<!-- ond-spec-id: targets/kagura-v1/call-jump-slot-relocation -->
 
 新relocationはText内の4-byte alignedな**6 word（24 byte）**を所有する。offsetはword 0を指し、入力Objectのdata/memory_size内に全slotを含める。
 
@@ -272,6 +289,7 @@ linkerはslotの入力範囲・template・alignment、解決先symbol、addend�
 低レベルencode・PC取得/literal読出し・中継命令列を`kagura_encoding`へ集約し、MIR emitterと`linker/thunks`で共有する。startupのmain/initializer callにもCallSlotを使う。coreと言語仕様の変更は不要。
 
 ### 11.3 検証
+<!-- ond-spec-id: targets/kagura-v1/relocation-verification -->
 
 - signed word距離32767/32768/-32768/-32769で、近距離/中継選択と実CPUの到達先を検証する。
 - 関数内相対中継を複数load addressで実行し、条件不成立時のscratch保持も確認する。
@@ -280,6 +298,7 @@ linkerはslotの入力範囲・template・alignment、解決先symbol、addend�
 - 不正template・範囲/alignment・未解決symbol・addend overflow・RAM不足・旧relocationの距離超過は診断する。
 
 ## 12. 大きなstack frame
+<!-- ond-spec-id: targets/kagura-v1/large-stack-frame -->
 
 MIR backendのframe/incoming引数offsetに対するsigned-16-bit制限を撤去した。小さなoffsetでは従来の即値命令を維持し、32767を超えるoffsetでは32-bit即値とSPの加算で実アドレスを生成する。local、spill、edge snapshot、argument copy、return area、保存r15、incoming/outgoing引数に共通の処理を使用する。
 
@@ -291,6 +310,7 @@ MIR backendのframe/incoming引数offsetに対するsigned-16-bit制限を撤去
 
 aggregateの要素ごとの命令展開やO0のslot消費量は変えていない。大きな配列でコード量が増える点、実メモリ容量、32-bitアドレス範囲は別の制約として残る。core・言語仕様・Object形式の変更は不要。
 ## 13. 標準経路と責務の分離
+<!-- ond-spec-id: targets/kagura-v1/standard-path-responsibilities -->
 
 `compile_project` / `compile_loaded_project` / overrides APIはMIR codegenでObjectを生成する。SDKがLinkPlan・初期化順序・終了処理を指定してlinkし、ROMへ配置する。package初期化順序はMIRのinitialization_orderだけを用いる。
 

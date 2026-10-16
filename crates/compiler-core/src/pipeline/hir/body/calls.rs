@@ -24,36 +24,35 @@ impl BodyLowerer<'_> {
         name: ast::OperatorName,
         known: &[Option<TypeId>],
     ) -> Option<Vec<TypeId>> {
-        let declarations = self
-            .universe
-            .iter()
-            .flat_map(|package| {
-                package
-                    .operators
-                    .iter()
-                    .enumerate()
-                    .filter(move |(_, operator)| operator.name == name)
-                    .map(move |(index, operator)| (package.id, index, operator.clone()))
-            })
-            .collect::<Vec<_>>();
-        let mut found = None;
-        for (package_id, _, declaration) in declarations {
-            let Some((signature, _)) =
-                self.resolve_operator_candidate(package_id, &declaration, known)
-            else {
-                continue;
-            };
-            let parameters = signature
-                .parameters
-                .iter()
-                .map(|parameter| parameter.ty)
-                .collect::<Vec<_>>();
-            if found.is_some() {
-                return None;
-            }
-            found = Some(parameters);
+        let receiver = known.first().copied().flatten()?;
+        let declarations = self.operator_declarations(name, receiver, known.len());
+        let mut receivers = vec![receiver];
+        if let Some(TypeKind::Pointer(pointee)) = self.types.kind(receiver) {
+            receivers.push(*pointee);
+        } else {
+            receivers.push(
+                self.types
+                    .pointer(receiver, crate::source::Span::synthetic()),
+            );
         }
-        found
+        for receiver in receivers {
+            let mut actual = known.to_vec();
+            actual[0] = Some(receiver);
+            for (package_id, _, _, declaration) in &declarations {
+                if let Some((signature, _)) =
+                    self.resolve_operator_candidate(*package_id, declaration, &actual)
+                {
+                    return Some(
+                        signature
+                            .parameters
+                            .iter()
+                            .map(|parameter| parameter.ty)
+                            .collect(),
+                    );
+                }
+            }
+        }
+        None
     }
 
     pub(super) fn matching_operator_call(
@@ -62,19 +61,154 @@ impl BodyLowerer<'_> {
         arguments: Vec<hir::Expr>,
         span: Span,
     ) -> Option<Option<hir::Call>> {
-        let argument_types = arguments
+        let Some(receiver) = arguments.first() else {
+            return Some(None);
+        };
+        let declarations = self.operator_declarations(name, receiver.ty, arguments.len());
+        let mut receivers = vec![receiver.clone()];
+        if self.addressable(receiver) {
+            let pointer = self.types.pointer(receiver.ty, receiver.span);
+            receivers.push(hir::Expr {
+                kind: hir::ExprKind::AddressOf(Box::new(receiver.clone())),
+                ty: pointer,
+                span: receiver.span,
+            });
+        }
+        if let Some(TypeKind::Pointer(pointee)) = self.types.kind(receiver.ty) {
+            receivers.push(hir::Expr {
+                kind: hir::ExprKind::Dereference(Box::new(receiver.clone())),
+                ty: *pointee,
+                span: receiver.span,
+            });
+        }
+        for receiver in receivers {
+            let mut actual_arguments = arguments.clone();
+            actual_arguments[0] = receiver;
+            let known = actual_arguments
+                .iter()
+                .map(|argument| Some(argument.ty))
+                .collect::<Vec<_>>();
+            for (package_id, logical_path, declaration_index, declaration) in &declarations {
+                let Some((signature, type_arguments)) =
+                    self.resolve_operator_candidate(*package_id, declaration, &known)
+                else {
+                    continue;
+                };
+                let parameters = signature
+                    .parameters
+                    .iter()
+                    .map(|parameter| parameter.ty)
+                    .collect::<Vec<_>>();
+                if parameters
+                    != actual_arguments
+                        .iter()
+                        .map(|argument| argument.ty)
+                        .collect::<Vec<_>>()
+                {
+                    continue;
+                }
+                let function_type = signature.function_type();
+                let ty = self.types.function(function_type.clone(), span);
+                let symbol = if let Some(type_arguments) = type_arguments {
+                    let symbol = super::super::canonical_generic_operator_symbol(
+                        logical_path,
+                        name,
+                        &parameters,
+                        &type_arguments,
+                        self.types,
+                        self.universe,
+                    );
+                    self.universe
+                        .iter()
+                        .find(|p| p.id == *package_id)
+                        .expect("operator owner must exist")
+                        .specializations
+                        .borrow_mut()
+                        .insert(
+                            symbol.clone(),
+                            super::super::types::GenericSpecialization::Operator {
+                                declaration: *declaration_index,
+                                arguments: type_arguments,
+                            },
+                        );
+                    symbol
+                } else {
+                    super::super::canonical_operator_symbol(
+                        logical_path,
+                        name,
+                        &parameters,
+                        self.types,
+                        self.universe,
+                    )
+                };
+                return Some(Some(hir::Call {
+                    callee: Box::new(hir::Expr {
+                        kind: hir::ExprKind::Function(symbol),
+                        ty,
+                        span,
+                    }),
+                    signature: function_type,
+                    arguments: actual_arguments,
+                    span,
+                }));
+            }
+        }
+        Some(None)
+    }
+
+    fn operator_declarations(
+        &self,
+        name: ast::OperatorName,
+        receiver: TypeId,
+        arity: usize,
+    ) -> Vec<(PackageId, String, usize, ast::OperatorDecl)> {
+        let mut base = receiver;
+        while self.types.generic_instance(base).is_none()
+            && self
+                .types
+                .get(base)
+                .and_then(|ty| ty.name.as_ref())
+                .is_none()
+        {
+            let Some(TypeKind::Pointer(pointee)) = self.types.kind(base) else {
+                return Vec::new();
+            };
+            base = *pointee;
+        }
+        let declaration = self
+            .types
+            .generic_instance(base)
+            .map(|instance| instance.declaration.clone())
+            .or_else(|| self.types.get(base)?.name.clone());
+        let Some(declaration) = declaration else {
+            return Vec::new();
+        };
+        let Some((package_path, receiver_name)) = declaration.rsplit_once('.') else {
+            return Vec::new();
+        };
+        let package_path = if matches!(package_path, "" | "main") {
+            "."
+        } else {
+            package_path
+        };
+        self.universe
             .iter()
-            .map(|argument| argument.ty)
-            .collect::<Vec<_>>();
-        let declarations = self
-            .universe
-            .iter()
+            .filter(|package| package.logical_path == package_path)
             .flat_map(|package| {
                 package
                     .operators
                     .iter()
                     .enumerate()
-                    .filter(move |(_, operator)| operator.name == name)
+                    .filter(move |(_, operator)| {
+                        operator.name == name
+                            && operator.signature.params.len() == arity
+                            && operator
+                                .signature
+                                .params
+                                .first()
+                                .and_then(super::super::types::method_receiver_name)
+                                .is_some_and(|(candidate, _)| candidate == receiver_name)
+                    })
                     .map(move |(index, operator)| {
                         (
                             package.id,
@@ -84,50 +218,7 @@ impl BodyLowerer<'_> {
                         )
                     })
             })
-            .collect::<Vec<_>>();
-        let mut found = None;
-        let known = argument_types.iter().copied().map(Some).collect::<Vec<_>>();
-        for (package_id, logical_path, declaration_index, declaration) in declarations {
-            let Some((signature, type_arguments)) =
-                self.resolve_operator_candidate(package_id, &declaration, &known)
-            else {
-                continue;
-            };
-            let parameters = signature
-                .parameters
-                .iter()
-                .map(|parameter| parameter.ty)
-                .collect::<Vec<_>>();
-            if parameters != argument_types {
-                continue;
-            }
-            if found.is_some() {
-                self.fail::<()>(span, "ambiguous operator declaration")?;
-            }
-            let function_type = signature.function_type();
-            let ty = self.types.function(function_type.clone(), span);
-            let symbol = if let Some(type_arguments) = type_arguments {
-                super::super::canonical_generic_operator_symbol(
-                    &logical_path,
-                    name,
-                    declaration_index,
-                    &type_arguments,
-                )
-            } else {
-                super::super::canonical_operator_symbol(&logical_path, name, &parameters)
-            };
-            found = Some(hir::Call {
-                callee: Box::new(hir::Expr {
-                    kind: hir::ExprKind::Function(symbol),
-                    ty,
-                    span,
-                }),
-                signature: function_type,
-                arguments: arguments.clone(),
-                span,
-            });
-        }
-        Some(found)
+            .collect()
     }
 
     fn resolve_operator_candidate(
@@ -148,18 +239,15 @@ impl BodyLowerer<'_> {
                 .iter()
                 .map(|parameter| parameter.name.as_str())
                 .collect::<BTreeSet<_>>();
-            for (parameter, actual) in declaration.signature.params.iter().zip(known) {
-                if let Some(actual) = actual
-                    && !self.infer_operator_type_pattern(
-                        package_id,
-                        &parameter.ty,
-                        *actual,
-                        &parameter_names,
-                        &mut bindings,
-                    )
-                {
-                    return None;
-                }
+            let actual = known[0]?;
+            if !self.infer_operator_type_pattern(
+                package_id,
+                &declaration.signature.params[0].ty,
+                actual,
+                &parameter_names,
+                &mut bindings,
+            ) {
+                return None;
             }
             let arguments = declaration
                 .type_params
@@ -197,18 +285,6 @@ impl BodyLowerer<'_> {
             .any(|(known, actual)| known.is_some_and(|known| known != *actual))
         {
             return None;
-        }
-        if type_arguments.is_some() {
-            let package = self
-                .universe
-                .iter()
-                .find(|package| package.id == package_id)?;
-            let owner = parameters
-                .iter()
-                .find_map(|ty| super::super::operator_type_owner(self.types, *ty));
-            if owner.as_deref() != Some(package.logical_path.as_str()) {
-                return None;
-            }
         }
         Some((signature, type_arguments))
     }
@@ -261,62 +337,7 @@ impl BodyLowerer<'_> {
                         )
                     })
             }
-            ast::Type::Array { element, .. } => {
-                let Some(TypeKind::Array {
-                    element: actual, ..
-                }) = self.types.kind(actual)
-                else {
-                    return false;
-                };
-                self.infer_operator_type_pattern(package_id, element, *actual, parameters, bindings)
-            }
-            ast::Type::Struct { fields, .. } => {
-                let Some(TypeKind::Struct(actual)) = self.types.kind(actual) else {
-                    return false;
-                };
-                let actual = actual
-                    .fields
-                    .iter()
-                    .map(|field| field.ty)
-                    .collect::<Vec<_>>();
-                fields.len() == actual.len()
-                    && fields.iter().zip(actual).all(|(field, actual)| {
-                        self.infer_operator_type_pattern(
-                            package_id, &field.ty, actual, parameters, bindings,
-                        )
-                    })
-            }
-            ast::Type::Func { signature, .. } => {
-                let Some(TypeKind::Function(actual)) = self.types.kind(actual) else {
-                    return false;
-                };
-                let actual = actual.clone();
-                signature.params.len() == actual.parameters.len()
-                    && signature.results.len() == actual.returns.len()
-                    && signature
-                        .params
-                        .iter()
-                        .zip(actual.parameters)
-                        .all(|(parameter, actual)| {
-                            self.infer_operator_type_pattern(
-                                package_id,
-                                &parameter.ty,
-                                actual,
-                                parameters,
-                                bindings,
-                            )
-                        })
-                    && signature
-                        .results
-                        .iter()
-                        .zip(actual.returns)
-                        .all(|(result, actual)| {
-                            self.infer_operator_type_pattern(
-                                package_id, result, actual, parameters, bindings,
-                            )
-                        })
-            }
-            _ => true,
+            _ => false,
         }
     }
 
@@ -329,15 +350,10 @@ impl BodyLowerer<'_> {
             .universe
             .iter()
             .find(|package| package.id == package_id)?;
-        match base.segments.as_slice() {
-            [name] => Some(format!("{}.{}", package.logical_path, name.name)),
-            [qualifier, name] => {
-                let owner = package.imports.get(&base.span.file)?.get(&qualifier.name)?;
-                let owner = self.universe.iter().find(|package| package.id == *owner)?;
-                Some(format!("{}.{}", owner.logical_path, name.name))
-            }
-            _ => None,
-        }
+        let [name] = base.segments.as_slice() else {
+            return None;
+        };
+        Some(format!("{}.{}", package.logical_path, name.name))
     }
 
     pub(super) fn function_value(
@@ -415,7 +431,7 @@ impl BodyLowerer<'_> {
             }
             return self.fail(*span, "type arguments require a generic function");
         }
-        if let Some(name @ ("alloc" | "free" | "load32" | "store32")) = self.builtin_name(source) {
+        if let Some(name @ ("alloc" | "free")) = self.builtin_name(source) {
             if name == "alloc" {
                 return self.fail(*span, "alloc requires a type argument: alloc[T](count)");
             }
@@ -552,6 +568,25 @@ impl BodyLowerer<'_> {
             return None;
         }
         let signature = signature?;
+        let symbol = super::super::canonical_generic_symbol(
+            &logical_path,
+            &declaration.name.name,
+            &concrete_types,
+            self.types,
+            self.universe,
+        );
+        self.universe
+            .iter()
+            .find(|package| package.id == package_id)?
+            .specializations
+            .borrow_mut()
+            .insert(
+                symbol.clone(),
+                super::super::types::GenericSpecialization::Function {
+                    name: declaration.name.name.clone(),
+                    arguments: concrete_types,
+                },
+            );
         if arguments.len() != signature.parameters.len() {
             return self.fail(
                 span,
@@ -582,11 +617,7 @@ impl BodyLowerer<'_> {
         let function_ty = self.types.function(function_type.clone(), span);
         Some(hir::Call {
             callee: Box::new(hir::Expr {
-                kind: hir::ExprKind::Function(super::super::canonical_generic_symbol(
-                    &logical_path,
-                    &declaration.name.name,
-                    &concrete_types,
-                )),
+                kind: hir::ExprKind::Function(symbol),
                 ty: function_ty,
                 span,
             }),
@@ -666,60 +697,122 @@ impl BodyLowerer<'_> {
             Some(receiver) => receiver,
             None => return Some(None),
         };
-        for (package_id, declaration_index, method) in candidates {
-            let Some(candidate) =
-                self.resolve_method_candidate(package_id, declaration_index, &method, receiver.ty)
-            else {
-                continue;
-            };
-            let signature = candidate.signature;
-            if candidate.package_id != self.package_id
-                && !name.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
+        let mut matched = None;
+        for (package_id, declaration_index, method) in &candidates {
+            if let Some(candidate) =
+                self.resolve_method_candidate(*package_id, *declaration_index, method, receiver.ty)
             {
-                return Some(self.fail(span, format!("method `{name}` is not exported")));
+                matched = Some((candidate, receiver.clone()));
+                break;
             }
-            let expected = &signature.parameters[1..];
-            if args.len() != expected.len() {
-                return Some(self.fail(
-                    span,
-                    format!(
-                        "method expects {} arguments, found {}",
-                        expected.len(),
-                        args.len()
-                    ),
+        }
+        if matched.is_none() {
+            for address in [true, false] {
+                for (package_id, declaration_index, method) in &candidates {
+                    if let Some(candidate) = self.resolve_implicit_method_call_candidate(
+                        *package_id,
+                        *declaration_index,
+                        method,
+                        &receiver,
+                        address,
+                    ) {
+                        matched = Some(candidate);
+                        break;
+                    }
+                }
+                if matched.is_some() {
+                    break;
+                }
+            }
+        }
+        let (candidate, receiver) = matched?;
+        let signature = candidate.signature;
+        if candidate.package_id != self.package_id
+            && !name.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
+        {
+            return Some(self.fail(span, format!("method `{name}` is not exported")));
+        }
+        let expected = &signature.parameters[1..];
+        if args.len() != expected.len() {
+            return Some(self.fail(
+                span,
+                format!(
+                    "method expects {} arguments, found {}",
+                    expected.len(),
+                    args.len()
+                ),
+            ));
+        }
+        let mut arguments = vec![receiver];
+        for (index, (argument, parameter)) in args.iter().zip(expected).enumerate() {
+            let Some(value) = self.lower_value(argument, Some(parameter.ty)) else {
+                if let Some(diagnostic) = &mut self.failure {
+                    diagnostic.message = format!(
+                        "argument {} type mismatch or invalid expression: {}",
+                        index + 1,
+                        diagnostic.message
+                    );
+                }
+                return Some(None);
+            };
+            arguments.push(value);
+        }
+        let function_type = signature.function_type();
+        let function_ty = self
+            .types
+            .intern(TypeKind::Function(function_type.clone()), span);
+        let callee = hir::Expr {
+            kind: hir::ExprKind::Function(candidate.symbol),
+            ty: function_ty,
+            span,
+        };
+        Some(Some(hir::Call {
+            callee: Box::new(callee),
+            signature: function_type,
+            arguments,
+            span,
+        }))
+    }
+
+    fn resolve_implicit_method_call_candidate(
+        &mut self,
+        package_id: PackageId,
+        declaration_index: usize,
+        method: &ast::FuncDecl,
+        receiver: &hir::Expr,
+        address: bool,
+    ) -> Option<(ResolvedMethodCandidate, hir::Expr)> {
+        if !address
+            && let Some(TypeKind::Pointer(pointee)) = self.types.underlying_kind(receiver.ty)
+        {
+            let pointee = *pointee;
+            if let Some(candidate) =
+                self.resolve_method_candidate(package_id, declaration_index, method, pointee)
+            {
+                return Some((
+                    candidate,
+                    hir::Expr {
+                        kind: hir::ExprKind::Dereference(Box::new(receiver.clone())),
+                        ty: pointee,
+                        span: receiver.span,
+                    },
                 ));
             }
-            let mut arguments = vec![receiver];
-            for (index, (argument, parameter)) in args.iter().zip(expected).enumerate() {
-                let Some(value) = self.lower_value(argument, Some(parameter.ty)) else {
-                    if let Some(diagnostic) = &mut self.failure {
-                        diagnostic.message = format!(
-                            "argument {} type mismatch or invalid expression: {}",
-                            index + 1,
-                            diagnostic.message
-                        );
-                    }
-                    return Some(None);
-                };
-                arguments.push(value);
-            }
-            let function_type = signature.function_type();
-            let function_ty = self
-                .types
-                .intern(TypeKind::Function(function_type.clone()), span);
-            let callee = hir::Expr {
-                kind: hir::ExprKind::Function(candidate.symbol),
-                ty: function_ty,
-                span,
-            };
-            return Some(Some(hir::Call {
-                callee: Box::new(callee),
-                signature: function_type,
-                arguments,
-                span,
-            }));
         }
-        None
+        if !address || !self.addressable(receiver) {
+            return None;
+        }
+        let pointer = self.types.pointer(receiver.ty, receiver.span);
+        let candidate =
+            self.resolve_method_candidate(package_id, declaration_index, method, pointer)?;
+        Some((
+            candidate,
+            hir::Expr {
+                kind: hir::ExprKind::AddressOf(Box::new(receiver.clone())),
+                ty: pointer,
+                span: receiver.span,
+            },
+        ))
     }
 
     pub(super) fn resolve_method_candidate(
@@ -771,6 +864,21 @@ impl BodyLowerer<'_> {
                 .map(|parameter| parameter.name.as_str())
                 .zip(arguments.iter().copied())
                 .collect();
+            let symbol = super::super::canonical_generic_method_symbol(
+                &logical_path,
+                &receiver_name,
+                &method.name.name,
+                &arguments,
+                self.types,
+                self.universe,
+            );
+            package.specializations.borrow_mut().insert(
+                symbol.clone(),
+                super::super::types::GenericSpecialization::Method {
+                    declaration: declaration_index,
+                    arguments: arguments.clone(),
+                },
+            );
             (
                 ast::Field {
                     name: receiver.name.clone(),
@@ -782,13 +890,7 @@ impl BodyLowerer<'_> {
                     &generic.parameters,
                     &arguments,
                 ),
-                super::super::canonical_generic_method_symbol(
-                    &logical_path,
-                    &receiver_name,
-                    &method.name.name,
-                    declaration_index,
-                    &arguments,
-                ),
+                symbol,
             )
         };
         let mut diagnostics = Diagnostics::new();

@@ -1,10 +1,12 @@
 # Ond Syntax v1
+<!-- ond-spec-id: syntax/v1 -->
 
 本書は `ond` v1 の字句規則、scope、構文、operator precedence を定義する。型、メモリ管理、組み込み関数、初期化順序などの意味規則は [Ond Language v1](./language.md) に従う。
 
 記載していない構文は v1 ではサポートしない。
 
 ## 1. Source Form
+<!-- ond-spec-id: syntax/source-form -->
 
 - source file は UTF-8 text とする。
 - 改行は `LF` または `CRLF` を許可する。意味上はすべて `LF` として扱う。
@@ -24,6 +26,7 @@
 - source先頭のUTF-8 BOMは無視する。途中のBOMとsourceに直接含まれるNULはエラーとする。文字列のescapeによるNULやU+FEFFの表現は許可する。
 
 ## 2. Semicolons and Line Breaking
+<!-- ond-spec-id: syntax/semicolons-and-line-breaking -->
 
 Ond の文法は semicolon 付きで定義し、source では自動挿入する。
 
@@ -33,6 +36,7 @@ Ond の文法は semicolon 付きで定義し、source では自動挿入する�
 - 明示的な行継続記号は持たない。改行したい場合は、semicolon が挿入されない位置で改行する。
 
 ## 3. Packages and Imports
+<!-- ond-spec-id: syntax/packages-and-imports -->
 
 各 file は先頭に 1 個の package clause を持つ。
 
@@ -51,6 +55,7 @@ package-qualified name は `packageName.ExportedName` とする。
 - package-qualified name は package value ではなく、import 先 package の top-level declaration を指す構文である。
 
 ## 4. Scope and Shadowing
+<!-- ond-spec-id: syntax/scope-and-shadowing -->
 
 - package-level declaration は package scope に属し、同一 package 内の全 file から見える。
 - import 名の scope は宣言した file に限る。同じ package の別 file でも、使用する package は各 file で import する。
@@ -68,9 +73,10 @@ package-qualified name は `packageName.ExportedName` とする。
 - `if` の init で宣言した名前は condition、両 branch から見える。`for` の init で宣言した名前は condition、post、loop body から見える。
 - 組み込み型名 `bool`, `u8`, `i8`, `u16`, `i16`, `u32`, `i32`, `f32` は shadow できない。`type`・`var`・`const`・`:=`・関数宣言・関数宣言のparameterでbindingを導入する名前として使用するとcompile errorとする。package/localの両scopeで禁止する。
 - struct field名と関数型内の説明用parameter名は、型名を隠すbindingを作らないため、この禁止の対象外とする。型参照・field selector等では組み込み型名の綴りを通常どおり読み取れる。
-- 組み込み名 `alloc`, `free`, `len`, `trap`, `sizeof`, `alignof`, `load32`, `store32`, `thisFile`, `thisLine`, `new` は binding として宣言できない。struct field 名など binding を作らない位置では使用できる。`str` は通常の識別子である。
+- 組み込み名 `alloc`, `free`, `len`, `trap`, `sizeof`, `alignof`, `thisFile`, `thisLine`, `new` は binding として宣言できない。struct field 名など binding を作らない位置では使用できる。`str` は通常の識別子である。
 
 ## 5. Operator Precedence
+<!-- ond-spec-id: syntax/operator-precedence -->
 
 高い方から低い方へ、expression の優先順位は次の通りとする。
 
@@ -88,6 +94,7 @@ package-qualified name は `packageName.ExportedName` とする。
 - `as` は postfix conversion で、`x + y as u32` は `x + (y as u32)` と解釈する。
 
 ## 6. EBNF
+<!-- ond-spec-id: syntax/grammar -->
 
 次の EBNF で構文を定義する。`";"` は semicolon insertion 後の token を表す。
 
@@ -98,7 +105,7 @@ ImportDecl    = "import" [ identifier ] string_lit .
 
 TopLevelDecl  = ConstDecl | VarDecl | TypeDecl | FuncDecl | OperatorDecl .
 
-OperatorDecl  = "operator" [ TypeParameters ] ( "+" | "-" | "*" | "/" | "%" | "[]" | "[]=" | "len" ) Signature Block .
+OperatorDecl  = "operator" Receiver ( "+" | "-" | "*" | "/" | "%" | "[]" | "[]=" | "len" ) Signature Block .
 
 ConstDecl     = "const" ConstSpec | "const" "(" { ConstSpec ";" } ")" .
 ConstSpec     = IdentifierList [ ":" Type ] "=" ExpressionList .
@@ -207,6 +214,7 @@ CallExpr      = PrimaryExpr Arguments .
 - `InterfaceType` は `TypeSpec` の直下で名前付き型としてだけ宣言できる。無名interface型は構文上parseできても意味検査で拒否する。
 
 ## 7. Grammar Notes
+<!-- ond-spec-id: syntax/grammar-notes -->
 
 - `ForStmt` の `for Block` は無条件 loop を表す。
 - `DeferStmt` は `for` の body または別の `DeferStmt` の block に構文上包含されてはならない。
@@ -221,7 +229,7 @@ CallExpr      = PrimaryExpr Arguments .
 - `ArrayType` の長さは compile-time constant でなければならない。
 - 型・関数の型parameter listは宣言名へ空白を挟まず `Box[T]`、`Identity[T]` と書く。これは既存の配列型宣言 `type Buffer [N]u8` と区別するための規則である。
 - `TypeSpec`の型parameter listはstructだけでなくinterfaceにも使える。generic型のmethod receiverは`func (box: *Box[T]) Set(value: T)`のように適用型として書き、method名の後ろに追加の型parameter listは書かない。
-- generic operatorは `operator[T] [](values: *Vec[T], index: u32) -> *T` のように、`operator`へ空白を挟まず型parameter listを書いてからoperator名を書く。
+- generic operatorは `operator (values: *Vec[T]) [](index: u32) -> *T` のように、receiver型へ型parameterを記す。operator固有の型parameter listは持たない。
 - generic関数callはnamed functionに明示的な型argumentを付けて `Identity[u32](value)` と書く。型argument推論は行わない。同じtoken列になり得る `callbacks[index]()` は、`callbacks` がgeneric関数名でなければ通常のindex accessとcallとして解釈する。
 - 関数宣言の `Signature` では parameter 名を必須とする。関数型の `TypeSignature` では各 parameter 名を省略しても記載してもよい。関数型に記載した名前は binding を作らず、型の同一性に影響しない。
 - `Result` の括弧内には少なくとも1個の型が必要であり、`-> ()` は許可しない。戻り値が0個の場合はarrowを省略する。
@@ -233,7 +241,10 @@ CallExpr      = PrimaryExpr Arguments .
 - 文法上 `Expression` は任意の式を許すが、型検査で `if` と条件付き `for` の条件は `bool` に制限する。
 - multi-value function call は `VarSpec`、`Assignment`、`ShortVarDecl`、`ReturnStmt` で使える。v1 では `ConstSpec` や他の call の argument 位置へそのまま渡せない。
 - assignment の左辺は `_`、変数、参照外し、配列または raw pointer の index、struct field のいずれかで、書き込み可能でなければならない。
-- assignment は最初に左辺の index と pointer operand、および右辺を source 上の左から右へ評価し、その後で左辺への書き込みを左から右へ行う。
-- compound assignment の左辺は `_` 以外の書き込み可能な式 1 個、右辺は式 1 個とする。左辺の index、pointer operand、および現在値は 1 回だけ評価する。
+- 単純代入 `=` は最初に左辺の index と pointer operand を左から右へ評価し、次に右辺を左から右へ評価して、それぞれの値を保持する
+- その後、左辺への書き込みを左から右へ行い、直接の配列格納先に必要な bounds check は各書き込みの直前に行う
+- 後続の格納先で bounds check が失敗しても、それ以前の書き込みは保持する
+- 左辺の operand 内で行う配列読み取り（`*P[i]` の `P[i]` など）、`&A[i]` のアドレス取得、および右辺の配列読み取りは、その評価時に bounds check を行う
+- compound assignment の左辺は `_` 以外の書き込み可能な式 1 個、右辺は式 1 個とし、左辺の index、pointer operand、bounds check、および現在値の読み取りを 1 回行ってから右辺を評価する
 - `++` と `--` は後置の statement だけとし、前置形式や値を生成する expression としては使えない。
 - 戻り値を持つ関数は、到達可能なすべての実行経路で宣言と一致する `return` に到達しなければならない。無条件 `for {}` は、外へ到達する `break` を含まない場合に限り終端とみなす。
