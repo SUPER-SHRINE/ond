@@ -75,6 +75,10 @@ pub(super) struct TypeDeclaration {
 // Current compilation data stays separate from the stable emitted symbol.
 #[derive(Clone)]
 pub(super) enum GenericSpecialization {
+    Function {
+        name: String,
+        arguments: Vec<crate::semantic::TypeId>,
+    },
     Method {
         declaration: usize,
         arguments: Vec<crate::semantic::TypeId>,

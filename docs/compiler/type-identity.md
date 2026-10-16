@@ -38,4 +38,8 @@ vtable自体の名前も安定した型名を利用するため、既存の具�
 compiler-coreの検査は、無関係なpackageによる実際のID変化、構造的なargumentの一致と相違、非公開fieldのowner、再帰型、generic interface、宣言順の変更を扱う。\
 CLIの検査では公開metadataとmethod symbolの一致に加え、method・vtable・generic operator・通常operatorを使う混在cacheのlink結果を同じsourceのfresh buildと比較する。
 
-この実装はgeneric free functionのsymbol生成や、cache済みownerへ新しい具体化を追加する際の無効化規則を変更しない。
+generic free functionも宣言owner・関数名・型argument列からstable symbolを生成し、HIR構築中のprivate registryで現在の宣言と型IDへ対応付ける。\
+CLIはowner packageが生成するfunction/static symbolと、そのMIRから参照される型構造、生成定数の値、公開interfaceをbuild identityへ含める。\
+`sizeof(T)`や`alignof(T)`の評価後に型argumentがMIRから消えても、評価結果の定数値を追跡して古いObjectの再利用を防ぐ。\
+呼出元で具体化要求が増えた場合はownerのObjectを再生成し、既存要求だけならownerを再利用する。\
+project全ソースのfingerprintは、全packageが同じsource状態か確認してfrontendを省略するprivate cache manifestにだけ使う。
