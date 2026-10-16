@@ -21,7 +21,7 @@ macOS、ARM64、Alpine/muslは検証対象ではありません。
 
 公開版のCLIを使う場合は、上記Releaseから対象OSのarchiveを取得して展開し、`ond`をPATHへ追加します。\
 Language Serverを直接起動する場合は`ond-lsp stdio`を実行してください。\
-VS Codeでは[Ond拡張](https://github.com/SUPER-SHRINE/ond-vscode-extension)を利用できます。\
+VS Codeでは[Ond拡張の案内](https://github.com/SUPER-SHRINE/ond-vscode-extension/blob/main/README.md)を参照してください。\
 正式配布VSIXは、検証済みOnd ReleaseのLanguage Server binaryを同梱します。
 
 ソースからCLIをbuildするには、GitとRust 1.91.1を用意してrepository rootで実行します。
