@@ -342,3 +342,68 @@ fn serialized_packages_link_identically_to_full_codegen_without_runtime_initiali
             .contains("stale")
     );
 }
+
+#[test]
+fn cached_generic_owner_links_rebuilt_caller_after_type_id_shift() {
+    let f = Fixture::new();
+    let main = r#"package main
+import "api"
+func main() {
+    cell := api.Cell[api.Token]{}
+    _ = cell.Get()
+    var reader: api.Reader[api.Token] = (&cell) as api.Reader[api.Token]
+    _ = reader.Get()
+    _ = len(cell)
+    _ = api.Plain{} + cell
+}
+"#;
+    f.put("main.ond", main);
+    f.put(
+        "api/api.ond",
+        r#"package api
+type Token struct { Value:u32 }
+type Plain struct {}
+type Cell[T] struct { Value:T }
+type Reader[T] interface { Get()->T }
+func (cell: *Cell[T]) Get()->T { return cell.Value }
+operator (cell: Cell[T]) len()->u32 { return 1 }
+operator (plain: Plain) + (cell: Cell[Token])->u32 { return cell.Value.Value }
+"#,
+    );
+    let id = compiler_identity().unwrap();
+    let before = compile(f.request(), &id).unwrap();
+    link(request_link(before.manifest.clone())).unwrap();
+    let owner = before
+        .manifest
+        .packages
+        .iter()
+        .find(|p| p.package == "api")
+        .unwrap();
+    f.put(
+        "aaa/extra.ond",
+        "package aaa\ntype Extra struct { Value:u32 }",
+    );
+    f.put("main.ond", &format!("{main}\n// rebuild caller\n"));
+    let after = compile(f.request(), &id).unwrap();
+    assert!(after.reused.iter().any(|p| p == "api"));
+    assert!(after.rebuilt.iter().any(|p| p == "."));
+    assert_eq!(
+        owner.path,
+        after
+            .manifest
+            .packages
+            .iter()
+            .find(|p| p.package == "api")
+            .unwrap()
+            .path
+    );
+    let mixed = link(request_link(after.manifest)).unwrap();
+    let mut fresh_request = f.request();
+    fresh_request.cache_dir = Some(f.0.join("fresh-cache"));
+    let fresh = compile(fresh_request, &id).unwrap();
+    let cold = link(request_link(fresh.manifest)).unwrap();
+    assert_eq!(
+        cache::encode(&mixed).unwrap(),
+        cache::encode(&cold).unwrap()
+    );
+}

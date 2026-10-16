@@ -158,3 +158,46 @@ fn optional_library_reachability_and_required_package_membership() {
     let result = compile(request, "test").unwrap();
     assert_eq!(result.manifest.packages.len(), 3);
 }
+
+#[test]
+fn generic_metadata_identity_survives_unrelated_type_ids() {
+    let f = Fixture::new("generic-identity");
+    let mut request = f.request();
+    request.sources = BTreeMap::from([
+        ("main.ond".into(), "package main\nimport \"api\"\nfunc main(){ cell:=api.Make(); _=cell.Get() }".into()),
+        ("api/api.ond".into(), "package api\ntype Token struct { Value:u32 }\ntype Cell[T] struct { Value:T }\nfunc (cell:Cell[T]) Get()->T { return cell.Value }\nfunc Make()->Cell[Token]{ return Cell[Token]{} }".into()),
+    ]);
+    let before = compile(request.clone(), "test").unwrap();
+    let artifact = cache::read_artifact(
+        before
+            .manifest
+            .packages
+            .iter()
+            .find(|p| p.package == "api")
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(
+        artifact
+            .interface
+            .types
+            .iter()
+            .any(|ty| ty.methods.iter().any(|method| method.name == "Get"))
+    );
+    request.sources.insert(
+        "aaa/extra.ond".into(),
+        "package aaa\ntype Extra struct { Value:u32 }".into(),
+    );
+    request.cache_dir = Some(f.0.join("fresh-cache"));
+    let after = compile(request, "test").unwrap();
+    let changed = cache::read_artifact(
+        after
+            .manifest
+            .packages
+            .iter()
+            .find(|p| p.package == "api")
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(artifact.interface, changed.interface);
+}

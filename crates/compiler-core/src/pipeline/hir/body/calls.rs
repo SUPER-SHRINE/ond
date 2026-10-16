@@ -110,14 +110,36 @@ impl BodyLowerer<'_> {
                 let function_type = signature.function_type();
                 let ty = self.types.function(function_type.clone(), span);
                 let symbol = if let Some(type_arguments) = type_arguments {
-                    super::super::canonical_generic_operator_symbol(
+                    let symbol = super::super::canonical_generic_operator_symbol(
                         logical_path,
                         name,
-                        *declaration_index,
+                        &parameters,
                         &type_arguments,
-                    )
+                        self.types,
+                        self.universe,
+                    );
+                    self.universe
+                        .iter()
+                        .find(|p| p.id == *package_id)
+                        .expect("operator owner must exist")
+                        .specializations
+                        .borrow_mut()
+                        .insert(
+                            symbol.clone(),
+                            super::super::types::GenericSpecialization::Operator {
+                                declaration: *declaration_index,
+                                arguments: type_arguments,
+                            },
+                        );
+                    symbol
                 } else {
-                    super::super::canonical_operator_symbol(logical_path, name, &parameters)
+                    super::super::canonical_operator_symbol(
+                        logical_path,
+                        name,
+                        &parameters,
+                        self.types,
+                        self.universe,
+                    )
                 };
                 return Some(Some(hir::Call {
                     callee: Box::new(hir::Expr {
@@ -827,6 +849,21 @@ impl BodyLowerer<'_> {
                 .map(|parameter| parameter.name.as_str())
                 .zip(arguments.iter().copied())
                 .collect();
+            let symbol = super::super::canonical_generic_method_symbol(
+                &logical_path,
+                &receiver_name,
+                &method.name.name,
+                &arguments,
+                self.types,
+                self.universe,
+            );
+            package.specializations.borrow_mut().insert(
+                symbol.clone(),
+                super::super::types::GenericSpecialization::Method {
+                    declaration: declaration_index,
+                    arguments: arguments.clone(),
+                },
+            );
             (
                 ast::Field {
                     name: receiver.name.clone(),
@@ -838,13 +875,7 @@ impl BodyLowerer<'_> {
                     &generic.parameters,
                     &arguments,
                 ),
-                super::super::canonical_generic_method_symbol(
-                    &logical_path,
-                    &receiver_name,
-                    &method.name.name,
-                    declaration_index,
-                    &arguments,
-                ),
+                symbol,
             )
         };
         let mut diagnostics = Diagnostics::new();

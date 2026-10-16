@@ -7,7 +7,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::body::lower_typed_body_with_substitutions;
 use super::types::{
-    self, TypePackage, generic_method_receiver, resolve_method_signature, resolve_signature,
+    self, GenericSpecialization, TypePackage, generic_method_receiver, resolve_method_signature,
+    resolve_signature,
 };
 
 pub(super) fn instantiate_generic_functions(
@@ -52,25 +53,22 @@ pub(super) fn instantiate_generic_functions(
             .entry(symbol.clone())
             .or_default()
             .extend(chains.iter().cloned());
-        if let Some((package_path, receiver_name, method_name, declaration_index, arguments)) =
-            parse_generic_method_symbol(&symbol)
+        let specialization = universe.iter().find_map(|package| {
+            package
+                .specializations
+                .borrow()
+                .get(&symbol)
+                .cloned()
+                .map(|request| (package, request))
+        });
+        if let Some((
+            source_package,
+            GenericSpecialization::Method {
+                declaration: declaration_index,
+                arguments,
+            },
+        )) = specialization.clone()
         {
-            let Some(source_package) = universe.iter().find(|package| {
-                package.logical_path == package_path
-                    || package_path == "main" && package.logical_path == "."
-            }) else {
-                report_generic_diagnostic(
-                    diagnostics,
-                    Diagnostic::error(
-                        Span::synthetic(),
-                        format!("generic method package `{package_path}` is unavailable"),
-                    ),
-                    &chains,
-                    "generic method",
-                );
-                failed.insert(symbol.clone());
-                continue;
-            };
             let Some(declaration) = source_package.methods.get(declaration_index) else {
                 report_generic_diagnostic(
                     diagnostics,
@@ -104,9 +102,7 @@ pub(super) fn instantiate_generic_functions(
                 failed.insert(symbol.clone());
                 continue;
             };
-            if generic.name != receiver_name
-                || declaration.name.name != method_name
-                || generic.parameters.len() != arguments.len()
+            if generic.parameters.len() != arguments.len()
                 || arguments
                     .iter()
                     .any(|argument| types.get(*argument).is_none())
@@ -196,25 +192,14 @@ pub(super) fn instantiate_generic_functions(
             generated.insert(symbol);
             continue;
         }
-        if let Some((package_path, operator, declaration_index, arguments)) =
-            parse_generic_operator_symbol(&symbol)
+        if let Some((
+            source_package,
+            GenericSpecialization::Operator {
+                declaration: declaration_index,
+                arguments,
+            },
+        )) = specialization
         {
-            let Some(source_package) = universe.iter().find(|package| {
-                package.logical_path == package_path
-                    || package_path == "main" && package.logical_path == "."
-            }) else {
-                report_generic_diagnostic(
-                    diagnostics,
-                    Diagnostic::error(
-                        Span::synthetic(),
-                        format!("generic operator package `{package_path}` is unavailable"),
-                    ),
-                    &chains,
-                    "generic operator",
-                );
-                failed.insert(symbol.clone());
-                continue;
-            };
             let Some(declaration) = source_package.operators.get(declaration_index) else {
                 report_generic_diagnostic(
                     diagnostics,
@@ -228,8 +213,7 @@ pub(super) fn instantiate_generic_functions(
                 failed.insert(symbol.clone());
                 continue;
             };
-            if declaration.name != operator
-                || declaration.type_params.len() != arguments.len()
+            if declaration.type_params.len() != arguments.len()
                 || arguments
                     .iter()
                     .any(|argument| types.get(*argument).is_none())
@@ -499,47 +483,6 @@ fn parse_generic_symbol(symbol: &str) -> Option<(&str, &str, Vec<crate::semantic
         .map(|argument| argument.parse::<u32>().ok().map(crate::semantic::TypeId))
         .collect::<Option<Vec<_>>>()?;
     Some((package, name, arguments))
-}
-
-fn parse_generic_method_symbol(
-    symbol: &str,
-) -> Option<(&str, &str, &str, usize, Vec<crate::semantic::TypeId>)> {
-    let (package, tail) = symbol.split_once(".\u{1f}generic_method.")?;
-    let mut parts = tail.split('.');
-    let receiver = parts.next()?;
-    let method = parts.next()?;
-    let declaration = parts.next()?.parse().ok()?;
-    let arguments = parts
-        .next()?
-        .split('_')
-        .map(|argument| argument.parse::<u32>().ok().map(crate::semantic::TypeId))
-        .collect::<Option<Vec<_>>>()?;
-    Some((package, receiver, method, declaration, arguments))
-}
-
-fn parse_generic_operator_symbol(
-    symbol: &str,
-) -> Option<(&str, ast::OperatorName, usize, Vec<crate::semantic::TypeId>)> {
-    let (package, tail) = symbol.split_once(".\u{1f}generic_operator.")?;
-    let mut parts = tail.split('.');
-    let operator = match parts.next()? {
-        "add" => ast::OperatorName::Add,
-        "sub" => ast::OperatorName::Sub,
-        "mul" => ast::OperatorName::Mul,
-        "div" => ast::OperatorName::Div,
-        "rem" => ast::OperatorName::Rem,
-        "index" => ast::OperatorName::Index,
-        "index_set" => ast::OperatorName::IndexSet,
-        "len" => ast::OperatorName::Len,
-        _ => return None,
-    };
-    let declaration = parts.next()?.parse().ok()?;
-    let arguments = parts
-        .next()?
-        .split('_')
-        .map(|argument| argument.parse::<u32>().ok().map(crate::semantic::TypeId))
-        .collect::<Option<Vec<_>>>()?;
-    Some((package, operator, declaration, arguments))
 }
 
 fn collect_generic_symbols_block(
