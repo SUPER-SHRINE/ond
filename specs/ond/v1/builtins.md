@@ -85,7 +85,10 @@ var size: u32 = len(buffer)
 
 これは関数呼び出しではなく、型情報から compiler が直接解決する。
 
-配列以外ではreceiverに一致する `operator (self: T) len()` を呼び出す。一致する宣言がなければ compile error とする。
+配列以外ではreceiverに一致する `operator (self: T) len() -> u32` を呼び出す。\
+この宣言では戻り値型に `u32` を1個明示し、戻り値の省略、別の型、複数戻り値は未使用でも compile error とする。\
+generic operatorにも同じ規則を適用し、`len(value)` の結果は常に単一の `u32` となる。\
+一致する宣言がなければ compile error とする。
 
 ## 5. `new`
 <!-- ond-spec-id: builtins/new -->
@@ -153,7 +156,8 @@ trap `raw reason`
 - `alloc(...)` は引数 1 個のみ
 - `free(...)` は引数 1 個のみ
 - `len(...)` は引数 1 個のみ
-- `len(...)` の引数は配列のみ
+- `len(...)` の引数は配列、または一致する `operator len` を持つ型
+- `operator len` は戻り値型に `u32` を1個明示する必要がある
 - `thisFile()` と `thisLine()` は引数を取らない
 - `trap` の直後にはUTF-8として有効なstring literalを置く
 
