@@ -175,6 +175,85 @@ fn assignment_fault(image: &crate::linker::LinkedImage) -> (kagura::DefaultBus, 
     panic!("expected assignment fault");
 }
 
+fn assert_bounds_fault(source: &str) {
+    use ond_protocol::debug::DebugOperation;
+    let fixture = Fixture::new(source);
+    let image = crate::test_support::compile_image(&fixture.0)
+        .unwrap_or_else(|error| panic!("{source}\n{error:?}"));
+    let (_, pc) = assignment_fault(&image);
+    let project = fixture.core();
+    let output = codegen_selected_with_debug(
+        &project,
+        &project
+            .packages
+            .iter()
+            .map(|p| p.logical_path.clone())
+            .collect(),
+        None,
+    )
+    .unwrap();
+    let debug = &output.debug[0];
+    let function = debug
+        .functions
+        .iter()
+        .find(|f| f.symbol == "main.main")
+        .unwrap();
+    let offset = pc - image.symbols["main.main"] + function.offset;
+    assert!(
+        debug.ranges.iter().any(|range| {
+            range.start <= offset
+                && offset < range.end
+                && range.operation == DebugOperation::BoundsCheck
+        }),
+        "expected BoundsCheck at {pc:#x}: {source}"
+    );
+}
+
+#[test]
+fn narrow_signed_array_indices_trap_in_all_access_forms() {
+    for (ty, index, length, element, access) in [
+        ("i8", "-1", 256, "u8", "_ = A[i]"),
+        ("i8", "-128", 256, "u8", "A[i] = 7"),
+        ("i8", "-1", 256, "u8", "_ = &A[i]"),
+        ("i8", "-128", 256, "u8", "A[i] += 1"),
+        ("i16", "-1", 65536, "Z", "_ = &A[i]"),
+        ("i16", "-32768", 65536, "Z", "_ = &A[i]"),
+        ("Index", "-1", 65536, "Z", "_ = &A[i]"),
+        ("Index", "-32768", 65536, "Z", "_ = &A[i]"),
+    ] {
+        assert_bounds_fault(&format!(
+            "package main\ntype Z struct{{}}\ntype Index i16\nvar A:[{length}]{element}\nfunc main(){{var i:{ty}=({index}) as {ty};{access}}}"
+        ));
+    }
+}
+
+#[test]
+fn narrow_signed_array_indices_accept_nonnegative_boundaries() {
+    for (ty, length, max) in [("i8", 256, 127), ("i16", 65536, 32767)] {
+        run(
+            &format!(
+                "type Z struct{{}}\nvar A:[{length}]Z\nfunc calc(i:{ty})->u32{{if &A[i]==&A[0]{{return 1}};return 0}}\nfunc last(i:u32)->u32{{if &A[i]==&A[0]{{return 1}};return 0}}"
+            ),
+            &format!("calc(0)+calc(1)+calc({max})+last({})", length - 1),
+            4,
+        );
+    }
+    for (ty, length) in [("i8", 127u32), ("i16", 32767), ("u32", 256)] {
+        assert_bounds_fault(&format!(
+            "package main\ntype Z struct{{}}\nfunc main(){{var a:[{length}]Z;var i:{ty}={length};_ = &a[i]}}"
+        ));
+    }
+}
+
+#[test]
+fn signed_array_indices_trap_with_u32_max_zero_size_length() {
+    for (ty, index) in [("i8", "-128"), ("i16", "-32768"), ("i32", "-2147483648")] {
+        assert_bounds_fault(&format!(
+            "package main\ntype Z struct{{}}\nfunc main(){{var a:[4294967295]Z;var i:{ty}={index};_ = &a[i]}}"
+        ));
+    }
+}
+
 #[test]
 fn assignment_bounds_check_follows_rhs_effects() {
     for index in ["2", "-1"] {
