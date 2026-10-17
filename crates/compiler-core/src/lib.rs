@@ -127,6 +127,8 @@ mod method_tests;
 #[cfg(test)]
 mod operator_assignment_tests;
 #[cfg(test)]
+mod operator_len_tests;
+#[cfg(test)]
 mod operator_overload_tests;
 #[cfg(test)]
 mod semantic_tests;

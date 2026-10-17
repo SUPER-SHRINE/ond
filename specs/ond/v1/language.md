@@ -430,6 +430,8 @@ Kagura target の関数呼び出し規約は [Ond ABI for Kagura v1](../targets/
 - operator候補はoperandの静的な型だけで選ぶ。具象型がinterfaceを満たしていてもinterface型へ暗黙変換してoperator候補を追加しない。
 - `[]` は値を 1 個返す。pointer を返すこともでき、その後の `.field` は通常の pointer field access と同様に暗黙 dereference する。`&collection[index]` は getter の戻り値が addressable とは限らないため禁止する。
 - `[]=` はreceiver、index、valueを受け取り、値を返さない。
+- `len` は戻り値型に `u32` を1個明示し、`len(value)` は単一の `u32` を返す
+  - 戻り値の省略、別の型、複数戻り値は未使用の宣言でも compile error とし、generic operatorにも同じ規則を適用する
 - compound assignment は対応する binary operator と代入から導出し、左辺の base と index は一度だけ評価する。
 - 同じreceiver基底型ではoperator kindとoperand数が同じ宣言を重複できない。receiverのpointer有無は重複判定で区別せず、単項と二項、`[]`と`[]=`は区別する。operator は import alias を介した明示参照なしに解決候補となる。
 - operator候補はreceiver基底の名前付き型を宣言したpackageだけから選ぶ

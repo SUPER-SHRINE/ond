@@ -245,12 +245,13 @@ interface methodは常にASCII大文字で始める。interface名が非公開�
 
 interfaceもgeneric型として宣言できる。interface method自身に追加の型parameterは宣言せず、interfaceの型parameterをsignature内で使う。generic型のpointer receiver methodも、具体化後のsignatureが一致すればinterfaceを満たす。
 
-次の例は、非公開の具象型を`List[T]`として公開し、index operatorを公開methodへ委譲する。
+次の例は、非公開の具象型を`List[T]`として公開し、index operatorと`len`を公開methodへ委譲する。
 
 ```ond
 type List[T] interface {
     Get(index: u32) -> T
     Set(index: u32, value: T)
+    Len() -> u32
     Destroy()
 }
 
@@ -264,6 +265,10 @@ func (values: *pairList[T]) Get(index: u32) -> T {
 
 func (values: *pairList[T]) Set(index: u32, value: T) {
     values.values[index] = value
+}
+
+func (values: *pairList[T]) Len() -> u32 {
+    return len(values.values)
 }
 
 func (values: *pairList[T]) Destroy() {
@@ -288,6 +293,10 @@ operator (values: List[T]) []=(index: u32, value: T) {
     values.Set(index, value)
 }
 
+operator (values: List[T]) len() -> u32 {
+    return values.Len()
+}
+
 func useList() {
     values := NewPairList[u32](3, 5)
     if values == nil {
@@ -298,8 +307,13 @@ func useList() {
     }
     values[1] = 13
     _ = values[1]
+    var count: u32 = len(values)
+    _ = count
 }
 ```
+
+`operator len`は戻り値型に`u32`を1個明示し、結果も単一の`u32`となる。\
+戻り値の省略、別の型、複数戻り値は、generic operatorを含め未使用の宣言でもエラーになる。
 
 `pairList`の実装はpackage外から直接参照できないが、`NewPairList[u32]`が返す`List[u32]`の公開methodとoperatorは利用できる。変換は`values as List[T]`のように明示する必要があり、operator選択も式の静的な型に対して行う。`List[u32]`を満たす具象pointerへ上記operatorを直接適用する暗黙interface変換はない。
 
