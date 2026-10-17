@@ -35,6 +35,28 @@ fn pointer_interfaces_lower_conversion_dispatch_nil_and_identity_comparison() {
 }
 
 #[test]
+fn repeated_conversions_share_one_vtable_per_concrete_interface_pair() {
+    let compilation = compile(
+        "package main\n\
+         type Reader interface { Read() -> bool; }\n\
+         type Box[T] struct { value: T }\n\
+         func (box: *Box[T]) Read() -> T { return box.value; }\n\
+         func Convert[T](box: *Box[T]) -> Reader { return box as Reader; }\n\
+         func Outer[T](box: *Box[T]) -> Reader { return Convert[T](box); }\n\
+         func main() { box := new(Box[bool]); _ = box as Reader; _ = box as Reader; \
+         _ = Convert[bool](box); _ = Outer[bool](box); }\n",
+        None,
+    )
+    .unwrap();
+    let vtables = compilation.hir.packages[0]
+        .statics
+        .iter()
+        .filter(|item| item.symbol.contains("\u{1f}vtable"))
+        .collect::<Vec<_>>();
+    assert_eq!(vtables.len(), 1, "{vtables:?}");
+}
+
+#[test]
 fn interface_conversion_requires_exact_pointer_receiver_methods() {
     reject(
         "package main\ntype Runner interface { Run(); }\ntype S struct {}\nfunc (s: S) Run() {}\nfunc main() { var s: S; _ = (&s) as Runner; }\n",
