@@ -5,6 +5,123 @@ use crate::{
 };
 
 #[test]
+fn constant_composites_reject_skipped_calls_before_value_folding() {
+    let mut accepted = Vec::new();
+    for logical in ["false && flag()", "true || flag()"] {
+        for expression in [
+            logical.to_string(),
+            format!("[1]bool{{{logical}}}"),
+            format!("len([1]bool{{{logical}}})"),
+            format!("S{{value: {logical}}}"),
+        ] {
+            for local in [false, true] {
+                let declaration = format!("const Value = {expression}");
+                let (package, body) = if local {
+                    ("", declaration.as_str())
+                } else {
+                    (declaration.as_str(), "")
+                };
+                let source = format!(
+                    "package main\ntype S struct {{ value: bool; }}\n{package}\nfunc flag() -> bool {{ return true; }}\nfunc main() {{ {body}; }}\n"
+                );
+                match compile(&source, None) {
+                    Ok(_) => accepted.push(format!("local={local}: {expression}")),
+                    Err(error) => assert!(
+                        error
+                            .to_string()
+                            .contains("constant initializer requires a compile-time value"),
+                        "local={local}: {expression}: {error}"
+                    ),
+                }
+            }
+        }
+    }
+    assert!(
+        accepted.is_empty(),
+        "accepted invalid constants: {accepted:?}"
+    );
+}
+
+#[test]
+fn constant_composites_skip_rhs_value_errors() {
+    for rhs in ["1 / 0 == 0", "(250 + 6) as u8 == 0"] {
+        for (logical, expected) in [
+            (format!("false && ({rhs})"), 0),
+            (format!("true || ({rhs})"), 1),
+        ] {
+            let source = format!(
+                "package main\ntype S struct {{ value: bool; }}\nconst A = [1]bool{{{logical}}}\nconst B = S{{value: {logical}}}\nconst Size = len([1]bool{{{logical}}})\nfunc main() {{}}\nfunc result() -> (bool, bool, bool, bool, u32, u32) {{ const LocalA = [1]bool{{{logical}}}; const LocalB = S{{value: {logical}}}; const LocalSize = len([1]bool{{{logical}}}); return A[0], LocalA[0], B.value, LocalB.value, Size, LocalSize; }}\n"
+            );
+            let result = compile(&source, None).unwrap();
+            assert_eq!(
+                crate::memory_test_vm::execute(&result.mir, "main.result", &[]).unwrap(),
+                [expected, expected, expected, expected, 1, 1],
+                "{logical}"
+            );
+        }
+    }
+}
+
+#[test]
+fn skipped_composite_rhs_still_requires_valid_names_and_types() {
+    for rhs in ["missing()", "1", "true as u8 == 0"] {
+        for logical in [format!("false && ({rhs})"), format!("true || ({rhs})")] {
+            for expression in [
+                format!("[1]bool{{{logical}}}"),
+                format!("len([1]bool{{{logical}}})"),
+            ] {
+                for declaration in ["const", "var"] {
+                    let source = format!(
+                        "package main\nfunc main() {{ {declaration} Value = {expression}; }}\n"
+                    );
+                    assert!(
+                        compile(&source, None).is_err(),
+                        "{declaration} Value = {expression}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn runtime_composite_logical_values_preserve_effects_and_source_order() {
+    let result = compile(
+        r#"package main
+func main() {}
+func flag(trace: *u32, digit: u32, value: bool) -> bool {
+    *trace = *trace * 10 + digit
+    return value;
+}
+func result() -> (bool, bool, bool, bool, bool, bool, u32, u32, bool, bool) {
+    var trace: u32
+    var values = [4]bool{
+        3: false && flag(&trace, 9, true),
+        1: true || flag(&trace, 9, false),
+        2: flag(&trace, 1, true) && flag(&trace, 2, false),
+        0: flag(&trace, 3, false) || flag(&trace, 4, true),
+    }
+    var size = len([2]bool{
+        1: flag(&trace, 5, false) && flag(&trace, 9, true),
+        0: flag(&trace, 6, true) || flag(&trace, 9, false),
+    })
+    var skippedAnd = false && (len([1]bool{flag(&trace, 9, true)}) == 1)
+    var skippedOr = true || (len([1]bool{flag(&trace, 9, false)}) == 1)
+    var evaluatedAnd = true && (len([1]bool{flag(&trace, 7, true)}) == 1)
+    var evaluatedOr = false || (len([1]bool{flag(&trace, 8, false)}) == 1)
+    return values[0], values[1], values[2], values[3], skippedAnd, skippedOr, size, trace, evaluatedAnd, evaluatedOr;
+}
+"#,
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        crate::memory_test_vm::execute(&result.mir, "main.result", &[]).unwrap(),
+        [1, 1, 0, 0, 0, 1, 2, 12345678, 1, 1]
+    );
+}
+
+#[test]
 fn skipped_casts_at_value_boundaries_never_reach_mir() {
     let c = compile(
         r#"package main

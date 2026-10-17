@@ -39,11 +39,13 @@ impl BodyLowerer<'_> {
                 Err(message) => self.fail(value.span, message),
             };
         }
-        // Value contexts may contain calls on the skipped branch. Constant
-        // declarations still reject those via the separate eligibility check.
+        // Value contexts may contain calls on the skipped branch. Preserve them
+        // in constant declarations until the separate eligibility check.
         if let hir::ExprKind::Binary { op, lhs, .. } = &value.kind {
             if let Some(result) = self.short_circuit_result(*op, lhs) {
-                value.kind = hir::ExprKind::Bool(result);
+                if self.constant_depth == 0 {
+                    value.kind = hir::ExprKind::Bool(result);
+                }
                 return Some(value);
             }
         }
