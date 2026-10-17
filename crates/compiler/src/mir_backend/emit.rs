@@ -66,6 +66,13 @@ impl Emitter {
         self.words.extend(encoding::link_slot(true, 0));
         Ok(())
     }
+    pub fn has_call_since(&self, offset: u32) -> bool {
+        self.relocations
+            .iter()
+            .rev()
+            .take_while(|relocation| relocation.offset >= offset)
+            .any(|relocation| relocation.kind == RelocationKind::CallSlot)
+    }
     pub fn load(&mut self, reg: u8, offset: u32) {
         self.stack_access(7, reg, offset);
     }
