@@ -111,6 +111,10 @@ var inferred = [...]u32{10, 20, 30}
 var count: u32 = len(values)
 ```
 
+`len(array)` は配列長を返す前に `array` を通常どおり1回評価する。\
+配列literalの要素や配列を返すcallの引数にある定数castも、評価される場合は範囲検査の対象となり、表現範囲外なら compile error になる。\
+`&&` / `||` の短絡評価による値評価と範囲検査の省略は、`len` の内外でも同じ規則に従う。
+
 Kagura target の配列型は、長さに加えて byte size にも上限がある。\
 `N * sizeof(T)` が `2^32-1` byte を超える型は、未使用の宣言でも compile error となる。
 

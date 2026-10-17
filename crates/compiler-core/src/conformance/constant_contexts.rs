@@ -462,15 +462,15 @@ fn short_or() {
     run(&CASES[1]).unwrap();
 }
 #[test]
-fn array_call_skips_argument() {
+fn array_call_evaluates_argument() {
     run(&CASES[2]).unwrap();
 }
 #[test]
-fn array_literal_skips_element() {
+fn array_literal_evaluates_element() {
     run(&CASES[3]).unwrap();
 }
 #[test]
-fn array_len_skips_cast() {
+fn array_len_evaluates_cast() {
     run(&CASES[4]).unwrap();
 }
 #[test]

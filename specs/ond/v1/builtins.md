@@ -85,6 +85,9 @@ var size: u32 = len(buffer)
 
 これは関数呼び出しではなく、型情報から compiler が直接解決する。
 
+operand 内で評価される定数変換は範囲検査の対象となり、表現範囲外なら compile error とする。\
+`&&` / `||` の短絡評価で未評価となる部分には、通常の短絡規則を適用する。
+
 配列以外ではreceiverに一致する `operator (self: T) len() -> u32` を呼び出す。\
 この宣言では戻り値型に `u32` を1個明示し、戻り値の省略、別の型、複数戻り値は未使用でも compile error とする。\
 generic operatorにも同じ規則を適用し、`len(value)` の結果は常に単一の `u32` となる。\
