@@ -130,8 +130,12 @@ box := Box[u32]{value: Identity[u32](7)}
 - 整数型と `f32` の間
 - 整数とポインタの間
 
-評価される定数変換の結果を表現できない場合はコンパイルエラーとする。短絡評価や配列の `len` により値が評価されない部分では、定数変換の範囲検査も省略する。ただし名前解決・型検査は省略しない。実行時の整数変換は変換先の幅の下位 bit を保持し、符号拡張またはゼロ拡張して変換する。
-`f32` への変換は IEEE 754 binary32 の roundTiesToEven で丸める。`f32` から整数型への変換は 0 方向への丸めとし、`NaN`、無限大、変換先で表現できない値は compile-time なら compile error、実行時なら fault とする。
+評価される定数変換の結果を表現できない場合はコンパイルエラーとする。\
+短絡評価により値が評価されない部分では、定数変換の範囲検査も省略する。\
+ただし名前解決・型検査は省略しない。\
+実行時の整数変換は変換先の幅の下位 bit を保持し、符号拡張またはゼロ拡張して変換する。\
+`f32` への変換は IEEE 754 binary32 の roundTiesToEven で丸める。\
+`f32` から整数型への変換は 0 方向への丸めとし、`NaN`、無限大、変換先で表現できない値は compile-time なら compile error、実行時なら fault とする。
 
 Kagura target における型のサイズ、alignment、zero value は [Ond for Kagura Machine Profile v1](../targets/kagura-v1/machine.md) に従う。
 

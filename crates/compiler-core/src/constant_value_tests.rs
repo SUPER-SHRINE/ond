@@ -194,3 +194,91 @@ fn array_len_evaluates_and_typechecks_nested_values() {
         "true",
     );
 }
+
+#[test]
+fn array_len_rejects_literal_cast_overflow_at_value_boundaries() {
+    for body in [
+        "const Size = len([1]u8{(250 + 6) as u8})",
+        "var size = len([1]u8{(250 + 6) as u8})",
+        "return len([1]u8{(250 + 6) as u8})",
+    ] {
+        let source = format!(
+            "package main\nfunc main() {{}}\nfunc result() -> u32 {{ {body}; return 0; }}\n"
+        );
+        let error = compile(&source, None).unwrap_err();
+        assert!(
+            error.to_string().contains("constant cast is out of range"),
+            "{body}: {error}"
+        );
+    }
+}
+
+#[test]
+fn short_circuit_skips_casts_inside_and_around_array_len() {
+    for (expression, expected) in [
+        ("len([1]bool{false && ((250 + 6) as u8 == 0)}) == 1", 1),
+        ("len([1]bool{true || ((250 + 6) as u8 == 0)}) == 1", 1),
+        ("false && (len([1]u8{(250 + 6) as u8}) == 1)", 0),
+        ("true || (len([1]u8{(250 + 6) as u8}) == 1)", 1),
+    ] {
+        let source = format!(
+            "package main\nconst Value = {expression}\nfunc main() {{}}\nfunc result() -> (bool, bool, bool) {{ var value = {expression}; return Value, value, {expression}; }}\n"
+        );
+        let result = compile(&source, None).unwrap();
+        assert_eq!(
+            crate::memory_test_vm::execute(&result.mir, "main.result", &[]).unwrap(),
+            [expected; 3],
+            "{expression}"
+        );
+    }
+}
+
+#[test]
+fn array_len_rejects_direct_operand_calls_in_constants_even_when_len_is_skipped() {
+    for expression in [
+        "len(array())",
+        "false && (len(array()) == 1)",
+        "true || (len(array()) == 1)",
+    ] {
+        let source = format!(
+            "package main\nconst Value = {expression}\nfunc main() {{}}\nfunc array() -> [1]u8 {{ return [1]u8{{}}; }}\n"
+        );
+        let error = compile(&source, None).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("constant initializer requires a compile-time value"),
+            "{expression}: {error}"
+        );
+    }
+}
+
+#[test]
+fn array_len_preserves_one_operand_side_effect_and_runtime_faults() {
+    let result = compile(
+        r#"package main
+func main() {}
+func array(calls: *u32, index: u32) -> [2]u8 {
+    *calls += 1
+    var values = [1]u8{}
+    _ = values[index]
+    return [2]u8{};
+}
+func result(index: u32) -> (u32, u32) {
+    var calls: u32
+    var size = len(array(&calls, index))
+    return size, calls;
+}
+"#,
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        crate::memory_test_vm::execute(&result.mir, "main.result", &[0]).unwrap(),
+        [2, 1]
+    );
+    assert_eq!(
+        crate::memory_test_vm::execute(&result.mir, "main.result", &[1]).unwrap_err(),
+        "bounds"
+    );
+}
