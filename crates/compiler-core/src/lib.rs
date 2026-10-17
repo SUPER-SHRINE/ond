@@ -109,6 +109,8 @@ mod defer_tests;
 #[cfg(test)]
 mod function_type_tests;
 #[cfg(test)]
+mod generic_diagnostic_tests;
+#[cfg(test)]
 mod generic_identity_tests;
 #[cfg(test)]
 mod global_tests;
