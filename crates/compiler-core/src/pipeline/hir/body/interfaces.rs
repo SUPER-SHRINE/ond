@@ -123,9 +123,13 @@ impl BodyLowerer<'_> {
             })
             .collect::<Vec<_>>();
         for (package_id, declaration_index, method) in candidates {
-            let Some(candidate) =
-                self.resolve_method_candidate(package_id, declaration_index, &method, receiver_ty)
-            else {
+            let Some(candidate) = self.resolve_method_candidate(
+                package_id,
+                declaration_index,
+                &method,
+                receiver_ty,
+                span,
+            ) else {
                 continue;
             };
             let actual = candidate.signature.function_type();

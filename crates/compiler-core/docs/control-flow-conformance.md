@@ -1,6 +1,6 @@
 # 制御フロー・評価順・名前scopeの適合ケース
 
-2026-09-20追補: evaluationの25ケースを[共有fixture](../src/test_vectors/evaluation.rs)へ抽出した。coreの既存MemoryVm検証はadapter経由で維持し、同じsource・期待trace/値をKaguraでも実行する。仕様・判定は変更していない。[backend側の記録](../../../specs/ond/targets/kagura-v1/conformance-checklist.md)を参照。
+2026-09-20追補: evaluationの25ケースを[共有fixture](../src/test_vectors/evaluation.rs)へ抽出した。coreの既存MemoryVm検証はadapter経由で維持し、同じsource・期待trace/値をKaguraでも実行する。仕様・判定は変更していない。[backend側の記録](../../../docs/compiler/kagura-v1-conformance-record.md)を参照。
 
 対象: EVAL-02、FLOW-02/03、NAME-01/02。既存テストを移設せず、[共通形式](./conformance-cases.md)へ85件を追加した。
 空blockのparser不具合修正後、保留していた2件を通常実行へ戻し、対照ケース24件を追加した。合計111ケースで、ignoredはない。

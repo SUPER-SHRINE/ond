@@ -3,6 +3,7 @@ use ond_protocol::{CompilationManifest, Contract, link};
 use std::{collections::BTreeMap, path::PathBuf};
 #[derive(Debug, Clone)]
 pub struct CompileRequest {
+    pub test: bool,
     pub excluded_dirs: Vec<PathBuf>,
     pub contract: Contract,
     pub project_root: PathBuf,
@@ -29,6 +30,7 @@ pub struct LinkRequest {
 
 #[derive(Debug, Clone)]
 pub struct LinkResult {
+    pub tests: Option<ond_protocol::TestSidecar>,
     pub image: link::LinkedImage,
     pub debug: ond_protocol::debug::DebugInfo,
 }

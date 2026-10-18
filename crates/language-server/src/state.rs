@@ -426,7 +426,7 @@ impl ServerState {
         character: u32,
     ) -> Result<Vec<Value>, String> {
         let base_overrides = self.collect_overrides();
-        let cached_index = self.symbol_index(root, &base_overrides)?;
+        let cached_index = self.symbol_index(root, &base_overrides)?.for_source(path);
         let mut overrides = base_overrides;
         let completion_marker = self.documents.get(path).and_then(|document| {
             completion_text_with_placeholder(&document.text, line, character).map(
@@ -450,7 +450,8 @@ impl ServerState {
             self.load_project(root, &overrides)
                 .ok()
                 .and_then(|project| {
-                    let repaired = ProjectSymbolIndex::refresh(project, Some(&cached_index));
+                    let repaired =
+                        ProjectSymbolIndex::refresh(project, Some(&cached_index)).for_source(path);
                     let current_file_parsed = !repaired.file_failed_to_parse(path)
                         && repaired
                             .ast
@@ -805,7 +806,7 @@ impl ServerState {
         character: u32,
     ) -> Result<Value, String> {
         let overrides = self.collect_overrides();
-        let index = self.symbol_index(root, &overrides)?;
+        let index = self.symbol_index(root, &overrides)?.for_source(path);
         let project = &index.loaded;
         let ast = &index.ast;
         for package in &ast.packages {
@@ -858,7 +859,7 @@ impl ServerState {
         character: u32,
     ) -> Result<Value, String> {
         let overrides = self.collect_overrides();
-        let index = self.symbol_index(root, &overrides)?;
+        let index = self.symbol_index(root, &overrides)?.for_source(path);
         if index.file_failed_to_parse(path) {
             return Ok(Value::Null);
         }
@@ -905,7 +906,7 @@ impl ServerState {
 
     fn project_document_symbols(&mut self, path: &Path, root: &Path) -> Result<Value, String> {
         let overrides = self.collect_overrides();
-        let index = self.symbol_index(root, &overrides)?;
+        let index = self.symbol_index(root, &overrides)?.for_source(path);
         let project = &index.loaded;
 
         for package in &index.ast.packages {
@@ -3692,6 +3693,178 @@ mod tests {
         let output = String::from_utf8(output).unwrap();
         assert!(output.contains("must declare `[project] name`"), "{output}");
         std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn test_build_rename_respects_each_occurrence_source_visibility() {
+        let root = test_project_root("test-rename-context");
+        std::fs::write(root.join("ond.toml"), "[project]\nname=\"rename\"\n").unwrap();
+        let main = root.join("main.ond");
+        let tests = root.join("main_test.ond");
+        let normal = "package main\nfunc main(){Helper()}\n";
+        let test = "package main\nfunc Helper(){}\nfunc TestOK(){Helper()}\n";
+        std::fs::write(&main, normal).unwrap();
+        std::fs::write(&tests, test).unwrap();
+        let uri = uri_from_path(&main).unwrap();
+        let test_uri = uri_from_path(&tests).unwrap();
+        let mut state = ServerState::default();
+        let mut output = Vec::new();
+        state
+            .open_document(uri.clone(), normal.into(), &mut output)
+            .unwrap();
+        let at = normal.lines().nth(1).unwrap().find("Helper").unwrap() as u32;
+        assert!(state.prepare_rename(&uri, 1, at).unwrap().is_null());
+        assert!(state.rename(&uri, 1, at, "Changed").is_err());
+        assert!(
+            state
+                .references(&uri, 1, at, true)
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(state.rename(&test_uri, 1, 5, "main").is_err());
+        let edits = state.rename(&test_uri, 1, 5, "Changed").unwrap();
+        assert_eq!(edits["changes"].as_object().unwrap().len(), 1);
+        assert_eq!(edits["changes"][&test_uri].as_array().unwrap().len(), 2);
+        std::fs::create_dir_all(root.join("left")).unwrap();
+        std::fs::write(root.join("left/left.ond"), "package left\n").unwrap();
+        let left_tests = root.join("left/left_test.ond");
+        std::fs::write(
+            &left_tests,
+            "package left\nfunc Helper(){}\nfunc TestLocal(){Helper()}\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("foreign")).unwrap();
+        let foreign = root.join("foreign/foreign_test.ond");
+        let foreign_source =
+            "package foreign\nimport \"left\"\nfunc TestForeign(){left.Helper()}\n";
+        std::fs::write(&foreign, foreign_source).unwrap();
+        let foreign_uri = uri_from_path(&foreign).unwrap();
+        let at = foreign_source
+            .lines()
+            .nth(2)
+            .unwrap()
+            .find("Helper")
+            .unwrap() as u32;
+        assert!(state.prepare_rename(&foreign_uri, 2, at).unwrap().is_null());
+        let left_uri = uri_from_path(&left_tests).unwrap();
+        let edits = state.rename(&left_uri, 1, 5, "Changed").unwrap();
+        assert_eq!(edits["changes"].as_object().unwrap().len(), 1);
+        assert_eq!(edits["changes"][&left_uri].as_array().unwrap().len(), 2);
+        // Both public and private normal helpers retain their valid test references.
+        for name in ["Helper", "helper"] {
+            std::fs::write(
+                &main,
+                format!("package main\nfunc {name}(){{}}\nfunc main(){{{name}()}}\n"),
+            )
+            .unwrap();
+            std::fs::write(&tests, format!("package main\nfunc TestOK(){{{name}()}}\n")).unwrap();
+            let state = ServerState::default();
+            let edits = state.rename(&uri, 1, 5, "Changed").unwrap();
+            assert_eq!(edits["changes"][&uri].as_array().unwrap().len(), 2);
+            assert_eq!(edits["changes"][&test_uri].as_array().unwrap().len(), 1);
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn test_build_library_only_project_retains_own_tests_and_private_context() {
+        let root = test_project_root("library-only-tests");
+        std::fs::write(root.join("ond.toml"), "[project]\nname=\"portable\"\n").unwrap();
+        std::fs::create_dir_all(root.join("deflate")).unwrap();
+        std::fs::write(
+            root.join("deflate/api.ond"),
+            "package deflate\nfunc private(){}\n",
+        )
+        .unwrap();
+        let test_path = root.join("deflate/api_test.ond");
+        let source = "package deflate\nfunc TestPrivate(){private()}\n";
+        std::fs::write(&test_path, source).unwrap();
+        let uri = uri_from_path(&test_path).unwrap();
+        let mut state = ServerState::default();
+        let mut output = Vec::new();
+        state
+            .open_document(uri.clone(), source.into(), &mut output)
+            .unwrap();
+        let project = state.load_current_project(&root).unwrap();
+        assert!(project.packages.iter().any(|p| {
+            p.logical_path == "portable/deflate"
+                && p.files
+                    .iter()
+                    .any(|file| same_path(project.sources.file(*file).path(), &test_path))
+        }));
+        assert!(compiler::compile_loaded_project(project).is_ok());
+        let diagnostics = published_diagnostics(&output, &uri);
+        assert!(!diagnostics.is_empty());
+        assert!(
+            diagnostics
+                .iter()
+                .all(|value| value.as_array().is_some_and(Vec::is_empty)),
+            "{diagnostics:?}"
+        );
+        let definition = state.definition(&uri, 1, 20).unwrap();
+        assert!(
+            definition[0]["targetUri"]
+                .as_str()
+                .unwrap()
+                .ends_with("api.ond"),
+            "{definition}"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn test_build_library_only_project_root_test_preserves_library_namespace() {
+        let root = test_project_root("library-only-root-test");
+        std::fs::write(root.join("ond.toml"), "[project]\nname=\"portable\"\n").unwrap();
+        std::fs::create_dir_all(root.join("deflate")).unwrap();
+        std::fs::write(
+            root.join("deflate/api.ond"),
+            "package deflate\nfunc Value() -> u32 { return 7 }\n",
+        )
+        .unwrap();
+        let test_path = root.join("api_test.ond");
+        let source = "package portable\nimport \"portable/deflate\"\nfunc TestRoot(){var _=deflate.Value()}\n";
+        std::fs::write(&test_path, source).unwrap();
+        let uri = uri_from_path(&test_path).unwrap();
+        let mut state = ServerState::default();
+        let mut output = Vec::new();
+        state
+            .open_document(uri.clone(), source.into(), &mut output)
+            .unwrap();
+        let project = state.load_current_project(&root).unwrap();
+        assert!(project.packages.iter().any(|package| {
+            package.logical_path == "portable"
+                && package
+                    .files
+                    .iter()
+                    .any(|file| same_path(project.sources.file(*file).path(), &test_path))
+        }));
+        assert!(
+            project
+                .packages
+                .iter()
+                .any(|package| package.logical_path == "portable/deflate")
+        );
+        assert!(compiler::compile_loaded_project(project).is_ok());
+        let diagnostics = published_diagnostics(&output, &uri);
+        assert!(
+            diagnostics
+                .iter()
+                .all(|value| value.as_array().is_some_and(Vec::is_empty)),
+            "{diagnostics:?}"
+        );
+        let value_character = source.lines().nth(2).unwrap().find("Value").unwrap() as u32;
+        let definition = state.definition(&uri, 2, value_character).unwrap();
+        assert!(
+            definition[0]["targetUri"]
+                .as_str()
+                .unwrap()
+                .ends_with("api.ond"),
+            "{definition}"
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

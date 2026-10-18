@@ -3,9 +3,7 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use crate::diagnostic::{Diagnostic, Diagnostics, FrontendError};
-use crate::project::{
-    LoadedProject, PackageId, PackageSources, load_project_with_overrides_and_exclusions,
-};
+use crate::project::{LoadedProject, PackageId, PackageSources};
 use crate::source::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,6 +93,7 @@ pub fn load_project_with_inputs(
         optional_sources,
         external_sources,
         false,
+        false,
     )
 }
 
@@ -116,9 +115,31 @@ pub fn load_project_with_inputs_allow_incomplete(
         optional_sources,
         external_sources,
         true,
+        true,
     )
 }
 
+pub fn load_project_with_test_inputs(
+    root: impl AsRef<Path>,
+    overrides: &BTreeMap<PathBuf, String>,
+    excluded_dirs: &[PathBuf],
+    required_sources: &BTreeMap<String, String>,
+    optional_sources: &BTreeMap<String, String>,
+    external_sources: &ExternalSources,
+) -> Result<LoadedProject, FrontendError> {
+    load_project_with_inputs_impl(
+        root,
+        overrides,
+        excluded_dirs,
+        required_sources,
+        optional_sources,
+        external_sources,
+        false,
+        true,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
 fn load_project_with_inputs_impl(
     root: impl AsRef<Path>,
     overrides: &BTreeMap<PathBuf, String>,
@@ -127,8 +148,14 @@ fn load_project_with_inputs_impl(
     optional_sources: &BTreeMap<String, String>,
     external_sources: &ExternalSources,
     allow_incomplete: bool,
+    include_tests: bool,
 ) -> Result<LoadedProject, FrontendError> {
-    let mut loaded = load_project_with_overrides_and_exclusions(root, overrides, excluded_dirs)?;
+    let mut loaded = crate::project::load_project_with_test_sources(
+        root,
+        overrides,
+        excluded_dirs,
+        include_tests,
+    )?;
     loaded.packages.retain(|package| {
         !excluded_dirs
             .iter()
@@ -148,6 +175,9 @@ fn load_project_with_inputs_impl(
     let mut logical_sources = BTreeSet::new();
 
     for (name, text) in required_sources {
+        if !include_tests && crate::project::is_test_source(Path::new(name)) {
+            continue;
+        }
         if optional_sources.contains_key(name) || external_sources.contains_key(name) {
             return Err(failure(format!(
                 "source is both required and optional: {name}"
@@ -171,6 +201,9 @@ fn load_project_with_inputs_impl(
     }
 
     for (name, text) in optional_sources {
+        if crate::project::is_test_source(Path::new(name)) {
+            continue;
+        }
         if !logical_sources.insert(name.clone()) {
             return Err(failure(format!("duplicate optional source: {name}")));
         }
@@ -191,6 +224,9 @@ fn load_project_with_inputs_impl(
     }
 
     for (name, source) in external_sources {
+        if crate::project::is_test_source(Path::new(name)) {
+            continue;
+        }
         if !logical_sources.insert(name.clone()) {
             return Err(failure(format!("duplicate optional source: {name}")));
         }
@@ -440,7 +476,10 @@ fn scan_library_root(
             ) {
                 scan_library_root(root, &path, overrides, files)?;
             }
-        } else if kind.is_file() && path.extension().is_some_and(|extension| extension == "ond") {
+        } else if kind.is_file()
+            && path.extension().is_some_and(|extension| extension == "ond")
+            && !crate::project::is_test_source(&path)
+        {
             let name = path
                 .strip_prefix(root)
                 .expect("scanned path is below its library root")
@@ -466,7 +505,10 @@ fn read_project_package(
         .map_err(|error| failure(error.to_string()))?
     {
         let path = entry.path();
-        if path.extension().is_some_and(|extension| extension == "ond") && path.is_file() {
+        if path.extension().is_some_and(|extension| extension == "ond")
+            && path.is_file()
+            && !crate::project::is_test_source(&path)
+        {
             let name = format!(
                 "{package}/{}",
                 path.file_name().expect("file has a name").to_string_lossy()

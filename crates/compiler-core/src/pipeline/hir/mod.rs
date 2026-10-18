@@ -29,6 +29,61 @@ pub(crate) fn lower_to_hir(
     loaded: &LoadedProject,
     ast: &ast::Project,
 ) -> Result<hir::Project, FrontendError> {
+    let mut invalid_tests = Diagnostics::new();
+    for file in ast
+        .packages
+        .iter()
+        .flat_map(|p| &p.files)
+        .filter(|f| crate::project::is_test_source(loaded.sources.file(f.file_id).path()))
+    {
+        for decl in &file.decls {
+            if let ast::TopLevelDecl::Func(function) = decl
+                && function.name.name.starts_with("Test")
+                && (function.receiver.is_some()
+                    || !function.type_params.is_empty()
+                    || !function.signature.params.is_empty()
+                    || !function.signature.results.is_empty())
+            {
+                invalid_tests.push(Diagnostic::error(function.name.span, "test function must be top-level with no parameters, results, type parameters or receiver"));
+            }
+        }
+    }
+    if !invalid_tests.is_empty() {
+        return Err(FrontendError::new(invalid_tests.into_vec()));
+    }
+    let test_packages = ast
+        .packages
+        .iter()
+        .filter(|package| {
+            package.files.iter().any(|file| {
+                crate::project::is_test_source(loaded.sources.file(file.file_id).path())
+            })
+        })
+        .map(|p| p.logical_path.clone())
+        .collect::<Vec<_>>();
+    if !test_packages.is_empty() {
+        // Validate each visibility context with the ordinary resolver, covering
+        // types, globals, methods and generic declarations as well as bodies.
+        for selected in std::iter::once(None).chain(test_packages.iter().map(Some)) {
+            let mut context = ast.clone();
+            for package in &mut context.packages {
+                if selected != Some(&package.logical_path) {
+                    package.files.retain(|file| {
+                        !crate::project::is_test_source(loaded.sources.file(file.file_id).path())
+                    });
+                }
+            }
+            lower_context_to_hir(loaded, &context, ast)?;
+        }
+    }
+    lower_context_to_hir(loaded, ast, ast)
+}
+
+fn lower_context_to_hir(
+    loaded: &LoadedProject,
+    ast: &ast::Project,
+    all_sources: &ast::Project,
+) -> Result<hir::Project, FrontendError> {
     let mut diagnostics = Diagnostics::new();
     let early_return_diagnostics = return_diagnostics(ast);
     let mut logical_to_package = BTreeMap::<String, PackageId>::new();
@@ -80,7 +135,9 @@ pub(crate) fn lower_to_hir(
                         name: name.name.clone(),
                         canonical_name: canonical_symbol_name(&package.logical_path, &name.name),
                         kind,
-                        exported: name
+                        exported: !crate::project::is_test_source(
+                            loaded.sources.file(file.file_id).path(),
+                        ) && name
                             .name
                             .as_bytes()
                             .first()
@@ -99,7 +156,7 @@ pub(crate) fn lower_to_hir(
         diagnostics.extend(early_return_diagnostics);
         return Err(FrontendError::new(diagnostics.into_vec()));
     }
-    diagnostics.extend(validate_generic_body_names(ast));
+    diagnostics.extend(validate_generic_body_names(ast, all_sources));
 
     let mut packages = Vec::new();
     for package in &ast.packages {
@@ -136,6 +193,7 @@ pub(crate) fn lower_to_hir(
             files.push(hir::File {
                 file_id: file.file_id,
                 package_name: file.package.name.clone(),
+                test_only: crate::project::is_test_source(loaded.sources.file(file.file_id).path()),
             });
             package_names.insert(file.package.name.clone());
             if file.package.name != expected_name {
@@ -443,7 +501,14 @@ pub(crate) fn lower_to_hir(
                                         .iter()
                                         .find(|candidate| candidate.id == source_package.id)
                                         .is_some_and(|package| {
-                                            package.declarations.contains_key(&parameter.name)
+                                            package.declarations.get(&parameter.name).is_some_and(
+                                                |declaration| {
+                                                    package.visible_from(
+                                                        declaration.span,
+                                                        parameter.span,
+                                                    )
+                                                },
+                                            )
                                         })
                                     || !names.insert(parameter.name.clone())
                             }) {
@@ -691,7 +756,13 @@ pub(crate) fn lower_to_hir(
                                                 .is_some_and(|package| {
                                                     package
                                                         .declarations
-                                                        .contains_key(&parameter.name)
+                                                        .get(&parameter.name)
+                                                        .is_some_and(|declaration| {
+                                                            package.visible_from(
+                                                                declaration.span,
+                                                                parameter.span,
+                                                            )
+                                                        })
                                                 })
                                             || !names.insert(parameter.name.clone())
                                     })
@@ -931,9 +1002,16 @@ pub(crate) fn lower_to_hir(
                 ),
             ));
         }
-        for import_names in import_names_by_file.values() {
+        for (file, import_names) in &import_names_by_file {
             for name in import_names.keys() {
-                if seen_top_level.contains_key(name) {
+                if seen_top_level.get(name).is_some_and(|declaration| {
+                    type_universe
+                        .iter()
+                        .find(|package| package.id == source_package.id)
+                        .is_some_and(|package| {
+                            package.visible_from(*declaration, Span::new(*file, 0, 0))
+                        })
+                }) {
                     diagnostics.push(Diagnostic::error(
                         seen_top_level[name],
                         format!("top-level declaration conflicts with imported package `{name}`"),

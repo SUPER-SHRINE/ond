@@ -39,7 +39,7 @@ pub use project::{
 };
 pub use project_input::{
     ExternalSource, ExternalSources, load_library_sources, load_project_with_inputs,
-    load_project_with_inputs_allow_incomplete,
+    load_project_with_inputs_allow_incomplete, load_project_with_test_inputs,
 };
 
 #[derive(Debug, Clone)]

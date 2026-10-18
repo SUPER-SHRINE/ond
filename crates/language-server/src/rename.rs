@@ -52,7 +52,7 @@ pub fn references(
         return Value::Array(Vec::new());
     };
     Value::Array(
-        occurrences(project, symbol.target)
+        occurrences(project, sources, symbol.target)
             .into_iter()
             .filter(|span| include_declaration || *span != symbol.target)
             .filter_map(|span| {
@@ -95,7 +95,7 @@ pub fn rename(
     }
 
     reject_direct_conflict(project, sources, symbol.target, new_name)?;
-    let occurrences = occurrences(project, symbol.target);
+    let occurrences = occurrences(project, sources, symbol.target);
     if !is_exported(new_name) && has_cross_package_reference(project, symbol.target, &occurrences) {
         return Err(format!(
             "`{new_name}` would not be exported, but the symbol is referenced from another package"
@@ -160,6 +160,7 @@ fn symbol_at(
         && let ResolvedTarget::Declaration(target) = resolved.target
         && resolved.reference.start <= offset
         && offset < resolved.reference.end
+        && target_visible_from(project, sources, target, resolved.reference)
     {
         return Some(SymbolAt {
             target,
@@ -180,7 +181,7 @@ fn symbol_at(
         })
 }
 
-fn occurrences(project: &ast::Project, target: Span) -> Vec<Span> {
+fn occurrences(project: &ast::Project, sources: &SourceDb, target: Span) -> Vec<Span> {
     let declarations = declaration_records(project)
         .into_iter()
         .map(|record| record.span)
@@ -196,7 +197,7 @@ fn occurrences(project: &ast::Project, target: Span) -> Vec<Span> {
                     Some(ResolvedTarget::Package(_)) => false,
                     None => declarations.contains(&span) && span == target,
                 };
-                if matches {
+                if matches && target_visible_from(project, sources, target, span) {
                     result.insert(span);
                 }
             }
@@ -205,6 +206,25 @@ fn occurrences(project: &ast::Project, target: Span) -> Vec<Span> {
     let mut result = result.into_iter().collect::<Vec<_>>();
     result.sort_by_key(|span| (span.file, span.start, span.end));
     result
+}
+
+fn target_visible_from(
+    project: &ast::Project,
+    sources: &SourceDb,
+    target: Span,
+    occurrence: Span,
+) -> bool {
+    if !compiler::project::is_test_source(sources.file(target.file).path()) {
+        return true;
+    }
+    compiler::project::is_test_source(sources.file(occurrence.file).path())
+        && project.packages.iter().any(|package| {
+            package.files.iter().any(|file| file.file_id == target.file)
+                && package
+                    .files
+                    .iter()
+                    .any(|file| file.file_id == occurrence.file)
+        })
 }
 
 fn target_is_editable(target: Span, sources: &SourceDb, editable_root: Option<&Path>) -> bool {

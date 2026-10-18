@@ -12,38 +12,41 @@
 - Enbu SDK: アセットのOndソース生成、Enbuのメモリ配置、boot/loader、ROM構築。
 
 Enbu標準ビルドは独立Ondコマンドを使用する。SDKの実行用Rust依存はprotocolのみ。
-compiler/core依存は既存のin-process回帰テスト用dev-dependenciesに限定する。
-`ond build`／`ond assets`は復活させない。
+compiler/core依存はin-process回帰テスト用dev-dependenciesに限定する。
+`ond build`と`ond assets`はコマンドとして定義しない。
 
-## 実装済みの単位と制約
+## コンパイル単位と成果物
 <!-- ond-spec-id: build/implemented-units-and-constraints -->
 
 1パッケージにつき1個の `.ondpkg`（UTF-8 JSON）を生成する。全パッケージを
 1つのObjectBundleに格納しない。コンパイル結果のmanifestが各ファイルを参照し、
 リンク時に結合する。セクションのdataだけBase64、それ以外は通常のJSON。
 
-現段階の差分単位は**Object生成**。ソース読込／構文解析／依存グラフ構築は毎回行う。
+キャッシュによる再利用の単位は**Object生成**。ソース読込／構文解析／依存グラフ構築は毎回行う。
 全パッケージがキャッシュ一致なら型検査・HIR/MIR生成・Object生成を省略する。
 1つでも不一致なら型検査・HIR/MIR生成は全プロジェクトへ実行し、Object生成だけを
 不一致パッケージに限定する。`frontend_ran`はこの型付きフロントエンドの実行を示す。
 
 公開型・関数シグネチャ・定数値・global型を含むexport dataを保存・読出できる。
-依存パッケージのソースは引き続き必要であり、「依存成果物だけで単一パッケージを
-型検査する」完全なパッケージ単位コンパイルには未対応。
-次工程はexport dataからcoreの型・名前解決環境を構築するimport口の追加である。
-成果物ローカル型IDと名前付き型のidentityは下記の形式で定義済み。
+依存パッケージのソースを型検査に用いる。export dataから型・名前解決環境を構築して依存成果物だけで単一パッケージを型検査する方式は本仕様の対象外とする。
+成果物ローカル型IDと名前付き型のidentityを下記の形式で定義する。
 project-global TypeIdをそのまま永続化しない。
+
+通常buildの契約は本書で定義する。\
+テストビルドの契約は[テストビルド仕様](./test-build.md)を参照する。
 
 ## コマンド
 <!-- ond-spec-id: build/commands -->
 
 `cargo build -p ond-cli --bin ond` で `target/debug/ond.exe` を生成する。
-要求・応答JSONラッパーは廃止。操作は引数、入力はファイル、stdinは入力ファイルの代替にする。
-成果物の内部形式は引き続きJSON/Base64だが、呼出側が操作用JSONを作る必要はない。
+要求・応答JSONラッパーは使用しない。操作は引数、入力はファイル、stdinは入力ファイルの代替にする。
+成果物の内部形式はJSON/Base64とし、呼出側が操作用JSONを作る必要はない。
 
 ```sh
 ond compile .
 ond compile ./game --library-dir ./generated -o game.ondbuild
+ond compile --test ./game
+ond compile --test ./game -o game-test.ondbuild
 ond link game.ondbuild --ram 0x10002000:0x03FFE000 --stack 1MiB --return-to 0x10000000 -o game.ondimage
 ond compile . -o - | ond link - --ram 0x10002000:0x03FFE000 --stack 1MiB --return-to 0x10000000 -o game.ondimage
 ```
@@ -51,7 +54,9 @@ ond compile . -o - | ond link - --ram 0x10002000:0x03FFE000 --stack 1MiB --retur
 ### ond compile
 <!-- ond-spec-id: build/compile-command -->
 
-`ond compile [project] [-o FILE|-] [--library-dir DIR]... [--cache-dir DIR] [-v]`
+`ond compile [project] [--test] [-o FILE|-] [--library-dir DIR]... [--cache-dir DIR] [-v]`
+
+`--test`はmanifestへtest metadataを記録し、link時のtest sidecar生成を指定する。
 
 - project省略時はカレントディレクトリ。ond.tomlのあるprojectをコンパイルする。
 - ond.tomlの`[dependencies]`のkeyはmanifest内の登録名であり、import pathには使用しない。
@@ -69,8 +74,9 @@ ond compile . -o - | ond link - --ram 0x10002000:0x03FFE000 --stack 1MiB --retur
   再帰探索から除外する。省略時はこの3件を既定値とする。絶対path、`..`、globは許可しない。
   依存先には依存先自身のignore設定を適用する。子directoryに別のond.tomlがある場合は別project境界として探索しない。
 - 依存先のond.tomlも再帰的に解決する。同じproject名が異なるdirectoryを指す場合はエラーとする。
-  同じdirectoryを異なる登録名で参照しても同じ依存として扱う。symlinkは初期実装では拒否する。
-- 出力省略時はproject/target/build.ondbuild。出力内容はCompilationManifestそのもの。
+  同じdirectoryを異なる登録名で参照しても同じ依存として扱う。symlink依存は拒否する。
+- 通常compileの出力省略時はproject/target/build.ondbuild。test compile（`--test`）の出力省略時はproject/target/test.ondbuild。出力内容はCompilationManifestそのもの。
+- 明示的な`-o`は通常/testいずれの既定出力にも優先する。
 - パッケージ別.ondpkgはproject/target/ond-cacheへ保存する。変更する場合だけ--cache-dirを指定。
 - 相対引数パスは全て呼出時のカレントディレクトリ基準。既定cache/outputだけproject基準。
 - --library-dirは追加パッケージの探索ルートで、複数指定できる。
@@ -87,6 +93,9 @@ ond compile . -o - | ond link - --ram 0x10002000:0x03FFE000 --stack 1MiB --retur
 - --cache-dir以外のcache操作やtarget/ABI/revision指定は要求しない。
 - -vは再生成／再利用したパッケージ名をstderrに表示する。manifestへ統計を混ぜない。
 - compileのstdinは使用しない。sourceをstdinから単独コンパイルするモードは提供しない。
+- `--test`を指定するとtest buildを選ぶ。これはcompileだけのflagであり、詳細は[テストビルド仕様](./test-build.md)に従う。
+- 通常compileのmanifestは`tests` fieldを持たず、`--test` compileはcaseが0件でも`tests: {"cases":[]}`を持つ。
+  compile modeを示す別fieldは追加せず、通常/test cacheは別entryとして扱う。case schemaは同仕様を参照する。
 
 ### ond link
 <!-- ond-spec-id: build/link-command -->
@@ -94,9 +103,12 @@ ond compile . -o - | ond link - --ram 0x10002000:0x03FFE000 --stack 1MiB --retur
 `ond link FILE|- --ram BASE:SIZE --stack SIZE --return-to ADDRESS [--read-only BASE:SIZE] [-o FILE|-]`
 
 - FILEはcompileのmanifest。-ならstdinから読む。
+- `ond link`はtest mode flagを持たず、manifestの`tests` fieldの有無から通常/test startupを選ぶ。
 - 標準出力へ出す場合の出力はLinkedImageそのもの。fileへ出す場合はLinkedImageと、拡張子を`.onddebug`へ置換したdebug sidecarを生成する。省略時はカレントディレクトリの`a.ondimage`と`a.onddebug`。
+- `tests` fieldがあるmanifestではfile出力時に`.ondtest` sidecarも生成する。fieldがなければ生成せず、`cases`が空でもsidecarを生成する。
+- `.onddebug`は`.ondtest`から独立し、file出力では通常/test buildの双方で生成する。`.ondtest`のschemaは[テストビルド仕様](./test-build.md)に従う。
 - LinkedImageとdebug sidecarは同じ`build_id`を持つ。`build_id`は空の`build_id`を持つLinkedImageのcanonical JSON bytesのSHA-256である。
-- `-o -`ではpipe互換性のためLinkedImageだけをstdoutへ書き、sidecarは生成しない。
+- `-o -`ではpipe互換性のためLinkedImageだけをstdoutへ書き、debug/test sidecarは生成しない。test情報を実行ツールへ渡す利用者はfile出力を使う。
 - --ramはRAM領域、--stackはその内側に予約するstack量、--return-toはmain正常終了後の絶対ジャンプ先。
   これらは機種SDKが決めるため必須。Enbu固有の値をOndの既定値にしない。
 - --read-onlyを指定するとText/Rodataを別領域へ配置する。boot-bank用profileでも使用する。
@@ -150,7 +162,7 @@ package索引は `<build_id>.json`、project索引は `project-<key>.ondmanifest
 壊れた索引・checksum不一致・不適合なキャッシュはmissとして再生成する。
 明示的なlink入力の破損／不一致はエラーであり、暗黙に再コンパイルしない。
 コンパイル失敗時は成功manifestを返さず、以前の成果物は削除しない。
-古いキーの回収・キャッシュGCは未実装。
+古いキャッシュキーの回収は仕様対象外とする。
 
 既存coreの意味を保つため、rootから到達しないパッケージも検査・Object生成する。
 startupに含めるinitializerはrootから到達するパッケージだけ。
@@ -197,7 +209,7 @@ generic宣言templateはこの成果物へ保存しない。generic型・関数�
 
 読出時には型参照の範囲、公開binding名、nominal名の重複、aggregate indexの重複、
 成果物とinterfaceのpackage一致を検証する。これは参照整合性の検査であり、
-まだ型検査環境へimportして意味検査を行う実装ではない。
+型検査環境へのimportや意味検査を定義するものではない。
 
 revision 1と2は受理しない。キャッシュはcontract/compiler識別子の変化でmissとなる。
 旧キャッシュの自動削除はしない。

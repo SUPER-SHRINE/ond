@@ -42,6 +42,7 @@ impl Fixture {
     }
     fn request(&self) -> CompileRequest {
         CompileRequest {
+            test: false,
             excluded_dirs: Vec::new(),
             contract: Contract::default(),
             project_root: self.0.clone(),
@@ -744,3 +745,6 @@ operator (plain: Plain) + (cell: Cell[Token])->u32 { return cell.Value.Value }
         cache::encode(&cold).unwrap()
     );
 }
+
+#[path = "test_build_tests.rs"]
+mod test_build;

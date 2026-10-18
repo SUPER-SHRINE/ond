@@ -5,7 +5,7 @@
 
 - [Target Runtime Contract](./machine.md)
 - [ABI](./abi.md)
-- [MIR backend 境界設計](./mir-backend.md)（実装計画・未決定事項を含む）
-- [MIR backend 適合チェックリスト](./conformance-checklist.md)（検証済み範囲・不足・次の検証順序）
+- [MIR backend 契約](./mir-backend.md)
+- 適合の証拠・進捗記録は[Compiler適合記録](../../../../docs/compiler/kagura-v1-conformance-record.md)を参照
 
 この profile は Ond に属し、Kagura 規格の一部ではない。

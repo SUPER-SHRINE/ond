@@ -24,7 +24,7 @@ impl BodyLowerer<'_> {
                 .universe
                 .iter()
                 .find(|p| p.id == self.package_id)
-                .is_some_and(|p| p.values.contains(name) || p.constants.contains_key(name));
+                .is_some_and(|p| p.value_visible_from(name, path.span));
         (!shadowed).then_some(name)
     }
 

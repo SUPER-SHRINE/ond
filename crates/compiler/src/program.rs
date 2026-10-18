@@ -5,7 +5,7 @@ use crate::{
 };
 use ond_compiler_core::mir;
 mod startup;
-pub use startup::program_startup;
+pub use startup::{program_startup, test_startup};
 #[derive(Debug, Clone)]
 pub struct ProgramMetadata {
     pub entry_symbol: String,

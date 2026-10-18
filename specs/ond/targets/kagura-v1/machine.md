@@ -54,12 +54,15 @@ sectionの保存形式・load・zero初期化は機種SDKが定義する。
 
 header は allocator の内部表現であり、Ond program へ返す pointer は payload の先頭を指す。
 
-`alloc(0)`はnilを返す。`new(T)`は型のsizeに必要な領域を確保し、成功時にzero化する。size=0の型でも最低payload（現allocatorでは4-byte alignmentへ切り上げた領域）を確保し、成功時は非nil、確保失敗時はnilとする。型のsizeは0のままである。
+`alloc(0)`はnilを返す。`new(T)`は型のsizeに必要な領域を確保し、成功時にzero化する。size=0の型でも最低payload（4-byte alignmentへ切り上げた領域）を確保し、成功時は非nil、確保失敗時はnilとする。型のsizeは0のままである。
 
 ## 4. Startup
 <!-- ond-spec-id: targets/kagura-v1/startup -->
 
 機種SDKがsectionのロードとzero初期化、SPの設定を行い、linkされたruntime entryへ制御を渡す。entryはMIRのpackage初期化順序に従ってinitializerを呼び、最後にmainを呼ぶ。mainから戻った際の処理はSDKが指定する。EnbuではROM内loaderが起動を行い、正常return後はRAM上のloopに入る。
+
+上記は通常buildのstartup契約である。\
+test buildでもSDKによるload・zero初期化・SP設定の境界を保ち、詳細は[テストビルド仕様](../../test-build.md)に従う。
 
 ## 5. Data Layout
 <!-- ond-spec-id: targets/kagura-v1/data-layout -->
@@ -115,5 +118,5 @@ source探索境界を定義する。RAM配置とstack予約量はmachine SDKま�
 Ond project manifestには保持しない。
 
 `[project].name`は依存先projectのimport名前空間として使用する。依存されるprojectではOndの
-identifierとして有効な名前を必須とする。それ以外のproject metadataと一覧表示は将来拡張とし、
+identifierとして有効な名前を必須とする。project name以外のproject metadataおよび一覧表示は
 v1のコンパイル結果には影響しない。

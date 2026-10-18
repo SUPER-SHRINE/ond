@@ -94,6 +94,7 @@ pub(super) struct TypePackage {
     pub(super) id: PackageId,
     pub(super) logical_path: String,
     pub(super) imports: BTreeMap<FileId, BTreeMap<String, PackageId>>,
+    test_files: BTreeSet<FileId>,
     pub(super) declarations: BTreeMap<String, TypeDeclaration>,
     pub(super) constants: BTreeMap<String, (Option<ast::Type>, ast::Expr)>,
     pub(super) values: BTreeSet<String>,
@@ -102,6 +103,27 @@ pub(super) struct TypePackage {
     pub(super) methods: Vec<ast::FuncDecl>,
     pub(super) operators: Vec<ast::OperatorDecl>,
     pub(super) globals: BTreeMap<String, ast::VarSpec>,
+}
+
+impl TypePackage {
+    pub(super) fn value_visible_from(&self, name: &str, caller: Span) -> bool {
+        let declaration = self
+            .constants
+            .get(name)
+            .map(|(_, value)| value.span())
+            .or_else(|| self.globals.get(name).map(|spec| spec.span))
+            .or_else(|| self.functions.get(name).map(|signature| signature.span))
+            .or_else(|| {
+                self.generic_functions
+                    .get(name)
+                    .map(|function| function.span)
+            });
+        declaration.is_some_and(|declaration| self.visible_from(declaration, caller))
+    }
+
+    pub(super) fn visible_from(&self, declaration: Span, caller: Span) -> bool {
+        !self.test_files.contains(&declaration.file) || self.test_files.contains(&caller.file)
+    }
 }
 
 pub(super) fn collect_type_universe(
@@ -223,6 +245,14 @@ pub(super) fn collect_type_universe(
                 id: source.id,
                 logical_path: package.logical_path.clone(),
                 imports,
+                test_files: source
+                    .files
+                    .iter()
+                    .copied()
+                    .filter(|file| {
+                        crate::project::is_test_source(loaded.sources.file(*file).path())
+                    })
+                    .collect(),
                 declarations,
                 constants,
                 values,
@@ -515,6 +545,13 @@ fn resolve_applied_type(
         ));
         return None;
     };
+    if !owner.visible_from(declaration.span, base.span) {
+        diagnostics.push(Diagnostic::error(
+            base.span,
+            format!("test-only type `{name}` is not visible here"),
+        ));
+        return None;
+    }
     if declaration.type_params.is_empty() {
         diagnostics.push(Diagnostic::error(
             span,
@@ -780,6 +817,14 @@ pub(super) fn resolve_type(
                     .iter()
                     .find(|package| package.id == package_id)
                     .and_then(|package| package.declarations.get(name))?;
+                let owner = universe.iter().find(|package| package.id == package_id)?;
+                if !owner.visible_from(declaration.span, path.span) {
+                    diagnostics.push(Diagnostic::error(
+                        path.span,
+                        format!("test-only type `{name}` is not visible here"),
+                    ));
+                    return None;
+                }
                 if !declaration.type_params.is_empty() {
                     diagnostics.push(Diagnostic::error(
                         path.span,
@@ -825,6 +870,13 @@ pub(super) fn resolve_type(
                 .find(|candidate| Some(candidate.id) == target_id);
             match target {
                 Some(target) if target.declarations.contains_key(name) => {
+                    if !target.visible_from(target.declarations[name].span, path.span) {
+                        diagnostics.push(Diagnostic::error(
+                            path.span,
+                            format!("test-only type `{name}` is not visible here"),
+                        ));
+                        return None;
+                    }
                     if target
                         .declarations
                         .get(name)

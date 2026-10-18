@@ -10,7 +10,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const BUILTINS: &[&str] = &["alloc", "free", "len", "thisFile", "thisLine"];
 
-pub(super) fn validate_generic_body_names(project: &ast::Project) -> Diagnostics {
+pub(super) fn validate_generic_body_names(
+    project: &ast::Project,
+    all_sources: &ast::Project,
+) -> Diagnostics {
     let package_values = project
         .packages
         .iter()
@@ -24,10 +27,64 @@ pub(super) fn validate_generic_body_names(project: &ast::Project) -> Diagnostics
             (package.logical_path.as_str(), values)
         })
         .collect::<BTreeMap<_, _>>();
+    let package_types = project
+        .packages
+        .iter()
+        .map(|package| {
+            let names = package
+                .files
+                .iter()
+                .flat_map(|file| &file.decls)
+                .filter_map(|decl| match decl {
+                    ast::TopLevelDecl::Type(decl) => Some(&decl.specs),
+                    _ => None,
+                })
+                .flatten()
+                .map(|spec| spec.name.name.clone())
+                .collect::<BTreeSet<_>>();
+            (package.logical_path.as_str(), names)
+        })
+        .collect::<BTreeMap<_, _>>();
+    // Only names removed by the test visibility context need additional checks.
+    // Ordinary unresolved generic types retain their existing specialization rules.
+    let hidden_names = all_sources
+        .packages
+        .iter()
+        .map(|package| {
+            let all_values = package
+                .files
+                .iter()
+                .flat_map(|file| &file.decls)
+                .flat_map(top_level_value_names)
+                .collect::<BTreeSet<_>>();
+            let all_types = package
+                .files
+                .iter()
+                .flat_map(|file| &file.decls)
+                .filter_map(|decl| match decl {
+                    ast::TopLevelDecl::Type(decl) => Some(&decl.specs),
+                    _ => None,
+                })
+                .flatten()
+                .map(|spec| spec.name.name.clone())
+                .collect::<BTreeSet<_>>();
+            let hidden_types = all_types
+                .difference(&package_types[package.logical_path.as_str()])
+                .cloned()
+                .collect::<BTreeSet<_>>();
+            let mut hidden = all_values
+                .difference(&package_values[package.logical_path.as_str()])
+                .cloned()
+                .collect::<BTreeSet<_>>();
+            hidden.extend(hidden_types.iter().cloned());
+            (package.logical_path.as_str(), (hidden, hidden_types))
+        })
+        .collect::<BTreeMap<_, _>>();
     let mut diagnostics = Diagnostics::new();
 
     for package in &project.packages {
         let values = &package_values[package.logical_path.as_str()];
+        let hidden_types = &hidden_names[package.logical_path.as_str()].1;
         for file in &package.files {
             let imports = file
                 .imports
@@ -45,6 +102,22 @@ pub(super) fn validate_generic_body_names(project: &ast::Project) -> Diagnostics
                     )
                 })
                 .collect::<BTreeSet<_>>();
+            let imported_names = file
+                .imports
+                .iter()
+                .filter_map(|import| {
+                    let logical = crate::string_literal::import_path(&import.path).ok()?;
+                    let alias = import
+                        .alias
+                        .as_ref()
+                        .map(|name| name.name.clone())
+                        .unwrap_or_else(|| {
+                            logical.rsplit('/').next().unwrap_or_default().to_string()
+                        });
+                    let names = hidden_names.get(logical.as_str())?.0.clone();
+                    Some((alias, names))
+                })
+                .collect::<BTreeMap<String, BTreeSet<String>>>();
             for declaration in &file.decls {
                 match declaration {
                     ast::TopLevelDecl::Func(function)
@@ -55,21 +128,72 @@ pub(super) fn validate_generic_body_names(project: &ast::Project) -> Diagnostics
                                 .and_then(super::types::generic_method_receiver)
                                 .is_some() =>
                     {
-                        let mut validator = NameValidator::new(values, &imports, &mut diagnostics);
+                        let mut validator = NameValidator::new(
+                            values,
+                            &imports,
+                            hidden_types,
+                            &imported_names,
+                            &mut diagnostics,
+                        );
+                        validator
+                            .type_parameters
+                            .extend(function.type_params.iter().map(|p| p.name.clone()));
                         if let Some(receiver) = function.receiver.as_deref() {
+                            if let Some(generic) = super::types::generic_method_receiver(receiver) {
+                                validator
+                                    .type_parameters
+                                    .extend(generic.parameters.iter().map(|p| p.name.clone()));
+                            }
                             validator.declare(&receiver.name);
+                            validator.ty(&receiver.ty);
+                        }
+                        for result in &function.signature.results {
+                            validator.ty(result);
                         }
                         for parameter in &function.signature.params {
+                            validator.ty(&parameter.ty);
                             validator.declare(&parameter.name);
                         }
                         validator.block(&function.body);
                     }
                     ast::TopLevelDecl::Operator(operator) if !operator.type_params.is_empty() => {
-                        let mut validator = NameValidator::new(values, &imports, &mut diagnostics);
+                        let mut validator = NameValidator::new(
+                            values,
+                            &imports,
+                            hidden_types,
+                            &imported_names,
+                            &mut diagnostics,
+                        );
+                        validator
+                            .type_parameters
+                            .extend(operator.type_params.iter().map(|p| p.name.clone()));
+                        for result in &operator.signature.results {
+                            validator.ty(result);
+                        }
                         for parameter in &operator.signature.params {
+                            validator.ty(&parameter.ty);
                             validator.declare(&parameter.name);
                         }
                         validator.block(&operator.body);
+                    }
+                    ast::TopLevelDecl::Type(declaration) => {
+                        for spec in declaration
+                            .specs
+                            .iter()
+                            .filter(|spec| !spec.type_params.is_empty())
+                        {
+                            let mut validator = NameValidator::new(
+                                values,
+                                &imports,
+                                hidden_types,
+                                &imported_names,
+                                &mut diagnostics,
+                            );
+                            validator
+                                .type_parameters
+                                .extend(spec.type_params.iter().map(|p| p.name.clone()));
+                            validator.ty(&spec.ty);
+                        }
                     }
                     _ => {}
                 }
@@ -103,6 +227,9 @@ fn top_level_value_names(declaration: &ast::TopLevelDecl) -> Vec<String> {
 struct NameValidator<'a> {
     package_values: &'a BTreeSet<String>,
     imports: &'a BTreeSet<String>,
+    hidden_types: &'a BTreeSet<String>,
+    imported_names: &'a BTreeMap<String, BTreeSet<String>>,
+    type_parameters: BTreeSet<String>,
     scopes: Vec<BTreeSet<String>>,
     diagnostics: &'a mut Diagnostics,
 }
@@ -111,11 +238,16 @@ impl<'a> NameValidator<'a> {
     fn new(
         package_values: &'a BTreeSet<String>,
         imports: &'a BTreeSet<String>,
+        hidden_types: &'a BTreeSet<String>,
+        imported_names: &'a BTreeMap<String, BTreeSet<String>>,
         diagnostics: &'a mut Diagnostics,
     ) -> Self {
         Self {
             package_values,
             imports,
+            hidden_types,
+            imported_names,
+            type_parameters: BTreeSet::new(),
             scopes: vec![BTreeSet::new()],
             diagnostics,
         }
@@ -150,6 +282,9 @@ impl<'a> NameValidator<'a> {
         match statement {
             ast::Stmt::Const(declaration) => {
                 for spec in &declaration.specs {
+                    if let Some(ty) = &spec.ty {
+                        self.ty(ty);
+                    }
                     for value in &spec.values {
                         self.expr(value);
                     }
@@ -160,6 +295,9 @@ impl<'a> NameValidator<'a> {
             }
             ast::Stmt::Var(declaration) => {
                 for spec in &declaration.specs {
+                    if let Some(ty) = &spec.ty {
+                        self.ty(ty);
+                    }
                     for value in &spec.values {
                         self.expr(value);
                     }
@@ -232,9 +370,90 @@ impl<'a> NameValidator<'a> {
         }
     }
 
+    fn imported_member(&mut self, alias: &ast::Ident, name: &ast::Ident) {
+        if self.scopes.iter().any(|scope| scope.contains(&alias.name)) {
+            return;
+        }
+        if let Some(names) = self.imported_names.get(&alias.name)
+            && names.contains(&name.name)
+        {
+            self.diagnostics.push(Diagnostic::error(
+                name.span,
+                format!(
+                    "unknown or unexported identifier `{}.{}`",
+                    alias.name, name.name
+                ),
+            ));
+        }
+    }
+
+    fn type_path(&mut self, path: &ast::Path) {
+        match path.segments.as_slice() {
+            [name]
+                if self.hidden_types.contains(&name.name)
+                    && !self.type_parameters.contains(&name.name) =>
+            {
+                self.diagnostics.push(Diagnostic::error(
+                    name.span,
+                    format!("unknown type `{}`", name.name),
+                ));
+            }
+            [alias, name] => self.imported_member(alias, name),
+            _ => {}
+        }
+    }
+
+    fn ty(&mut self, ty: &ast::Type) {
+        match ty {
+            ast::Type::Named(path) => self.type_path(path),
+            ast::Type::Apply {
+                base, arguments, ..
+            } => {
+                self.type_path(base);
+                for ty in arguments {
+                    self.ty(ty);
+                }
+            }
+            ast::Type::Pointer(inner, _) => self.ty(inner),
+            ast::Type::Array { len, element, .. } => {
+                if let Some(len) = len {
+                    self.expr(len);
+                }
+                self.ty(element);
+            }
+            ast::Type::Struct { fields, .. } => {
+                for field in fields {
+                    self.ty(&field.ty);
+                }
+            }
+            ast::Type::Interface { methods, .. } => {
+                for method in methods {
+                    for parameter in &method.signature.params {
+                        self.ty(&parameter.ty);
+                    }
+                    for ty in &method.signature.results {
+                        self.ty(ty);
+                    }
+                }
+            }
+            ast::Type::Func { signature, .. } => {
+                for parameter in &signature.params {
+                    self.ty(&parameter.ty);
+                }
+                for ty in &signature.results {
+                    self.ty(ty);
+                }
+            }
+            ast::Type::Resolved(..) => {}
+        }
+    }
+
     fn expr(&mut self, expression: &ast::Expr) {
         match expression {
             ast::Expr::Name(path) => {
+                if let [alias, name] = path.segments.as_slice() {
+                    self.imported_member(alias, name);
+                }
                 if let Some(name) = path.segments.first()
                     && !self.known(&name.name)
                 {
@@ -255,14 +474,32 @@ impl<'a> NameValidator<'a> {
                     self.expr(argument);
                 }
             }
-            ast::Expr::TypeApply { base, .. } => self.expr(base),
-            ast::Expr::Selector { base, .. } => self.expr(base),
+            ast::Expr::TypeApply {
+                base, arguments, ..
+            } => {
+                self.expr(base);
+                for ty in arguments {
+                    self.ty(ty);
+                }
+            }
+            ast::Expr::Selector { base, field, .. } => {
+                if let ast::Expr::Name(path) = base.as_ref()
+                    && let [alias] = path.segments.as_slice()
+                {
+                    self.imported_member(alias, field);
+                }
+                self.expr(base);
+            }
             ast::Expr::Index { base, index, .. } => {
                 self.expr(base);
                 self.expr(index);
             }
-            ast::Expr::Cast { expr, .. } => self.expr(expr),
-            ast::Expr::Composite { elements, .. } => {
+            ast::Expr::Cast { expr, ty, .. } => {
+                self.expr(expr);
+                self.ty(ty);
+            }
+            ast::Expr::Composite { ty, elements, .. } => {
+                self.ty(ty);
                 for element in elements {
                     // A bare keyed name can be a struct field rather than a value.
                     if !matches!(element.key, Some(ast::Expr::Name(_)))
@@ -273,7 +510,8 @@ impl<'a> NameValidator<'a> {
                     self.expr(&element.value);
                 }
             }
-            ast::Expr::Literal(_) | ast::Expr::LayoutQuery { .. } | ast::Expr::New { .. } => {}
+            ast::Expr::LayoutQuery { ty, .. } | ast::Expr::New { ty, .. } => self.ty(ty),
+            ast::Expr::Literal(_) => {}
         }
     }
 }

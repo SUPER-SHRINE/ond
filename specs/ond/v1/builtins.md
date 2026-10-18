@@ -1,7 +1,7 @@
 # Ond Built-in Functions v1
 <!-- ond-spec-id: builtins/v1 -->
 
-本書は、`ond` compiler が v1 時点で組み込みとして扱う関数と、その周辺の特別構文をまとめる。
+本書は、Ond v1の組み込み関数と、その周辺の特別構文を定義する。
 
 この文書では次の 2 種類を区別する。
 

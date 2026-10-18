@@ -69,7 +69,7 @@ opcode差替え・operand交換・guard削除・float除算へのtrapping属性�
 この追補で、f32除算に誤ってChecked属性が付くMIR生成の不一致を修正した。
 
 2026-09-20追補: 336整数vectorsと[25float bits](../src/test_vectors/floats.rs)をMIR backend→Kagura実行へ接続し、wrap/fault/bit結果・NaN正規化を照合した。12方向のint↔f32境界93ケースも追加した。
-詳細・残件は[backend適合表](../../../specs/ond/targets/kagura-v1/conformance-checklist.md)を参照。共有データはopt-inの`conformance-fixtures` featureで公開するtarget非依存のテスト資産であり、通常のcompiler APIとは分離する。
+詳細・残件は[backend適合表](../../../docs/compiler/kagura-v1-conformance-record.md)を参照。共有データはopt-inの`conformance-fixtures` featureで公開するtarget非依存のテスト資産であり、通常のcompiler APIとは分離する。
 既存AST backendの成功やoracleの自己検証を、その証拠として代用しない。
 P1で型付き値の代入/引数/return行列を追加済（[型境界表](./type-boundary-conformance.md)）。
 literal/定数式×6整数型×各値文脈の全対照は引き続きcoreの追補対象で、型付きparameterの行列とは区別する。
