@@ -14,6 +14,7 @@ mod identifier;
 mod numeric_literal;
 mod pipeline;
 mod string_literal;
+pub use pipeline::SemanticCache;
 use pipeline::{lower_to_hir, lower_to_mir};
 pub mod diagnostic;
 pub mod export;
@@ -39,7 +40,7 @@ pub use project::{
 };
 pub use project_input::{
     ExternalSource, ExternalSources, load_library_sources, load_project_with_inputs,
-    load_project_with_inputs_allow_incomplete,
+    load_project_with_inputs_allow_incomplete, load_project_with_test_inputs,
 };
 
 #[derive(Debug, Clone)]

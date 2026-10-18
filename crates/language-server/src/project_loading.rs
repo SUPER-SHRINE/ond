@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use compiler::source::FileId;
 
@@ -28,6 +28,7 @@ pub(super) fn load_project(
                     .extension()
                     .and_then(|extension| extension.to_str())
                     == Some("ond")
+                && !compiler::project::is_test_source(&entry.path())
         });
     let self_sources = ond_cli::resolve_project_sources(root).ok();
     let library_namespace = if has_root_sources {
@@ -35,7 +36,14 @@ pub(super) fn load_project(
             .as_ref()
             .and_then(|sources| library_root_namespace(root, &sources.sources, overrides))
     } else {
-        None
+        self_sources.as_ref().and_then(|sources| {
+            sources
+                .sources
+                .keys()
+                .next()
+                .and_then(|name| name.split('/').next())
+                .map(str::to_string)
+        })
     };
     let own_library_packages = library_namespace
         .as_ref()
@@ -97,18 +105,7 @@ pub(super) fn load_project(
             }
             synthetic_main.push_str("func main() {}\n");
             required_sources.insert("main.ond".to_string(), synthetic_main);
-            for source in self_sources.sources.values() {
-                if let Ok(relative) = source.path.strip_prefix(root)
-                    && let Some(Component::Normal(directory)) = relative.components().next()
-                {
-                    let directory = root.join(directory);
-                    if directory.is_dir() && !excluded_library_roots.contains(&directory) {
-                        excluded_library_roots.push(directory);
-                    }
-                }
-            }
             excluded_library_roots.extend(self_sources.ignored_directories);
-            merge_external_sources(&mut libraries, self_sources.sources, overrides)?;
         }
     }
     let mut project = compiler::load_project_with_inputs_allow_incomplete(
@@ -147,17 +144,19 @@ pub(super) fn load_project(
             }
         }
         project.packages = packages.into_values().collect();
-        project.root = root.join(".ond-lsp");
-        let file = project.sources.add_file(
-            project.root.join("main.ond"),
-            format!("package main\nimport \"{namespace}\"\nfunc main() {{}}\n"),
-        );
-        project.packages.push(compiler::PackageSources {
-            id: compiler::PackageId(project.packages.len()),
-            logical_path: ".".to_string(),
-            directory: root.to_path_buf(),
-            files: vec![file],
-        });
+        if has_root_sources {
+            project.root = root.join(".ond-lsp");
+            let file = project.sources.add_file(
+                project.root.join("main.ond"),
+                format!("package main\nimport \"{namespace}\"\nfunc main() {{}}\n"),
+            );
+            project.packages.push(compiler::PackageSources {
+                id: compiler::PackageId(project.packages.len()),
+                logical_path: ".".to_string(),
+                directory: root.to_path_buf(),
+                files: vec![file],
+            });
+        }
         project
             .packages
             .sort_by(|left, right| left.logical_path.cmp(&right.logical_path));

@@ -22,6 +22,8 @@ Comment syntax for v1: `//` starts a line comment and `/* ... */` starts and end
 - 循環 import はコンパイルエラーとする。
 - 識別子の先頭が ASCII 大文字なら他パッケージへ公開し、それ以外は所属パッケージ内だけへ公開する。
 
+通常sourceとtest sourceの可視性は分離する。詳細は[テストビルド仕様](../test-build.md)で定義する。
+
 ## 2. 宣言
 <!-- ond-spec-id: language/declarations -->
 
@@ -466,6 +468,9 @@ bounds checkの失敗は追加のstack frameやheap allocationに依存しない
 - `init` は予約語でも特別名でもなく、通常の関数名として宣言・明示呼び出しできる。
 - `main` package は `func main()` を 1 個持たなければならない。
 - `main` の return は正常終了 code `0` とする。
+
+ここで定めるentryは通常buildのentryである。\
+test buildの個別起動入口は[テストビルド仕様](../test-build.md)を参照する。
 
 Kagura target の runtime entry と正常終了通知は [Ond for Kagura Machine Profile v1](../targets/kagura-v1/machine.md) に従う。
 

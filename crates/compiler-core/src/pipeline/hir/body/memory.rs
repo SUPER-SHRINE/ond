@@ -124,7 +124,7 @@ impl BodyLowerer<'_> {
     ) -> Option<hir::Expr> {
         let base = self.lower_expr(source, None)?;
         let expected_index = self
-            .unique_operator_parameter_types(ast::OperatorName::Index, &[Some(base.ty), None])
+            .unique_operator_parameter_types(ast::OperatorName::Index, &[Some(base.ty), None], span)
             .map(|parameters| parameters[1])
             .or_else(|| {
                 matches!(

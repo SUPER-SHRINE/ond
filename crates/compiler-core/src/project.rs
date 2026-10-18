@@ -41,6 +41,14 @@ pub fn load_project_with_overrides_and_exclusions(
     overrides: &BTreeMap<PathBuf, String>,
     excluded_dirs: &[PathBuf],
 ) -> Result<LoadedProject, FrontendError> {
+    load_project_with_test_sources(root, overrides, excluded_dirs, false)
+}
+pub fn load_project_with_test_sources(
+    root: impl AsRef<Path>,
+    overrides: &BTreeMap<PathBuf, String>,
+    excluded_dirs: &[PathBuf],
+    include_tests: bool,
+) -> Result<LoadedProject, FrontendError> {
     let root = root.as_ref();
     let root = if root.is_file() && root.file_name().is_some_and(|name| name == "ond.toml") {
         root.parent().unwrap_or(root)
@@ -69,6 +77,7 @@ pub fn load_project_with_overrides_and_exclusions(
     let options = SourceLoadOptions {
         overrides,
         excluded_dirs,
+        include_tests,
     };
     collect_ond_files(
         &root,
@@ -115,6 +124,7 @@ pub fn load_project_with_overrides_and_exclusions(
 
 #[derive(Clone, Copy)]
 struct SourceLoadOptions<'a> {
+    include_tests: bool,
     overrides: &'a BTreeMap<PathBuf, String>,
     excluded_dirs: &'a [PathBuf],
 }
@@ -144,6 +154,7 @@ fn collect_ond_files(
 
     for entry in entries {
         let path = entry.path();
+
         let file_type = match entry.file_type() {
             Ok(file_type) => file_type,
             Err(err) => {
@@ -179,7 +190,10 @@ fn collect_ond_files(
             continue;
         }
 
-        if !file_type.is_file() || path.extension().and_then(|ext| ext.to_str()) != Some("ond") {
+        if !file_type.is_file()
+            || (!options.include_tests && is_test_source(&path))
+            || path.extension().and_then(|ext| ext.to_str()) != Some("ond")
+        {
             continue;
         }
 
@@ -243,4 +257,10 @@ fn path_to_logical(path: &Path) -> String {
     } else {
         display
     }
+}
+
+pub fn is_test_source(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n == "test.ond" || n.ends_with("_test.ond"))
 }

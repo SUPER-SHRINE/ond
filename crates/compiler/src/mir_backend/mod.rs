@@ -29,6 +29,8 @@ mod ordered_tests;
 mod readonly;
 pub mod runtime;
 #[cfg(test)]
+mod test_build_tests;
+#[cfg(test)]
 mod tests;
 use crate::{
     diagnostic::{Diagnostic, FrontendError},

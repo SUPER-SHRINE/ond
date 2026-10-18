@@ -229,6 +229,7 @@ impl BodyLowerer<'_> {
                                 .unique_operator_parameter_types(
                                     ast::OperatorName::Index,
                                     &[Some(base.ty), None],
+                                    assignment.span,
                                 )
                                 .map(|parameters| parameters[1]);
                             let index = self.lower_value(index, expected_index)?;
@@ -267,6 +268,7 @@ impl BodyLowerer<'_> {
                                             self.unique_operator_parameter_types(
                                                 name,
                                                 &[Some(element_ty), None],
+                                                assignment.span,
                                             )
                                         })
                                         .map(|parameters| parameters[1])
@@ -367,6 +369,7 @@ impl BodyLowerer<'_> {
                             let expected = self.unique_operator_parameter_types(
                                 ast::OperatorName::IndexSet,
                                 &[Some(base.ty), None, None],
+                                assignment.span,
                             );
                             let index = self.lower_value(
                                 index,
@@ -487,6 +490,7 @@ impl BodyLowerer<'_> {
                                         self.unique_operator_parameter_types(
                                             name,
                                             &[Some(target.ty), None],
+                                            assignment.span,
                                         )
                                     })
                                     .map(|parameters| parameters[1]);

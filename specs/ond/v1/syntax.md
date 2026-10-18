@@ -48,6 +48,8 @@ Ond の文法は semicolon 付きで定義し、source では自動挿入する�
 - `import alias "path"` は明示的な import alias を宣言する。`.` import と grouped import は持たない。
 - alias を省略した import は、その package の宣言名で参照する。
 
+`test.ond`と`_test.ond`のsource収集と通常/test文脈の分離は、[テストビルド仕様](../test-build.md)で扱う。
+
 package-qualified name は `packageName.ExportedName` とする。
 
 - `packageName` は import した package 名でなければならない。

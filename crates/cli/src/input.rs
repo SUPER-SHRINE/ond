@@ -4,7 +4,12 @@ use std::collections::BTreeMap;
 
 pub fn load(request: &CompileRequest) -> DriverResult<LoadedProject> {
     request.contract.validate().map_err(|error| vec![error])?;
-    ond_compiler_core::load_project_with_inputs(
+    let loader = if request.test {
+        ond_compiler_core::load_project_with_test_inputs
+    } else {
+        ond_compiler_core::load_project_with_inputs
+    };
+    loader(
         &request.project_root,
         &BTreeMap::new(),
         &request.excluded_dirs,

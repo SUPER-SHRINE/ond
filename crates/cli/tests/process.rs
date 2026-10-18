@@ -500,3 +500,173 @@ fn library_package_collisions_and_unused_packages() {
     assert!(!bad.status.success());
     assert!(String::from_utf8_lossy(&bad.stderr).contains("conflicting library"));
 }
+
+#[test]
+fn test_build_defaults_sidecars_and_stdout_contract() {
+    let f = Fixture::new();
+    f.put(
+        "game/main_test.ond",
+        "package main\nfunc TestOne(){}\nfunc TestTwo(){}\n",
+    );
+    f.put(
+        "game/unused/only_test.ond",
+        "package unused\nfunc TestUnreachable(){}\n",
+    );
+    f.put(
+        "libraries/math/invalid_test.ond",
+        "invalid source must be ignored",
+    );
+    for test in [false, true] {
+        let mut args = vec!["compile", "game", "--library-dir", "libraries"];
+        if test {
+            args.push("--test");
+        }
+        let output = run(&f.0, &args, None);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let path = if test {
+            "game/target/test.ondbuild"
+        } else {
+            "game/target/build.ondbuild"
+        };
+        let bytes = fs::read(f.0.join(path)).unwrap();
+        let manifest: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(manifest.get("tests").is_some(), test);
+        if test {
+            assert_eq!(manifest["tests"]["cases"].as_array().unwrap().len(), 3);
+        }
+        let image = if test {
+            "test.ondimage"
+        } else {
+            "normal.ondimage"
+        };
+        let output = run(
+            &f.0,
+            &[
+                "link",
+                path,
+                "--ram",
+                "4096:262144",
+                "--stack",
+                "65536",
+                "--return-to",
+                "0",
+                "-o",
+                image,
+            ],
+            None,
+        );
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let linked: LinkedImage =
+            serde_json::from_slice(&fs::read(f.0.join(image)).unwrap()).unwrap();
+        assert!(f.0.join(image).with_extension("onddebug").exists());
+        assert_eq!(f.0.join(image).with_extension("ondtest").exists(), test);
+        if test {
+            let sidecar: serde_json::Value = serde_json::from_slice(
+                &fs::read(f.0.join(image).with_extension("ondtest")).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(sidecar.as_object().unwrap().len(), 2);
+            assert_eq!(sidecar["build_id"], linked.build_id);
+            for case in sidecar["cases"].as_array().unwrap() {
+                assert_eq!(case.as_object().unwrap().len(), 3);
+                assert!(case["entry_point"].is_u64());
+            }
+            let output = run(
+                &f.0,
+                &[
+                    "link",
+                    path,
+                    "--ram",
+                    "4096:262144",
+                    "--stack",
+                    "65536",
+                    "--return-to",
+                    "0",
+                    "-o",
+                    "-",
+                ],
+                None,
+            );
+            assert!(output.status.success());
+            let _: LinkedImage = serde_json::from_slice(&output.stdout).unwrap();
+            assert!(!f.0.join("-.ondtest").exists());
+            for collision in ["bad.ondtest", "bad.onddebug"] {
+                let output = run(
+                    &f.0,
+                    &[
+                        "link",
+                        path,
+                        "--ram",
+                        "4096:262144",
+                        "--stack",
+                        "65536",
+                        "--return-to",
+                        "0",
+                        "-o",
+                        collision,
+                    ],
+                    None,
+                );
+                assert!(!output.status.success());
+                assert!(!f.0.join(collision).exists());
+            }
+        }
+        let mut args = vec![
+            "compile",
+            "game",
+            "--library-dir",
+            "libraries",
+            "-o",
+            "explicit.ondbuild",
+        ];
+        if test {
+            args.push("--test");
+        }
+        assert!(run(&f.0, &args, None).status.success());
+        let manifest: CompilationManifest =
+            serde_json::from_slice(&fs::read(f.0.join("explicit.ondbuild")).unwrap()).unwrap();
+        assert_eq!(manifest.tests.is_some(), test);
+    }
+    fs::remove_file(f.0.join("game/main_test.ond")).unwrap();
+    fs::remove_file(f.0.join("game/unused/only_test.ond")).unwrap();
+    assert!(
+        run(
+            &f.0,
+            &["compile", "game", "--library-dir", "libraries", "--test"],
+            None
+        )
+        .status
+        .success()
+    );
+    assert!(
+        run(
+            &f.0,
+            &[
+                "link",
+                "game/target/test.ondbuild",
+                "--ram",
+                "4096:262144",
+                "--stack",
+                "65536",
+                "--return-to",
+                "0",
+                "-o",
+                "empty.ondimage"
+            ],
+            None
+        )
+        .status
+        .success()
+    );
+    let empty: ond_protocol::TestSidecar =
+        serde_json::from_slice(&fs::read(f.0.join("empty.ondtest")).unwrap()).unwrap();
+    assert!(empty.cases.is_empty());
+}

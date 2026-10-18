@@ -320,7 +320,11 @@ impl BodyLowerer<'_> {
                     } else if overloadable {
                         let inferred = binary_operator_name(*op)
                             .and_then(|name| {
-                                self.unique_operator_parameter_types(name, &[Some(lhs.ty), None])
+                                self.unique_operator_parameter_types(
+                                    name,
+                                    &[Some(lhs.ty), None],
+                                    expr.span(),
+                                )
                             })
                             .map(|parameters| parameters[1]);
                         let candidate = self.lower_expr(rhs, inferred)?;
@@ -477,8 +481,7 @@ impl BodyLowerer<'_> {
                             .iter()
                             .find(|package| package.id == self.package_id)
                             .is_some_and(|package| {
-                                package.values.contains(&path.segments[0].name)
-                                    || package.constants.contains_key(&path.segments[0].name)
+                                package.value_visible_from(&path.segments[0].name, path.span)
                             })
                     {
                         let qualifier = &path.segments[0].name;

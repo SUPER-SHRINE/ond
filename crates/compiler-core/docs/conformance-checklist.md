@@ -1,6 +1,6 @@
 # compiler-core 仕様適合テスト・チェックリスト
 
-2026-09-20 backend接続追補: 本文はcore監査時点の記録。336整数vectors・25float bits・evaluation 25ケースのKagura実行を追加し、共有fixtureへ抽出した。coreの312 test関数を維持している。backend待ち項目の最新状況は[backend適合表](../../../specs/ond/targets/kagura-v1/conformance-checklist.md)を参照し、過去の不足記述を現在の未実装判定に使わない。2026-10-03にfile scope importと診断回復・generic具体化診断の記述を現行実装へ同期した。
+2026-09-20 backend接続追補: 本文はcore監査時点の記録。336整数vectors・25float bits・evaluation 25ケースのKagura実行を追加し、共有fixtureへ抽出した。coreの312 test関数を維持している。backend待ち項目の最新状況は[backend適合表](../../../docs/compiler/kagura-v1-conformance-record.md)を参照し、過去の不足記述を現在の未実装判定に使わない。2026-10-03にfile scope importと診断回復・generic具体化診断の記述を現行実装へ同期した。
 
 ## 1. 対象と判定方法
 
@@ -139,7 +139,7 @@ Q-03短絡castの決定反映後: 同コマンドで全289テスト成功、comp
 | BI-03 | thisFile/thisLineの型・arity・論理位置 | 検証済 D/H/E: [型境界表](./type-boundary-conformance.md) arity・戻り値、backend実機テストで論理path・1始まり行・path共有を確認 | object間のpath共有は対象外 |
 | MEM-01 | new zero/alignment、alloc failure/0、free nil等 | 別工程: coreではIntrinsicとTypeIdを確認。Rは旧ケース62–65/78–80 | 新MIR backend経由でallocator/zero/alignmentを再検証 |
 | MEM-02 | stack/startup配置、escapeしても暗黙heap化なし | 部分 H: [MEM] address_taken、[GLOBAL] symbolic global | storage分類とIntrinsic不存在をcoreで確認。実アドレス/lifetimeは別工程 |
-| MEM-03 | bounds check失敗のnon-return/fault契約 | coreはH/D: [MEM] Check::Boundsの生成・validator。実行は別工程K: [backend適合表](../../../specs/ond/targets/kagura-v1/conformance-checklist.md) KB-11 | targetでfault、後続副作用の抑制、debug operationを確認 |
+| MEM-03 | bounds check失敗のnon-return/fault契約 | coreはH/D: [MEM] Check::Boundsの生成・validator。実行は別工程K: [backend適合表](../../../docs/compiler/kagura-v1-conformance-record.md) KB-11 | targetでfault、後続副作用の抑制、debug operationを確認 |
 | MEM-04 | lifetime/OOB raw/double freeなど検査しない領域 | 別工程/仕様上保証なし | 成功値を期待する適合ケースを作らない。coreが余分な保証を暗黙追加しない範囲を確認 |
 
 ### 制御フロー・関数・起動（L §§8–12、S §§4,7）

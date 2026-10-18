@@ -3,7 +3,7 @@
 
 監査日: 2026-09-20。
 対象はsource → core/MIR → Kagura backend → Object → linker/startup → Kagura CPU。
-規範は[言語仕様](../../v1/README.md)、[Machine Profile](./machine.md)、[ABI](./abi.md)。実装契約は[MIR backend設計](./mir-backend.md)。
+規範は[言語仕様](../../specs/ond/v1/README.md)、[Machine Profile](../../specs/ond/targets/kagura-v1/machine.md)、[ABI](../../specs/ond/targets/kagura-v1/abi.md)。実装契約は[MIR backend設計](../../specs/ond/targets/kagura-v1/mir-backend.md)。
 初回は棚卸しのみ。2026-09-20追補で§5の共通実行口・数値/評価順・複合ケースを実装した。標準backend切り替えは行わない。
 
 ## 1. 判定と証拠の区別
@@ -28,7 +28,7 @@
 2026-09-22に`cargo test --workspace --quiet`を再実行: **499 test関数成功、失敗/ignored 0**。
 CLI library 6、CLI process 6、compiler 108、compiler-core 314、LSP 65。compiler件数には設定等も含むため、すべてをK検証とはしない。vector数をtest関数数に加算せず、仕様達成率も算出しない。
 
-coreの[チェックリスト](../../../../crates/compiler-core/docs/conformance-checklist.md)は当時の監査記録として維持する。そこにある「backend待ち」の最新の対応状況は本表を参照する。
+coreの[チェックリスト](../../crates/compiler-core/docs/conformance-checklist.md)は当時の監査記録として維持する。そこにある「backend待ち」の最新の対応状況は本表を参照する。
 旧runtimeケース表の判定は新backendへ転記しない。machineの共通suiteは標準MIR入口の`tests`で実行する（§7）。旧ケース表の全行を自動的にMIR検証済みとはしない。
 
 ## 2. チェックリスト
@@ -88,19 +88,19 @@ core IDは元表への対応付けであり、その行の全契約をbackendが
 ## 3. 証拠索引
 <!-- ond-spec-id: targets/kagura-v1/conformance-evidence-index -->
 
-- BASIC: [mir_backend/tests.rs](../../../../crates/compiler/src/mir_backend/tests.rs)。`run`/`execute`は新経路。正常終了時のSP/callee-saveも照合。
-- NUM: [numeric_tests.rs](../../../../crates/compiler/src/mir_backend/numeric_tests.rs)。動的引数またはbus入力を使い、定数畳み込みだけで通らない構成。
-- MEM: [memory_tests.rs](../../../../crates/compiler/src/mir_backend/memory_tests.rs)。型配置、pointer、array/struct、ABI。
-- ORDER: [ordered_tests.rs](../../../../crates/compiler/src/mir_backend/ordered_tests.rs)。実CPUのbus access traceと書込結果。
-- GLOBAL: [global_tests.rs](../../../../crates/compiler/src/mir_backend/global_tests.rs)。init計画、BSS、容量、fault。
-- HEAP: [heap_tests.rs](../../../../crates/compiler/src/mir_backend/heap_tests.rs)。allocator操作と境界。
-- BRANCH: [branch_tests.rs](../../../../crates/compiler/src/mir_backend/branch_tests.rs)。source統合とEmitter直接試験。
-- FRAME: [frame_tests.rs](../../../../crates/compiler/src/mir_backend/frame_tests.rs)。source/KM/KLをそれぞれ区別。
-- LINK-BRANCH: [test_support/branch_tests.rs](../../../../crates/compiler/src/test_support/branch_tests.rs)。Object直接構築・link・CPU。
-- RUNTIME: [runtime/tests.rs](../../../../crates/compiler/src/mir_backend/runtime/tests.rs)。依存選択/診断/生成Object。
-- HELPER: [test_support/runtime_tests.rs](../../../../crates/compiler/src/test_support/runtime_tests.rs)。Object call targetをhelperへ差し替えた実行。通常sourceからの命令選択はNUM/HEAPが担当。
+- BASIC: [mir_backend/tests.rs](../../crates/compiler/src/mir_backend/tests.rs)。`run`/`execute`は新経路。正常終了時のSP/callee-saveも照合。
+- NUM: [numeric_tests.rs](../../crates/compiler/src/mir_backend/numeric_tests.rs)。動的引数またはbus入力を使い、定数畳み込みだけで通らない構成。
+- MEM: [memory_tests.rs](../../crates/compiler/src/mir_backend/memory_tests.rs)。型配置、pointer、array/struct、ABI。
+- ORDER: [ordered_tests.rs](../../crates/compiler/src/mir_backend/ordered_tests.rs)。実CPUのbus access traceと書込結果。
+- GLOBAL: [global_tests.rs](../../crates/compiler/src/mir_backend/global_tests.rs)。init計画、BSS、容量、fault。
+- HEAP: [heap_tests.rs](../../crates/compiler/src/mir_backend/heap_tests.rs)。allocator操作と境界。
+- BRANCH: [branch_tests.rs](../../crates/compiler/src/mir_backend/branch_tests.rs)。source統合とEmitter直接試験。
+- FRAME: [frame_tests.rs](../../crates/compiler/src/mir_backend/frame_tests.rs)。source/KM/KLをそれぞれ区別。
+- LINK-BRANCH: [test_support/branch_tests.rs](../../crates/compiler/src/test_support/branch_tests.rs)。Object直接構築・link・CPU。
+- RUNTIME: [runtime/tests.rs](../../crates/compiler/src/mir_backend/runtime/tests.rs)。依存選択/診断/生成Object。
+- HELPER: [test_support/runtime_tests.rs](../../crates/compiler/src/test_support/runtime_tests.rs)。Object call targetをhelperへ差し替えた実行。通常sourceからの命令選択はNUM/HEAPが担当。
 - CLI: 別リポジトリの `enbu/crates/enbu-cli/tests/cli.rs`。標準MIR経路。
-- MACHINE: [machine_suite.rs](../../../../crates/compiler/src/test_support/machine_suite.rs)。テスト専用busへLinkedImageを直接loadし、実Kagura CPUで実行する。
+- MACHINE: [machine_suite.rs](../../crates/compiler/src/test_support/machine_suite.rs)。テスト専用busへLinkedImageを直接loadし、実Kagura CPUで実行する。
 
 ## 4. 次に追加する順序と合格条件
 <!-- ond-spec-id: targets/kagura-v1/conformance-acceptance-order -->
@@ -119,11 +119,11 @@ core IDは元表への対応付けであり、その行の全契約をbackendが
 ## 5. 2026-09-20 接続実装の記録
 <!-- ond-spec-id: targets/kagura-v1/conformance-connection-record -->
 
-- 共通runner: [runner.rs](../../../../crates/compiler/src/mir_backend/conformance/runner.rs)。複数source filesをcompileして得たLinkedImageに、case ID/spec IDs・動的入力word・期待出力word列・Return/FaultCode・step上限を与える。実CPUを使用し、正常終了時のexit=0/SP/callee-save、fault時のexit未実行と出力sentinelを照合する。traceは出力word列の一部として最終値と同時に検査する。誤った値・期待fault・step不足のrunner負例もある。
-- 共有データ: coreの[test_vectors](../../../../crates/compiler-core/src/test_vectors.rs)。整数336件、float bits 25件、評価順25件を一箇所に保持。整数castはsource_tyも明示する。coreのoracle/定数/MemoryVm検証を維持し、compilerのdev-dependencyだけが `conformance-fixtures` を有効にする。通常ビルドには公開されない、不安定なテスト用API。coreにKagura依存を導入しない。
-- CON-NUM: [numeric.rs](../../../../crates/compiler/src/mir_backend/conformance/numeric.rs)。busからの動的入力を用いて定数畳み込みを避ける。同sourceはcompile結果を再利用するが実行ごとにCPU/RAMをリセットする。float castの93ケースは既存core表と同じ境界を固定bitsで明示し、signed結果はu32 bit patternで比較する。狭いcastの成功時も上位sentinel保持を確認する。
-- CON-EVAL: [evaluation.rs](../../../../crates/compiler/src/mir_backend/conformance/evaluation.rs)。共有sourceの空mainだけをtest()の戻り値出力wrapperへ置換する（置換対象一つをassert）。import用fileもそのまま渡す。25件＋callee/破棄2件＋fault5件＋bounds成功1件。nil callはBusFault、除算/配列guardはInvalidInstructionを区別。負indexと上限外の書込先にもsentinelを置く。
-- CON-COMB: [combinations.rs](../../../../crates/compiler/src/mir_backend/conformance/combinations.rs)。sourceからのMIRへunused scalar localを追加して約40 KiB以上のframeにするため、KMとして扱う。symbol距離とhelper call relocationをassertして、単に大きなプログラムを生成しただけでは通らない。入力aggregateの非alias・複数戻り値・初期化中new・再帰内f32 helperを最終値で確認する。
+- 共通runner: [runner.rs](../../crates/compiler/src/mir_backend/conformance/runner.rs)。複数source filesをcompileして得たLinkedImageに、case ID/spec IDs・動的入力word・期待出力word列・Return/FaultCode・step上限を与える。実CPUを使用し、正常終了時のexit=0/SP/callee-save、fault時のexit未実行と出力sentinelを照合する。traceは出力word列の一部として最終値と同時に検査する。誤った値・期待fault・step不足のrunner負例もある。
+- 共有データ: coreの[test_vectors](../../crates/compiler-core/src/test_vectors.rs)。整数336件、float bits 25件、評価順25件を一箇所に保持。整数castはsource_tyも明示する。coreのoracle/定数/MemoryVm検証を維持し、compilerのdev-dependencyだけが `conformance-fixtures` を有効にする。通常ビルドには公開されない、不安定なテスト用API。coreにKagura依存を導入しない。
+- CON-NUM: [numeric.rs](../../crates/compiler/src/mir_backend/conformance/numeric.rs)。busからの動的入力を用いて定数畳み込みを避ける。同sourceはcompile結果を再利用するが実行ごとにCPU/RAMをリセットする。float castの93ケースは既存core表と同じ境界を固定bitsで明示し、signed結果はu32 bit patternで比較する。狭いcastの成功時も上位sentinel保持を確認する。
+- CON-EVAL: [evaluation.rs](../../crates/compiler/src/mir_backend/conformance/evaluation.rs)。共有sourceの空mainだけをtest()の戻り値出力wrapperへ置換する（置換対象一つをassert）。import用fileもそのまま渡す。25件＋callee/破棄2件＋fault5件＋bounds成功1件。nil callはBusFault、除算/配列guardはInvalidInstructionを区別。負indexと上限外の書込先にもsentinelを置く。
+- CON-COMB: [combinations.rs](../../crates/compiler/src/mir_backend/conformance/combinations.rs)。sourceからのMIRへunused scalar localを追加して約40 KiB以上のframeにするため、KMとして扱う。symbol距離とhelper call relocationをassertして、単に大きなプログラムを生成しただけでは通らない。入力aggregateの非alias・複数戻り値・初期化中new・再帰内f32 helperを最終値で確認する。
 - stack境界試験はframe planから必要容量を算出し、その明示設定をLinkPlanへ渡す。extra recursionでは同じ設定のままfaultさせる。fault後のSPとSTACK_BOTTOM直下guardを独立に確認。実装がプロジェクトstack設定を自動拡張したわけではない。
 
 追加は9 Rust test関数。既存core 312を維持し、workspace計486成功。表内の入力数はRust test関数数に加算しない。

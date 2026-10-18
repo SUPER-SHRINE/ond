@@ -11,6 +11,7 @@ fn execute(command: args::Command) -> Result<(), Vec<String>> {
             mut libraries,
             cache,
             verbose,
+            test,
         } => {
             let root = root.canonicalize().map_err(|e| vec![e.to_string()])?;
             let root = if root.is_file() {
@@ -47,6 +48,7 @@ fn execute(command: args::Command) -> Result<(), Vec<String>> {
             }
             let result = ond_cli::compile(
                 CompileRequest {
+                    test,
                     excluded_dirs,
                     contract: Contract::default(),
                     project_root: root.clone(),
@@ -60,7 +62,13 @@ fn execute(command: args::Command) -> Result<(), Vec<String>> {
                 eprintln!("rebuilt: {}", result.rebuilt.join(", "));
                 eprintln!("reused: {}", result.reused.join(", "));
             }
-            let output = output.unwrap_or_else(|| root.join("target/build.ondbuild"));
+            let output = output.unwrap_or_else(|| {
+                root.join(if test {
+                    "target/test.ondbuild"
+                } else {
+                    "target/build.ondbuild"
+                })
+            });
             write(
                 &output,
                 &serde_json::to_vec(&result.manifest).map_err(|e| vec![e.to_string()])?,
@@ -94,7 +102,25 @@ fn execute(command: args::Command) -> Result<(), Vec<String>> {
                 write(&output, &image_bytes)?;
             } else {
                 let debug_output = output.with_extension("onddebug");
+                if output
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .is_some_and(|extension| {
+                        extension.eq_ignore_ascii_case("onddebug")
+                            || (linked.tests.is_some() && extension.eq_ignore_ascii_case("ondtest"))
+                    })
+                {
+                    return Err(vec![
+                        "image output path conflicts with a sidecar path".into(),
+                    ]);
+                }
                 write(&debug_output, &debug_bytes)?;
+                if let Some(tests) = &linked.tests {
+                    write(
+                        &output.with_extension("ondtest"),
+                        &serde_json::to_vec(tests).map_err(|e| vec![e.to_string()])?,
+                    )?;
+                }
                 write(&output, &image_bytes)?;
             }
             Ok(())

@@ -2,12 +2,12 @@ use ond_protocol::link::{LinkPlan, MemoryRegion};
 use std::{ffi::OsString, path::PathBuf};
 
 pub const HELP: &str = "Usage:
-  ond compile [project] [-o FILE|-] [--library-dir DIR]... [--cache-dir DIR] [-v]
+  ond compile [project] [--test] [-o FILE|-] [--library-dir DIR]... [--cache-dir DIR] [-v]
   ond link FILE|- --ram BASE:SIZE --stack SIZE --return-to ADDRESS
            [--read-only BASE:SIZE] [-o FILE|-]
   ond help
 Defaults: project=., compile output=<project>/target/build.ondbuild,
-          link output=a.ondimage. Diagnostics go to stderr.
+          test compile output=<project>/target/test.ondbuild, link output=a.ondimage. Diagnostics go to stderr.
 Library roots may also be supplied through the OND_PATH environment variable
 using the operating system's path-list separator.
 Numbers: decimal or 0xHEX, optionally suffixed KiB/MiB.
@@ -20,6 +20,7 @@ pub enum Command {
         libraries: Vec<PathBuf>,
         cache: Option<PathBuf>,
         verbose: bool,
+        test: bool,
     },
     Link {
         input: PathBuf,
@@ -48,6 +49,7 @@ pub fn parse(args: Vec<OsString>) -> Result<Command, String> {
     let mut cache = None;
     let (mut ram, mut readonly, mut stack, mut return_to) = (None, None, None, None);
     let mut verbose = false;
+    let mut test = false;
     let mut positional = false;
     let mut iter = args[1..].iter();
     while let Some(arg) = iter.next() {
@@ -60,6 +62,13 @@ pub fn parse(args: Vec<OsString>) -> Result<Command, String> {
         }
         if !positional && arg.to_str().is_some_and(|s| s.starts_with('-') && s != "-") {
             let flag = arg.to_str().unwrap();
+            if flag == "--test" && command == "compile" {
+                if test {
+                    return Err("duplicate option: --test".into());
+                }
+                test = true;
+                continue;
+            }
             if flag == "-v" && command == "compile" {
                 verbose = true;
                 continue;
@@ -102,6 +111,7 @@ pub fn parse(args: Vec<OsString>) -> Result<Command, String> {
             libraries,
             cache,
             verbose,
+            test,
         });
     }
     let ram = ram.ok_or("missing --ram BASE:SIZE")?;

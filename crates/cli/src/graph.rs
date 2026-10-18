@@ -7,6 +7,7 @@ pub struct Graph {
     pub order: Vec<String>,
     pub initialization_order: Vec<String>,
     pub has_generic_declarations: bool,
+    pub tests: Vec<ond_protocol::TestCase>,
 }
 impl Graph {
     pub fn load(loaded: &LoadedProject) -> DriverResult<Self> {
@@ -30,6 +31,47 @@ impl Graph {
                     }
                 })
         });
+        let mut tests = Vec::new();
+        for package in &ast.packages {
+            for file in &package.files {
+                if !ond_compiler_core::project::is_test_source(
+                    loaded.sources.file(file.file_id).path(),
+                ) {
+                    continue;
+                }
+                for decl in &file.decls {
+                    let ond_compiler_core::ir::ast::TopLevelDecl::Func(function) = decl else {
+                        continue;
+                    };
+                    if !function.name.name.starts_with("Test") {
+                        continue;
+                    }
+                    if function.receiver.is_some()
+                        || !function.type_params.is_empty()
+                        || !function.signature.params.is_empty()
+                        || !function.signature.results.is_empty()
+                    {
+                        return Err(vec![format!(
+                            "test function `{}` must be top-level with no parameters, results, type parameters or receiver",
+                            function.name.name
+                        )]);
+                    }
+                    tests.push(ond_protocol::TestCase {
+                        package: package.logical_path.clone(),
+                        name: function.name.name.clone(),
+                        symbol: format!(
+                            "{}.{}",
+                            if package.logical_path == "." {
+                                "main"
+                            } else {
+                                &package.logical_path
+                            },
+                            function.name.name
+                        ),
+                    });
+                }
+            }
+        }
         let mut imports = BTreeMap::new();
         for package in ast.packages {
             let mut paths = Vec::new();
@@ -64,7 +106,19 @@ impl Graph {
                 .collect::<Vec<_>>()
         })?;
         graph.has_generic_declarations = has_generic_declarations;
+        graph.tests = tests;
         Ok(graph)
+    }
+    pub fn initialization_order_for(&self, path: &str) -> DriverResult<Vec<String>> {
+        let mut order = Vec::new();
+        visit(
+            path,
+            &self.imports,
+            &mut BTreeSet::new(),
+            &mut BTreeSet::new(),
+            &mut order,
+        )?;
+        Ok(order)
     }
     pub fn from_imports(imports: BTreeMap<String, Vec<String>>) -> DriverResult<Self> {
         if !imports.contains_key(".") {
@@ -75,6 +129,7 @@ impl Graph {
             order: Vec::new(),
             initialization_order: Vec::new(),
             has_generic_declarations: false,
+            tests: Vec::new(),
         };
         let mut visiting = BTreeSet::new();
         let mut visited = BTreeSet::new();

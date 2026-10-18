@@ -6,12 +6,17 @@
 ## 1. 成果物
 <!-- ond-spec-id: debug-metadata/artifacts -->
 
-`ond link -o game.ondimage`は次の2ファイルを生成する。
+`ond link -o game.ondimage`は次の成果物を生成する。
 
 - `game.ondimage`: 実行に必要なLinkedImage
 - `game.onddebug`: source mapping、fault分類、function range、unwind規則を持つJSON sidecar
+- manifestが`tests` fieldを持つ場合の`game.ondtest`: test case entry pointを記録する独立JSON sidecar。caseが0件でも生成する
 
 両者の`build_id`は一致しなければならない。VMは一致しないsidecarを使用してはならない。`-o -`ではstdoutを単一のLinkedImage JSONに保つためsidecarを生成しない。
+
+`.onddebug`と`.ondtest`は同じLinkedImageを示す`build_id`を持ち、互いに独立する。\
+test caseの起動情報は`.ondtest`へ記録し、debug metadataのschemaへ混在させない。\
+test buildのfile出力とsidecarの詳細は[テストビルド仕様](./test-build.md)を参照する。
 
 ## 2. sourceとfault range
 <!-- ond-spec-id: debug-metadata/source-and-fault-range -->
@@ -47,4 +52,4 @@ debug表示はKagura規格の必須機能ではない。対応するVMは最低�
 3. rangeからsource location、operation、明示理由を解決する。
 4. function/unwind tableと停止時register・stack memoryからstack traceを構築する。
 
-sidecarがない、または該当rangeがない場合でも、VMは従来どおりCPU faultとして停止できなければならない。
+sidecarがない、または該当rangeがない場合でも、VMはCPU faultとして停止できなければならない。

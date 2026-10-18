@@ -520,6 +520,7 @@ pub mod hir {
     pub struct File {
         pub file_id: crate::source::FileId,
         pub package_name: String,
+        pub test_only: bool,
     }
 
     #[derive(Debug, Clone)]

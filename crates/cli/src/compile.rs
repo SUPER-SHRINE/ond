@@ -32,7 +32,12 @@ pub fn compile(request: CompileRequest, compiler_id: &str) -> DriverResult<Compi
     fs::create_dir_all(&directory).map_err(|e| vec![e.to_string()])?;
     let directory = directory.canonicalize().map_err(|e| vec![e.to_string()])?;
     let manifest_bytes = fs::read(&loaded.manifest_path).map_err(|e| vec![e.to_string()])?;
-    let context = (&request.contract, compiler_id, cache::hash(&manifest_bytes));
+    let context = (
+        &request.contract,
+        compiler_id,
+        cache::hash(&manifest_bytes),
+        request.test,
+    );
     let project_sources: BTreeMap<_, _> = loaded
         .packages
         .iter()
@@ -149,6 +154,14 @@ pub fn compile(request: CompileRequest, compiler_id: &str) -> DriverResult<Compi
             artifacts.insert(
                 path.clone(),
                 PackageArtifact {
+                    tests: request.test.then(|| ond_protocol::TestMetadata {
+                        cases: graph
+                            .tests
+                            .iter()
+                            .filter(|case| case.package == path)
+                            .cloned()
+                            .collect(),
+                    }),
                     interface: ond_compiler_core::export::package(&frontend.hir, &path)
                         .map_err(|e| vec![e])?,
                     contract: request.contract.clone(),
@@ -185,6 +198,9 @@ pub fn compile(request: CompileRequest, compiler_id: &str) -> DriverResult<Compi
         .cloned()
         .collect();
     let manifest = CompilationManifest {
+        tests: request.test.then(|| ond_protocol::TestMetadata {
+            cases: graph.tests.clone(),
+        }),
         contract: request.contract,
         compiler_id: compiler_id.into(),
         packages: references.into_values().collect(),
@@ -270,7 +286,7 @@ fn debug_paths(
 fn load_project_cache(
     directory: &std::path::Path,
     key: &str,
-    context: &(&ond_protocol::Contract, &str, String),
+    context: &(&ond_protocol::Contract, &str, String, bool),
     graph: &Graph,
 ) -> Option<CompileResult> {
     let cache: ProjectCache =
@@ -280,6 +296,10 @@ fn load_project_cache(
         || manifest.contract != *context.0
         || manifest.compiler_id != context.1
         || manifest.packages.len() != graph.order.len()
+        || manifest.tests
+            != context.3.then(|| ond_protocol::TestMetadata {
+                cases: graph.tests.clone(),
+            })
         || manifest.program.entry_symbol != "main.main"
     {
         return None;

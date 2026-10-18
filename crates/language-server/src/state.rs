@@ -43,6 +43,7 @@ pub struct ServerState {
     library_roots: Vec<PathBuf>,
     published_project_uris: BTreeMap<PathBuf, BTreeSet<String>>,
     symbol_indexes: BTreeMap<PathBuf, ProjectSymbolIndex>,
+    semantic_caches: BTreeMap<PathBuf, compiler::SemanticCache>,
 }
 
 #[derive(Debug, Clone)]
@@ -57,6 +58,7 @@ impl ServerState {
             library_roots,
             published_project_uris: BTreeMap::new(),
             symbol_indexes: BTreeMap::new(),
+            semantic_caches: BTreeMap::new(),
         }
     }
 
@@ -114,21 +116,18 @@ impl ServerState {
         self.refresh_symbol_index(root, project.clone());
         let mut diagnostics_by_path = BTreeMap::<PathBuf, Vec<Value>>::new();
 
-        let validation_error = match compiler::ond::parse_project(&project) {
-            Ok(_) => {
-                match catch_unwind(AssertUnwindSafe(|| {
-                    compiler::compile_loaded_project(project.clone())
-                })) {
-                    Ok(result) => result.err(),
-                    Err(_) => Some(compiler::FrontendError::new(vec![
-                        compiler::Diagnostic::error(
-                            Span::synthetic(),
-                            "compiler panicked while validating the document",
-                        ),
-                    ])),
-                }
-            }
-            Err(error) => Some(error),
+        let cache = self
+            .semantic_caches
+            .entry(normalize_path(root.to_path_buf()))
+            .or_default();
+        let validation_error = match catch_unwind(AssertUnwindSafe(|| cache.validate(&project))) {
+            Ok(result) => result.err(),
+            Err(_) => Some(compiler::FrontendError::new(vec![
+                compiler::Diagnostic::error(
+                    Span::synthetic(),
+                    "compiler panicked while validating the document",
+                ),
+            ])),
         };
         if let Some(error) = validation_error {
             for diagnostic in error.diagnostics() {
@@ -426,7 +425,7 @@ impl ServerState {
         character: u32,
     ) -> Result<Vec<Value>, String> {
         let base_overrides = self.collect_overrides();
-        let cached_index = self.symbol_index(root, &base_overrides)?;
+        let cached_index = self.symbol_index(root, &base_overrides)?.for_source(path);
         let mut overrides = base_overrides;
         let completion_marker = self.documents.get(path).and_then(|document| {
             completion_text_with_placeholder(&document.text, line, character).map(
@@ -450,7 +449,8 @@ impl ServerState {
             self.load_project(root, &overrides)
                 .ok()
                 .and_then(|project| {
-                    let repaired = ProjectSymbolIndex::refresh(project, Some(&cached_index));
+                    let repaired =
+                        ProjectSymbolIndex::refresh(project, Some(&cached_index)).for_source(path);
                     let current_file_parsed = !repaired.file_failed_to_parse(path)
                         && repaired
                             .ast
@@ -805,7 +805,7 @@ impl ServerState {
         character: u32,
     ) -> Result<Value, String> {
         let overrides = self.collect_overrides();
-        let index = self.symbol_index(root, &overrides)?;
+        let index = self.symbol_index(root, &overrides)?.for_source(path);
         let project = &index.loaded;
         let ast = &index.ast;
         for package in &ast.packages {
@@ -858,7 +858,7 @@ impl ServerState {
         character: u32,
     ) -> Result<Value, String> {
         let overrides = self.collect_overrides();
-        let index = self.symbol_index(root, &overrides)?;
+        let index = self.symbol_index(root, &overrides)?.for_source(path);
         if index.file_failed_to_parse(path) {
             return Ok(Value::Null);
         }
@@ -905,7 +905,7 @@ impl ServerState {
 
     fn project_document_symbols(&mut self, path: &Path, root: &Path) -> Result<Value, String> {
         let overrides = self.collect_overrides();
-        let index = self.symbol_index(root, &overrides)?;
+        let index = self.symbol_index(root, &overrides)?.for_source(path);
         let project = &index.loaded;
 
         for package in &index.ast.packages {
@@ -2747,6 +2747,215 @@ mod tests {
     }
 
     #[test]
+    fn completions_isolate_test_declarations_by_source_file_and_directory() {
+        let root = test_project_root("test-source-completions");
+        std::fs::write(root.join("ond.toml"), "[project]\nname=\"app\"\n").unwrap();
+        std::fs::create_dir_all(root.join("foreign")).unwrap();
+        let main_path = root.join("main.ond");
+        let main = "package main\nconst NormalConst: u32 = 1\ntype NormalType struct { normalField: u32 }\nvar normalValue: NormalType\nfunc normalFunc() {}\nfunc (value: NormalType) normalMethod() {}\nfunc main() { }\n";
+        let same_test_path = root.join("test.ond");
+        let same_test = "package main\nconst SameTestConst: u32 = 1\ntype SameTestType struct { sameTestField: u32 }\nvar sameTestValue: SameTestType\nfunc sameTestFunc() {}\nfunc (value: SameTestType) sameTestMethod() {}\nfunc TestSame() { }\n";
+        let suffix_test_path = root.join("more_test.ond");
+        let suffix_test = "package main\nfunc suffixTestFunc() {}\n";
+        let foreign_test_path = root.join("foreign/foreign_test.ond");
+        let foreign_normal = "package foreign\nconst ForeignConst: u32 = 1\ntype ForeignType struct { Field: u32 }\nvar ForeignValue: ForeignType\nfunc ForeignFunc() {}\n";
+        let foreign_test = "package foreign\nconst ForeignTestConst: u32 = 1\ntype ForeignTestType struct { Hidden: u32 }\nvar ForeignTestValue: ForeignTestType\nfunc ForeignTestFunc() {}\n";
+        std::fs::write(&main_path, main).unwrap();
+        std::fs::write(&same_test_path, same_test).unwrap();
+        std::fs::write(&suffix_test_path, suffix_test).unwrap();
+        std::fs::write(root.join("foreign/foreign.ond"), foreign_normal).unwrap();
+        std::fs::write(&foreign_test_path, foreign_test).unwrap();
+
+        let main_uri = uri_from_path(&main_path).unwrap();
+        let test_uri = uri_from_path(&same_test_path).unwrap();
+        let mut state = ServerState::default();
+        let mut output = Vec::new();
+        for (uri, source) in [(&main_uri, main), (&test_uri, same_test)] {
+            state
+                .open_document(uri.clone(), source.to_string(), &mut output)
+                .unwrap();
+        }
+
+        let main_character = main.lines().last().unwrap().find('}').unwrap() as u32;
+        let ordinary = state.completions(&main_uri, 6, main_character).unwrap();
+        let ordinary_labels = ordinary
+            .iter()
+            .filter_map(|item| item["label"].as_str())
+            .collect::<Vec<_>>();
+        for expected in ["NormalConst", "NormalType", "normalValue", "normalFunc"] {
+            assert!(ordinary_labels.contains(&expected), "{ordinary_labels:?}");
+        }
+        for hidden in [
+            "SameTestConst",
+            "SameTestType",
+            "sameTestValue",
+            "sameTestFunc",
+            "suffixTestFunc",
+        ] {
+            assert!(
+                !ordinary_labels.contains(&hidden),
+                "unexpected {hidden}: {ordinary_labels:?}"
+            );
+        }
+
+        let test_character = same_test.lines().last().unwrap().find('}').unwrap() as u32;
+        let test_items = state.completions(&test_uri, 6, test_character).unwrap();
+        let test_labels = test_items
+            .iter()
+            .filter_map(|item| item["label"].as_str())
+            .collect::<Vec<_>>();
+        for expected in [
+            "NormalConst",
+            "NormalType",
+            "normalValue",
+            "normalFunc",
+            "SameTestConst",
+            "SameTestType",
+            "sameTestValue",
+            "sameTestFunc",
+            "suffixTestFunc",
+        ] {
+            assert!(
+                test_labels.contains(&expected),
+                "missing {expected}: {test_labels:?}"
+            );
+        }
+        // The foreign package is visible through its import, but its test-only exports are not.
+        let imported_test = same_test
+            .replace("package main\n", "package main\nimport \"foreign\"\n")
+            .replace("func TestSame() { }", "func TestSame() { foreign. }");
+        state
+            .change_document(
+                test_uri.clone(),
+                vec![TextDocumentContentChangeEvent {
+                    text: imported_test.clone(),
+                    range: None,
+                }],
+                &mut output,
+            )
+            .unwrap();
+        let selector_character = imported_test
+            .lines()
+            .last()
+            .unwrap()
+            .find("foreign.")
+            .unwrap() as u32
+            + "foreign.".len() as u32;
+        let imported_items = state.completions(&test_uri, 7, selector_character).unwrap();
+        let imported_labels = imported_items
+            .iter()
+            .filter_map(|item| item["label"].as_str())
+            .collect::<Vec<_>>();
+        for expected in ["ForeignConst", "ForeignType", "ForeignFunc"] {
+            assert!(
+                imported_labels.contains(&expected),
+                "missing {expected}: {imported_items:?}"
+            );
+        }
+        for hidden in [
+            "ForeignTestConst",
+            "ForeignTestType",
+            "ForeignTestValue",
+            "ForeignTestFunc",
+        ] {
+            assert!(
+                !imported_labels.contains(&hidden),
+                "test export leaked: {imported_items:?}"
+            );
+        }
+
+        // Incomplete selector completion reparses the current buffer and must apply the same
+        // test-source filtering to the repaired index.
+        let incomplete_main = main.replace("func main() { }", "func main() { sameTestValue. }");
+        state
+            .change_document(
+                main_uri.clone(),
+                vec![TextDocumentContentChangeEvent {
+                    text: incomplete_main.clone(),
+                    range: None,
+                }],
+                &mut output,
+            )
+            .unwrap();
+        let selector_character = incomplete_main
+            .lines()
+            .last()
+            .unwrap()
+            .find("sameTestValue.")
+            .unwrap() as u32
+            + "sameTestValue.".len() as u32;
+        let ordinary_members = state.completions(&main_uri, 6, selector_character).unwrap();
+        assert!(
+            ordinary_members.is_empty(),
+            "test-only variable exposed members: {ordinary_members:?}"
+        );
+
+        let incomplete_test =
+            same_test.replace("func TestSame() { }", "func TestSame() { sameTestValue. }");
+        state
+            .change_document(
+                test_uri.clone(),
+                vec![TextDocumentContentChangeEvent {
+                    text: incomplete_test.clone(),
+                    range: None,
+                }],
+                &mut output,
+            )
+            .unwrap();
+        let selector_character = incomplete_test
+            .lines()
+            .last()
+            .unwrap()
+            .find("sameTestValue.")
+            .unwrap() as u32
+            + "sameTestValue.".len() as u32;
+        let test_members = state.completions(&test_uri, 6, selector_character).unwrap();
+        let member_labels = test_members
+            .iter()
+            .filter_map(|item| item["label"].as_str())
+            .collect::<Vec<_>>();
+        assert!(member_labels.contains(&"sameTestField"), "{test_members:?}");
+        assert!(
+            member_labels.contains(&"sameTestMethod"),
+            "{test_members:?}"
+        );
+
+        let normal_member_test =
+            same_test.replace("func TestSame() { }", "func TestSame() { normalValue. }");
+        state
+            .change_document(
+                test_uri.clone(),
+                vec![TextDocumentContentChangeEvent {
+                    text: normal_member_test.clone(),
+                    range: None,
+                }],
+                &mut output,
+            )
+            .unwrap();
+        let selector_character = normal_member_test
+            .lines()
+            .last()
+            .unwrap()
+            .find("normalValue.")
+            .unwrap() as u32
+            + "normalValue.".len() as u32;
+        let normal_members = state.completions(&test_uri, 6, selector_character).unwrap();
+        let normal_member_labels = normal_members
+            .iter()
+            .filter_map(|item| item["label"].as_str())
+            .collect::<Vec<_>>();
+        assert!(
+            normal_member_labels.contains(&"normalField"),
+            "{normal_members:?}"
+        );
+        assert!(
+            normal_member_labels.contains(&"normalMethod"),
+            "{normal_members:?}"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn project_loader_includes_imported_ond_path_packages() {
         let base = normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-libraries-{}-{}",
@@ -3692,6 +3901,178 @@ mod tests {
         let output = String::from_utf8(output).unwrap();
         assert!(output.contains("must declare `[project] name`"), "{output}");
         std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn test_build_rename_respects_each_occurrence_source_visibility() {
+        let root = test_project_root("test-rename-context");
+        std::fs::write(root.join("ond.toml"), "[project]\nname=\"rename\"\n").unwrap();
+        let main = root.join("main.ond");
+        let tests = root.join("main_test.ond");
+        let normal = "package main\nfunc main(){Helper()}\n";
+        let test = "package main\nfunc Helper(){}\nfunc TestOK(){Helper()}\n";
+        std::fs::write(&main, normal).unwrap();
+        std::fs::write(&tests, test).unwrap();
+        let uri = uri_from_path(&main).unwrap();
+        let test_uri = uri_from_path(&tests).unwrap();
+        let mut state = ServerState::default();
+        let mut output = Vec::new();
+        state
+            .open_document(uri.clone(), normal.into(), &mut output)
+            .unwrap();
+        let at = normal.lines().nth(1).unwrap().find("Helper").unwrap() as u32;
+        assert!(state.prepare_rename(&uri, 1, at).unwrap().is_null());
+        assert!(state.rename(&uri, 1, at, "Changed").is_err());
+        assert!(
+            state
+                .references(&uri, 1, at, true)
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(state.rename(&test_uri, 1, 5, "main").is_err());
+        let edits = state.rename(&test_uri, 1, 5, "Changed").unwrap();
+        assert_eq!(edits["changes"].as_object().unwrap().len(), 1);
+        assert_eq!(edits["changes"][&test_uri].as_array().unwrap().len(), 2);
+        std::fs::create_dir_all(root.join("left")).unwrap();
+        std::fs::write(root.join("left/left.ond"), "package left\n").unwrap();
+        let left_tests = root.join("left/left_test.ond");
+        std::fs::write(
+            &left_tests,
+            "package left\nfunc Helper(){}\nfunc TestLocal(){Helper()}\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("foreign")).unwrap();
+        let foreign = root.join("foreign/foreign_test.ond");
+        let foreign_source =
+            "package foreign\nimport \"left\"\nfunc TestForeign(){left.Helper()}\n";
+        std::fs::write(&foreign, foreign_source).unwrap();
+        let foreign_uri = uri_from_path(&foreign).unwrap();
+        let at = foreign_source
+            .lines()
+            .nth(2)
+            .unwrap()
+            .find("Helper")
+            .unwrap() as u32;
+        assert!(state.prepare_rename(&foreign_uri, 2, at).unwrap().is_null());
+        let left_uri = uri_from_path(&left_tests).unwrap();
+        let edits = state.rename(&left_uri, 1, 5, "Changed").unwrap();
+        assert_eq!(edits["changes"].as_object().unwrap().len(), 1);
+        assert_eq!(edits["changes"][&left_uri].as_array().unwrap().len(), 2);
+        // Both public and private normal helpers retain their valid test references.
+        for name in ["Helper", "helper"] {
+            std::fs::write(
+                &main,
+                format!("package main\nfunc {name}(){{}}\nfunc main(){{{name}()}}\n"),
+            )
+            .unwrap();
+            std::fs::write(&tests, format!("package main\nfunc TestOK(){{{name}()}}\n")).unwrap();
+            let state = ServerState::default();
+            let edits = state.rename(&uri, 1, 5, "Changed").unwrap();
+            assert_eq!(edits["changes"][&uri].as_array().unwrap().len(), 2);
+            assert_eq!(edits["changes"][&test_uri].as_array().unwrap().len(), 1);
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn test_build_library_only_project_retains_own_tests_and_private_context() {
+        let root = test_project_root("library-only-tests");
+        std::fs::write(root.join("ond.toml"), "[project]\nname=\"portable\"\n").unwrap();
+        std::fs::create_dir_all(root.join("deflate")).unwrap();
+        std::fs::write(
+            root.join("deflate/api.ond"),
+            "package deflate\nfunc private(){}\n",
+        )
+        .unwrap();
+        let test_path = root.join("deflate/api_test.ond");
+        let source = "package deflate\nfunc TestPrivate(){private()}\n";
+        std::fs::write(&test_path, source).unwrap();
+        let uri = uri_from_path(&test_path).unwrap();
+        let mut state = ServerState::default();
+        let mut output = Vec::new();
+        state
+            .open_document(uri.clone(), source.into(), &mut output)
+            .unwrap();
+        let project = state.load_current_project(&root).unwrap();
+        assert!(project.packages.iter().any(|p| {
+            p.logical_path == "portable/deflate"
+                && p.files
+                    .iter()
+                    .any(|file| same_path(project.sources.file(*file).path(), &test_path))
+        }));
+        assert!(compiler::compile_loaded_project(project).is_ok());
+        let diagnostics = published_diagnostics(&output, &uri);
+        assert!(!diagnostics.is_empty());
+        assert!(
+            diagnostics
+                .iter()
+                .all(|value| value.as_array().is_some_and(Vec::is_empty)),
+            "{diagnostics:?}"
+        );
+        let definition = state.definition(&uri, 1, 20).unwrap();
+        assert!(
+            definition[0]["targetUri"]
+                .as_str()
+                .unwrap()
+                .ends_with("api.ond"),
+            "{definition}"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn test_build_library_only_project_root_test_preserves_library_namespace() {
+        let root = test_project_root("library-only-root-test");
+        std::fs::write(root.join("ond.toml"), "[project]\nname=\"portable\"\n").unwrap();
+        std::fs::create_dir_all(root.join("deflate")).unwrap();
+        std::fs::write(
+            root.join("deflate/api.ond"),
+            "package deflate\nfunc Value() -> u32 { return 7 }\n",
+        )
+        .unwrap();
+        let test_path = root.join("api_test.ond");
+        let source = "package portable\nimport \"portable/deflate\"\nfunc TestRoot(){var _=deflate.Value()}\n";
+        std::fs::write(&test_path, source).unwrap();
+        let uri = uri_from_path(&test_path).unwrap();
+        let mut state = ServerState::default();
+        let mut output = Vec::new();
+        state
+            .open_document(uri.clone(), source.into(), &mut output)
+            .unwrap();
+        let project = state.load_current_project(&root).unwrap();
+        assert!(project.packages.iter().any(|package| {
+            package.logical_path == "portable"
+                && package
+                    .files
+                    .iter()
+                    .any(|file| same_path(project.sources.file(*file).path(), &test_path))
+        }));
+        assert!(
+            project
+                .packages
+                .iter()
+                .any(|package| package.logical_path == "portable/deflate")
+        );
+        assert!(compiler::compile_loaded_project(project).is_ok());
+        let diagnostics = published_diagnostics(&output, &uri);
+        assert!(
+            diagnostics
+                .iter()
+                .all(|value| value.as_array().is_some_and(Vec::is_empty)),
+            "{diagnostics:?}"
+        );
+        let value_character = source.lines().nth(2).unwrap().find("Value").unwrap() as u32;
+        let definition = state.definition(&uri, 2, value_character).unwrap();
+        assert!(
+            definition[0]["targetUri"]
+                .as_str()
+                .unwrap()
+                .ends_with("api.ond"),
+            "{definition}"
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

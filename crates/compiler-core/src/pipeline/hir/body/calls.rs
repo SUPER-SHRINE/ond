@@ -23,9 +23,10 @@ impl BodyLowerer<'_> {
         &mut self,
         name: ast::OperatorName,
         known: &[Option<TypeId>],
+        span: Span,
     ) -> Option<Vec<TypeId>> {
         let receiver = known.first().copied().flatten()?;
-        let declarations = self.operator_declarations(name, receiver, known.len());
+        let declarations = self.operator_declarations(name, receiver, known.len(), span);
         let mut receivers = vec![receiver];
         if let Some(TypeKind::Pointer(pointee)) = self.types.kind(receiver) {
             receivers.push(*pointee);
@@ -64,7 +65,7 @@ impl BodyLowerer<'_> {
         let Some(receiver) = arguments.first() else {
             return Some(None);
         };
-        let declarations = self.operator_declarations(name, receiver.ty, arguments.len());
+        let declarations = self.operator_declarations(name, receiver.ty, arguments.len(), span);
         let mut receivers = vec![receiver.clone()];
         if self.addressable(receiver) {
             let pointer = self.types.pointer(receiver.ty, receiver.span);
@@ -161,6 +162,7 @@ impl BodyLowerer<'_> {
         name: ast::OperatorName,
         receiver: TypeId,
         arity: usize,
+        span: Span,
     ) -> Vec<(PackageId, String, usize, ast::OperatorDecl)> {
         let mut base = receiver;
         while self.types.generic_instance(base).is_none()
@@ -200,7 +202,14 @@ impl BodyLowerer<'_> {
                     .iter()
                     .enumerate()
                     .filter(move |(_, operator)| {
-                        operator.name == name
+                        (package.visible_from(operator.span, span)
+                            || package
+                                .declarations
+                                .get(receiver_name)
+                                .is_some_and(|declaration| {
+                                    !package.visible_from(declaration.span, span)
+                                }))
+                            && operator.name == name
                             && operator.signature.params.len() == arity
                             && operator
                                 .signature
@@ -367,6 +376,12 @@ impl BodyLowerer<'_> {
             .iter()
             .find(|package| package.id == package_id)?;
         let source = package.functions.get(name)?.clone();
+        if !package.visible_from(source.span, span) {
+            return self.fail(
+                span,
+                format!("test-only function `{name}` is not visible here"),
+            );
+        }
         let symbol = super::super::canonical_symbol_name(&package.logical_path, name);
         let mut diagnostics = Diagnostics::new();
         let signature = super::super::types::resolve_signature(
@@ -514,6 +529,12 @@ impl BodyLowerer<'_> {
                     .iter()
                     .find(|package| package.id == self.package_id)?;
                 let declaration = package.generic_functions.get(&name.name)?.clone();
+                if !package.visible_from(declaration.span, span) {
+                    return self.fail(
+                        span,
+                        format!("test-only function `{}` is not visible here", name.name),
+                    );
+                }
                 (package.id, package.logical_path.clone(), declaration)
             }
             [qualifier, name] => {
@@ -531,6 +552,12 @@ impl BodyLowerer<'_> {
                     .iter()
                     .find(|package| package.id == package_id)?;
                 let declaration = package.generic_functions.get(&name.name)?.clone();
+                if !package.visible_from(declaration.span, span) {
+                    return self.fail(
+                        span,
+                        format!("test-only function `{}` is not visible here", name.name),
+                    );
+                }
                 (package.id, package.logical_path.clone(), declaration)
             }
             _ => return self.fail(span, "invalid generic function name"),
@@ -636,7 +663,12 @@ impl BodyLowerer<'_> {
                 self.universe
                     .iter()
                     .find(|package| package.id == self.package_id)
-                    .is_some_and(|package| package.generic_functions.contains_key(&name.name))
+                    .is_some_and(|package| {
+                        package
+                            .generic_functions
+                            .get(&name.name)
+                            .is_some_and(|function| package.visible_from(function.span, path.span))
+                    })
             }
             [qualifier, name] => self
                 .universe
@@ -649,7 +681,12 @@ impl BodyLowerer<'_> {
                         .iter()
                         .find(|package| package.id == *package_id)
                 })
-                .is_some_and(|package| package.generic_functions.contains_key(&name.name)),
+                .is_some_and(|package| {
+                    package
+                        .generic_functions
+                        .get(&name.name)
+                        .is_some_and(|function| package.visible_from(function.span, path.span))
+                }),
             _ => false,
         }
     }
@@ -664,10 +701,7 @@ impl BodyLowerer<'_> {
                 .universe
                 .iter()
                 .find(|package| package.id == self.package_id)
-                .is_some_and(|package| {
-                    package.values.contains(&first.name)
-                        || package.constants.contains_key(&first.name)
-                })
+                .is_some_and(|package| package.value_visible_from(&first.name, path.span))
     }
 
     fn lower_method_call(
@@ -699,9 +733,13 @@ impl BodyLowerer<'_> {
         };
         let mut matched = None;
         for (package_id, declaration_index, method) in &candidates {
-            if let Some(candidate) =
-                self.resolve_method_candidate(*package_id, *declaration_index, method, receiver.ty)
-            {
+            if let Some(candidate) = self.resolve_method_candidate(
+                *package_id,
+                *declaration_index,
+                method,
+                receiver.ty,
+                span,
+            ) {
                 matched = Some((candidate, receiver.clone()));
                 break;
             }
@@ -715,6 +753,7 @@ impl BodyLowerer<'_> {
                         method,
                         &receiver,
                         address,
+                        span,
                     ) {
                         matched = Some(candidate);
                         break;
@@ -781,13 +820,14 @@ impl BodyLowerer<'_> {
         method: &ast::FuncDecl,
         receiver: &hir::Expr,
         address: bool,
+        span: Span,
     ) -> Option<(ResolvedMethodCandidate, hir::Expr)> {
         if !address
             && let Some(TypeKind::Pointer(pointee)) = self.types.underlying_kind(receiver.ty)
         {
             let pointee = *pointee;
             if let Some(candidate) =
-                self.resolve_method_candidate(package_id, declaration_index, method, pointee)
+                self.resolve_method_candidate(package_id, declaration_index, method, pointee, span)
             {
                 return Some((
                     candidate,
@@ -804,7 +844,7 @@ impl BodyLowerer<'_> {
         }
         let pointer = self.types.pointer(receiver.ty, receiver.span);
         let candidate =
-            self.resolve_method_candidate(package_id, declaration_index, method, pointer)?;
+            self.resolve_method_candidate(package_id, declaration_index, method, pointer, span)?;
         Some((
             candidate,
             hir::Expr {
@@ -821,6 +861,7 @@ impl BodyLowerer<'_> {
         declaration_index: usize,
         method: &ast::FuncDecl,
         actual_receiver: TypeId,
+        caller: Span,
     ) -> Option<ResolvedMethodCandidate> {
         let package = self
             .universe
@@ -831,6 +872,14 @@ impl BodyLowerer<'_> {
         let receiver_name = receiver_name.to_string();
         let logical_path = package.logical_path.clone();
         let declaration = package.declarations.get(&receiver_name)?;
+        // A test-defined receiver can reach a normal template through a type
+        // argument. Resolving that receiver's method is dependent dispatch;
+        // adding a method to a normal, fixed receiver does not change its scope.
+        if !package.visible_from(method.span, caller)
+            && package.visible_from(declaration.span, caller)
+        {
+            return None;
+        }
         let (receiver_source, signature_source, symbol) = if declaration.type_params.is_empty() {
             (
                 (**receiver).clone(),
