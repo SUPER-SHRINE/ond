@@ -11,81 +11,79 @@ use std::collections::{BTreeMap, BTreeSet};
 const BUILTINS: &[&str] = &["alloc", "free", "len", "thisFile", "thisLine"];
 
 pub(super) fn validate_generic_body_names(
+    loaded: &crate::project::LoadedProject,
     project: &ast::Project,
-    all_sources: &ast::Project,
 ) -> Diagnostics {
-    let package_values = project
+    let names = |types: bool, normal_only: bool| {
+        project
+            .packages
+            .iter()
+            .map(|package| {
+                let names = package
+                    .files
+                    .iter()
+                    .filter(|file| {
+                        !normal_only
+                            || !crate::project::is_test_source(
+                                loaded.sources.file(file.file_id).path(),
+                            )
+                    })
+                    .flat_map(|file| &file.decls)
+                    .flat_map(|decl| {
+                        if types {
+                            match decl {
+                                ast::TopLevelDecl::Type(decl) => decl
+                                    .specs
+                                    .iter()
+                                    .map(|spec| spec.name.name.clone())
+                                    .collect(),
+                                _ => Vec::new(),
+                            }
+                        } else {
+                            top_level_value_names(decl)
+                        }
+                    })
+                    .collect::<BTreeSet<_>>();
+                (package.logical_path.clone(), names)
+            })
+            .collect::<BTreeMap<_, _>>()
+    };
+    let all_values = names(false, false);
+    let normal_values = names(false, true);
+    let all_types = names(true, false);
+    let normal_types = names(true, true);
+    let hidden_names = project
         .packages
         .iter()
         .map(|package| {
-            let values = package
-                .files
-                .iter()
-                .flat_map(|file| &file.decls)
-                .flat_map(top_level_value_names)
-                .collect::<BTreeSet<_>>();
-            (package.logical_path.as_str(), values)
-        })
-        .collect::<BTreeMap<_, _>>();
-    let package_types = project
-        .packages
-        .iter()
-        .map(|package| {
-            let names = package
-                .files
-                .iter()
-                .flat_map(|file| &file.decls)
-                .filter_map(|decl| match decl {
-                    ast::TopLevelDecl::Type(decl) => Some(&decl.specs),
-                    _ => None,
-                })
-                .flatten()
-                .map(|spec| spec.name.name.clone())
-                .collect::<BTreeSet<_>>();
-            (package.logical_path.as_str(), names)
-        })
-        .collect::<BTreeMap<_, _>>();
-    // Only names removed by the test visibility context need additional checks.
-    // Ordinary unresolved generic types retain their existing specialization rules.
-    let hidden_names = all_sources
-        .packages
-        .iter()
-        .map(|package| {
-            let all_values = package
-                .files
-                .iter()
-                .flat_map(|file| &file.decls)
-                .flat_map(top_level_value_names)
-                .collect::<BTreeSet<_>>();
-            let all_types = package
-                .files
-                .iter()
-                .flat_map(|file| &file.decls)
-                .filter_map(|decl| match decl {
-                    ast::TopLevelDecl::Type(decl) => Some(&decl.specs),
-                    _ => None,
-                })
-                .flatten()
-                .map(|spec| spec.name.name.clone())
-                .collect::<BTreeSet<_>>();
-            let hidden_types = all_types
-                .difference(&package_types[package.logical_path.as_str()])
+            let path = &package.logical_path;
+            let hidden_types = all_types[path]
+                .difference(&normal_types[path])
                 .cloned()
                 .collect::<BTreeSet<_>>();
-            let mut hidden = all_values
-                .difference(&package_values[package.logical_path.as_str()])
+            let mut hidden = all_values[path]
+                .difference(&normal_values[path])
                 .cloned()
                 .collect::<BTreeSet<_>>();
             hidden.extend(hidden_types.iter().cloned());
-            (package.logical_path.as_str(), (hidden, hidden_types))
+            (path.as_str(), (hidden, hidden_types))
         })
         .collect::<BTreeMap<_, _>>();
+    let empty = BTreeSet::new();
     let mut diagnostics = Diagnostics::new();
-
     for package in &project.packages {
-        let values = &package_values[package.logical_path.as_str()];
-        let hidden_types = &hidden_names[package.logical_path.as_str()].1;
         for file in &package.files {
+            let test = crate::project::is_test_source(loaded.sources.file(file.file_id).path());
+            let values = if test {
+                &all_values[&package.logical_path]
+            } else {
+                &normal_values[&package.logical_path]
+            };
+            let hidden_types = if test {
+                &empty
+            } else {
+                &hidden_names[package.logical_path.as_str()].1
+            };
             let imports = file
                 .imports
                 .iter()

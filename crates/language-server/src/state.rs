@@ -43,6 +43,7 @@ pub struct ServerState {
     library_roots: Vec<PathBuf>,
     published_project_uris: BTreeMap<PathBuf, BTreeSet<String>>,
     symbol_indexes: BTreeMap<PathBuf, ProjectSymbolIndex>,
+    semantic_caches: BTreeMap<PathBuf, compiler::SemanticCache>,
 }
 
 #[derive(Debug, Clone)]
@@ -57,6 +58,7 @@ impl ServerState {
             library_roots,
             published_project_uris: BTreeMap::new(),
             symbol_indexes: BTreeMap::new(),
+            semantic_caches: BTreeMap::new(),
         }
     }
 
@@ -114,21 +116,18 @@ impl ServerState {
         self.refresh_symbol_index(root, project.clone());
         let mut diagnostics_by_path = BTreeMap::<PathBuf, Vec<Value>>::new();
 
-        let validation_error = match compiler::ond::parse_project(&project) {
-            Ok(_) => {
-                match catch_unwind(AssertUnwindSafe(|| {
-                    compiler::compile_loaded_project(project.clone())
-                })) {
-                    Ok(result) => result.err(),
-                    Err(_) => Some(compiler::FrontendError::new(vec![
-                        compiler::Diagnostic::error(
-                            Span::synthetic(),
-                            "compiler panicked while validating the document",
-                        ),
-                    ])),
-                }
-            }
-            Err(error) => Some(error),
+        let cache = self
+            .semantic_caches
+            .entry(normalize_path(root.to_path_buf()))
+            .or_default();
+        let validation_error = match catch_unwind(AssertUnwindSafe(|| cache.validate(&project))) {
+            Ok(result) => result.err(),
+            Err(_) => Some(compiler::FrontendError::new(vec![
+                compiler::Diagnostic::error(
+                    Span::synthetic(),
+                    "compiler panicked while validating the document",
+                ),
+            ])),
         };
         if let Some(error) = validation_error {
             for diagnostic in error.diagnostics() {

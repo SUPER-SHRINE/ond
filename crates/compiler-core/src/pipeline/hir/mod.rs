@@ -8,6 +8,8 @@ use std::collections::{BTreeMap, BTreeSet};
 mod array_layout;
 mod body;
 mod body_names;
+mod cache;
+pub use cache::SemanticCache;
 mod control_flow;
 mod generic_functions;
 mod identity;
@@ -15,6 +17,7 @@ mod identity;
 mod identity_tests;
 mod operators;
 mod types;
+mod validation;
 use body::{BodyLowerer, lower_typed_body};
 use body_names::validate_generic_body_names;
 use control_flow::{block_can_complete_normally, return_diagnostics};
@@ -24,65 +27,20 @@ use types::{
     TypePackage, collect_type_universe, generic_method_receiver, method_receiver_name,
     resolve_all_defined_types, resolve_defined_type, resolve_method_signature, resolve_signature,
 };
+use validation::{report_duplicate_top_level, validate_test_signatures};
 
 pub(crate) fn lower_to_hir(
     loaded: &LoadedProject,
     ast: &ast::Project,
 ) -> Result<hir::Project, FrontendError> {
-    let mut invalid_tests = Diagnostics::new();
-    for file in ast
-        .packages
-        .iter()
-        .flat_map(|p| &p.files)
-        .filter(|f| crate::project::is_test_source(loaded.sources.file(f.file_id).path()))
-    {
-        for decl in &file.decls {
-            if let ast::TopLevelDecl::Func(function) = decl
-                && function.name.name.starts_with("Test")
-                && (function.receiver.is_some()
-                    || !function.type_params.is_empty()
-                    || !function.signature.params.is_empty()
-                    || !function.signature.results.is_empty())
-            {
-                invalid_tests.push(Diagnostic::error(function.name.span, "test function must be top-level with no parameters, results, type parameters or receiver"));
-            }
-        }
-    }
-    if !invalid_tests.is_empty() {
-        return Err(FrontendError::new(invalid_tests.into_vec()));
-    }
-    let test_packages = ast
-        .packages
-        .iter()
-        .filter(|package| {
-            package.files.iter().any(|file| {
-                crate::project::is_test_source(loaded.sources.file(file.file_id).path())
-            })
-        })
-        .map(|p| p.logical_path.clone())
-        .collect::<Vec<_>>();
-    if !test_packages.is_empty() {
-        // Validate each visibility context with the ordinary resolver, covering
-        // types, globals, methods and generic declarations as well as bodies.
-        for selected in std::iter::once(None).chain(test_packages.iter().map(Some)) {
-            let mut context = ast.clone();
-            for package in &mut context.packages {
-                if selected != Some(&package.logical_path) {
-                    package.files.retain(|file| {
-                        !crate::project::is_test_source(loaded.sources.file(file.file_id).path())
-                    });
-                }
-            }
-            lower_context_to_hir(loaded, &context, ast)?;
-        }
-    }
-    lower_context_to_hir(loaded, ast, ast)
+    validate_test_signatures(loaded, ast)?;
+    lower_context_to_hir(loaded, ast, None)
 }
 
 fn lower_context_to_hir(
     loaded: &LoadedProject,
     ast: &ast::Project,
-    all_sources: &ast::Project,
+    selected: Option<&BTreeSet<crate::source::FileId>>,
 ) -> Result<hir::Project, FrontendError> {
     let mut diagnostics = Diagnostics::new();
     let early_return_diagnostics = return_diagnostics(ast);
@@ -91,63 +49,7 @@ fn lower_context_to_hir(
         logical_to_package.insert(package.logical_path.clone(), package.id);
     }
     let mut types = crate::semantic::TypeTable::new();
-    let mut symbols = Vec::new();
-    for package in &ast.packages {
-        let package_id = logical_to_package[&package.logical_path];
-        for file in &package.files {
-            for declaration in &file.decls {
-                let (kind, names): (_, Vec<&ast::Ident>) = match declaration {
-                    ast::TopLevelDecl::Const(decl) => (
-                        hir::SymbolKind::Constant,
-                        decl.specs
-                            .iter()
-                            .flat_map(|spec| spec.names.iter())
-                            .collect(),
-                    ),
-                    ast::TopLevelDecl::Var(decl) => (
-                        hir::SymbolKind::Global,
-                        decl.specs
-                            .iter()
-                            .flat_map(|spec| spec.names.iter())
-                            .collect(),
-                    ),
-                    ast::TopLevelDecl::Type(decl) => (
-                        hir::SymbolKind::Type,
-                        decl.specs.iter().map(|spec| &spec.name).collect(),
-                    ),
-                    ast::TopLevelDecl::Func(decl) => (
-                        hir::SymbolKind::Function,
-                        decl.receiver
-                            .is_none()
-                            .then_some(&decl.name)
-                            .into_iter()
-                            .collect(),
-                    ),
-                    ast::TopLevelDecl::Operator(_) => (hir::SymbolKind::Function, Vec::new()),
-                };
-                for name in names {
-                    if name.name == "_" {
-                        continue;
-                    }
-                    symbols.push(hir::Symbol {
-                        id: hir::SymbolId(symbols.len() as u32),
-                        package: package_id,
-                        name: name.name.clone(),
-                        canonical_name: canonical_symbol_name(&package.logical_path, &name.name),
-                        kind,
-                        exported: !crate::project::is_test_source(
-                            loaded.sources.file(file.file_id).path(),
-                        ) && name
-                            .name
-                            .as_bytes()
-                            .first()
-                            .is_some_and(u8::is_ascii_uppercase),
-                        span: name.span,
-                    });
-                }
-            }
-        }
-    }
+    let symbols = validation::collect_symbols(loaded, ast, &logical_to_package);
     let type_universe = collect_type_universe(loaded, ast, &logical_to_package, &mut types);
     resolve_all_defined_types(&type_universe, &mut types, &mut diagnostics);
     // Invalid definitions cannot be used by item/body lowering. Stop here instead
@@ -156,7 +58,10 @@ fn lower_context_to_hir(
         diagnostics.extend(early_return_diagnostics);
         return Err(FrontendError::new(diagnostics.into_vec()));
     }
-    diagnostics.extend(validate_generic_body_names(ast, all_sources));
+    diagnostics.extend(validate_generic_body_names(loaded, ast));
+    if selected.is_some() {
+        diagnostics.extend(validation::duplicate_declarations(ast));
+    }
 
     let mut packages = Vec::new();
     for package in &ast.packages {
@@ -279,6 +184,9 @@ fn lower_context_to_hir(
             }
 
             for decl in &file.decls {
+                if selected.is_some_and(|selected| !selected.contains(&file.file_id)) {
+                    continue;
+                }
                 match decl {
                     ast::TopLevelDecl::Const(decl) => {
                         for spec in &decl.specs {
@@ -1002,23 +910,14 @@ fn lower_context_to_hir(
                 ),
             ));
         }
-        for (file, import_names) in &import_names_by_file {
-            for name in import_names.keys() {
-                if seen_top_level.get(name).is_some_and(|declaration| {
-                    type_universe
-                        .iter()
-                        .find(|package| package.id == source_package.id)
-                        .is_some_and(|package| {
-                            package.visible_from(*declaration, Span::new(*file, 0, 0))
-                        })
-                }) {
-                    diagnostics.push(Diagnostic::error(
-                        seen_top_level[name],
-                        format!("top-level declaration conflicts with imported package `{name}`"),
-                    ));
-                }
-            }
-        }
+        diagnostics.extend(validation::import_declaration_conflicts(
+            type_universe
+                .iter()
+                .find(|package| package.id == source_package.id)
+                .expect("loaded and indexed packages must align"),
+            &symbols,
+            &import_names_by_file,
+        ));
 
         packages.push(hir::Package {
             id: source_package.id,
@@ -1042,60 +941,7 @@ fn lower_context_to_hir(
     );
     array_layout::validate(&types, &mut diagnostics);
 
-    // Semantic analysis consumes the loaded snapshot, including in-memory inputs.
-    // Filesystem discovery/validation belongs to the project loader.
-    let root_main = loaded
-        .packages
-        .iter()
-        .filter(|p| p.logical_path == ".")
-        .flat_map(|p| &p.files)
-        .any(|id| loaded.sources.file(*id).path() == loaded.root.join("main.ond"));
-    if !root_main {
-        diagnostics.push(Diagnostic::error(
-            Span::synthetic(),
-            "project root must contain `main.ond`",
-        ));
-    }
-
-    let main_package = packages.iter().find(|package| package.logical_path == ".");
-    let main_functions = main_package
-        .map(|package| {
-            package
-                .items
-                .iter()
-                .filter_map(|item| match item {
-                    hir::Item::Func(function) if function.name == "main" => Some(function),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    if main_functions.is_empty()
-        && !symbols
-            .iter()
-            .any(|s| s.canonical_name == "main.main" && s.kind == hir::SymbolKind::Function)
-    {
-        diagnostics.push(Diagnostic::error(
-            Span::synthetic(),
-            "`main` package must define `func main()`",
-        ));
-    } else {
-        for function in main_functions {
-            if !function.signature.parameters.is_empty() || !function.signature.returns.is_empty() {
-                diagnostics.push(Diagnostic::error(
-                    function.span,
-                    "`func main()` must not have parameters or return values",
-                ));
-            }
-        }
-    }
-
-    if let Some(cycle) = find_import_cycle(&packages) {
-        diagnostics.push(Diagnostic::error(
-            Span::synthetic(),
-            format!("import cycle detected: {}", cycle.join(" -> ")),
-        ));
-    }
+    validation::validate_project(loaded, ast, selected, &packages, &symbols, &mut diagnostics);
 
     if diagnostics.is_empty() {
         let initialization_order = Vec::new();
@@ -1206,85 +1052,4 @@ fn constant_is_string_literal(
         .is_some_and(|(_, value)| constant_is_string_literal(owner, value, universe, visiting));
     visiting.remove(&key);
     result
-}
-
-fn report_duplicate_top_level(
-    diagnostics: &mut Diagnostics,
-    seen: &mut BTreeMap<String, Span>,
-    name: &str,
-    span: Span,
-) {
-    if name == "_" {
-        return;
-    }
-    if let Some(previous) = seen.insert(name.to_string(), span) {
-        diagnostics.push(
-            Diagnostic::error(span, format!("duplicate top-level declaration `{name}`")).with_note(
-                format!(
-                    "previous declaration starts at byte {} in the same package",
-                    previous.start
-                ),
-            ),
-        );
-    }
-}
-
-fn find_import_cycle(packages: &[hir::Package]) -> Option<Vec<String>> {
-    #[derive(Clone, Copy, PartialEq, Eq)]
-    enum Visit {
-        Visiting,
-        Done,
-    }
-
-    fn dfs(
-        package_id: PackageId,
-        packages: &[hir::Package],
-        states: &mut BTreeMap<PackageId, Visit>,
-        stack: &mut Vec<PackageId>,
-    ) -> Option<Vec<String>> {
-        states.insert(package_id, Visit::Visiting);
-        stack.push(package_id);
-
-        let package = packages.iter().find(|package| package.id == package_id)?;
-        for import in &package.imports {
-            match states.get(import).copied() {
-                Some(Visit::Visiting) => {
-                    let start = stack.iter().position(|id| id == import).unwrap_or(0);
-                    let cycle = stack[start..]
-                        .iter()
-                        .chain(std::iter::once(import))
-                        .filter_map(|id| {
-                            packages
-                                .iter()
-                                .find(|package| package.id == *id)
-                                .map(|package| package.logical_path.clone())
-                        })
-                        .collect::<Vec<_>>();
-                    return Some(cycle);
-                }
-                Some(Visit::Done) => {}
-                None => {
-                    if let Some(cycle) = dfs(*import, packages, states, stack) {
-                        return Some(cycle);
-                    }
-                }
-            }
-        }
-
-        stack.pop();
-        states.insert(package_id, Visit::Done);
-        None
-    }
-
-    let mut states = BTreeMap::<PackageId, Visit>::new();
-    let mut stack = Vec::new();
-    for package in packages {
-        if states.contains_key(&package.id) {
-            continue;
-        }
-        if let Some(cycle) = dfs(package.id, packages, &mut states, &mut stack) {
-            return Some(cycle);
-        }
-    }
-    None
 }

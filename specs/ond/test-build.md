@@ -30,6 +30,8 @@ test-only declarationのための特別な循環import解決は導入しない�
 LSPは`test.ond`と`_test.ond`を無視せず、通常sourceとtest sourceの文脈を区別する。\
 通常sourceからtest宣言への参照を通常の可視性として扱わず、test sourceでは同一packageのprivate declarationを解決する。
 
+packageごとの通常解析結果とtest解析結果の参照環境、失効、保持期間は、[パッケージ意味解析キャッシュ](./semantic-cache.md)に従う。
+
 ## 2. ビルドと起動入口
 <!-- ond-spec-id: build/test-entrypoints -->
 

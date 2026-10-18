@@ -14,6 +14,7 @@ mod identifier;
 mod numeric_literal;
 mod pipeline;
 mod string_literal;
+pub use pipeline::SemanticCache;
 use pipeline::{lower_to_hir, lower_to_mir};
 pub mod diagnostic;
 pub mod export;
