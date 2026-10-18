@@ -1,5 +1,6 @@
 use super::{tests::Fixture, *};
 use crate::ir::object::{Object, RelocationKind, Section, SectionKind};
+use kagura::Bus;
 use ond_protocol::debug::{DebugOperation, ReturnAddressLocation};
 
 #[test]
@@ -249,5 +250,89 @@ fn helper_stack_overflow_keeps_near_and_far_caller_unwind_metadata() {
         assert_eq!(source.path, "main.ond");
         assert_eq!(source.line, 2);
         assert!((35..=37).contains(&source.column), "{source:?}");
+    }
+}
+
+#[test]
+fn executed_numeric_faults_match_the_linked_debug_operation() {
+    for (source, expected) in [
+        (
+            "package main\nfunc conv(value:f32)->i32{return value as i32}\nfunc main(){var result=conv(2147483648.0)}",
+            DebugOperation::InvalidConversion,
+        ),
+        (
+            "package main\nfunc main(){var x:f32=-2147483904.0;var y=x as i32}",
+            DebugOperation::InvalidConversion,
+        ),
+        (
+            "package main\nfunc main(){var x:f32=4294967296.0;var y=x as u32}",
+            DebugOperation::InvalidConversion,
+        ),
+        (
+            "package main\nfunc main(){var x:i32=1;var z:i32=0;var y=x/z}",
+            DebugOperation::DivisionByZero,
+        ),
+        (
+            "package main\nfunc main(){var x:i32=1;var z:i32=0;var y=x%z}",
+            DebugOperation::DivisionByZero,
+        ),
+        (
+            "package main\nfunc main(){var x:u32=1;var z:u32=0;var y=x/z}",
+            DebugOperation::DivisionByZero,
+        ),
+        (
+            "package main\nfunc main(){var x:u32=1;var z:u32=0;var y=x%z}",
+            DebugOperation::DivisionByZero,
+        ),
+    ] {
+        let fixture = Fixture::new(source);
+        let compilation = crate::pipeline::compile_project(&fixture.0).unwrap();
+        let startup = crate::program::program_startup(
+            &[],
+            "main.main",
+            &[
+                crate::kagura_encoding::word(0, 1, 0, 0, -1),
+                crate::kagura_encoding::word(2, 1, 1, 0, 15),
+                crate::kagura_encoding::word(0, 1, 1, 0, 64),
+                crate::kagura_encoding::word(11, 0, 1, 0, 0),
+                crate::kagura_encoding::word(12, 0, 0, 0, -1),
+            ],
+        );
+        let mut objects = vec![startup];
+        objects.extend(compilation.objects.clone());
+        let linked = crate::linker::link_objects_with_debug(
+            &objects,
+            &compilation.debug_objects,
+            &crate::linker::LinkPlan {
+                read_only: None,
+                memory_base: 0x1000,
+                memory_size: 65536,
+                stack_size: 8192,
+                entry_symbol: "__ond.entry".into(),
+                heap_base_symbol: "__ond_heap_base".into(),
+                stack_bottom_symbol: "__ond_stack_bottom".into(),
+            },
+        )
+        .unwrap();
+        let (mut cpu, mut bus, _) = super::tests::machine(&linked.image);
+        let fault_pc = (0..100_000)
+            .find_map(|_| cpu.step(&mut bus).err().map(|_| cpu.pc()))
+            .expect("program must fault before normal exit");
+        assert_eq!(bus.read32(0xffff8040).unwrap(), 0xdeadbeef);
+        let range = linked
+            .debug
+            .ranges
+            .iter()
+            .filter(|range| range.start <= fault_pc && fault_pc < range.end)
+            .min_by_key(|range| range.end - range.start)
+            .unwrap_or_else(|| {
+                panic!("fault PC {fault_pc:#x} lacks linked debug metadata: {source}")
+            });
+        assert_eq!(range.operation, expected, "{source}: {range:?}");
+        if expected == DebugOperation::InvalidConversion {
+            assert!(range.function.ends_with("__sf_invalid"), "{range:?}");
+        } else {
+            assert_eq!(range.function, "main.main", "{range:?}");
+        }
     }
 }

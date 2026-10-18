@@ -62,7 +62,7 @@ pub(super) fn load(source: &str) -> Result<mir::Project, FrontendError> {
                 parameters: vec![],
                 instructions: vec![],
                 terminator: mir::Terminator {
-                    kind: mir::TerminatorKind::Trap(mir::TrapKind::DivisionByZero),
+                    kind: mir::TerminatorKind::Trap(mir::TrapKind::InvalidConversion),
                     span: f.span,
                 },
             }];
