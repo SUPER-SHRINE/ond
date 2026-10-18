@@ -2748,6 +2748,215 @@ mod tests {
     }
 
     #[test]
+    fn completions_isolate_test_declarations_by_source_file_and_directory() {
+        let root = test_project_root("test-source-completions");
+        std::fs::write(root.join("ond.toml"), "[project]\nname=\"app\"\n").unwrap();
+        std::fs::create_dir_all(root.join("foreign")).unwrap();
+        let main_path = root.join("main.ond");
+        let main = "package main\nconst NormalConst: u32 = 1\ntype NormalType struct { normalField: u32 }\nvar normalValue: NormalType\nfunc normalFunc() {}\nfunc (value: NormalType) normalMethod() {}\nfunc main() { }\n";
+        let same_test_path = root.join("test.ond");
+        let same_test = "package main\nconst SameTestConst: u32 = 1\ntype SameTestType struct { sameTestField: u32 }\nvar sameTestValue: SameTestType\nfunc sameTestFunc() {}\nfunc (value: SameTestType) sameTestMethod() {}\nfunc TestSame() { }\n";
+        let suffix_test_path = root.join("more_test.ond");
+        let suffix_test = "package main\nfunc suffixTestFunc() {}\n";
+        let foreign_test_path = root.join("foreign/foreign_test.ond");
+        let foreign_normal = "package foreign\nconst ForeignConst: u32 = 1\ntype ForeignType struct { Field: u32 }\nvar ForeignValue: ForeignType\nfunc ForeignFunc() {}\n";
+        let foreign_test = "package foreign\nconst ForeignTestConst: u32 = 1\ntype ForeignTestType struct { Hidden: u32 }\nvar ForeignTestValue: ForeignTestType\nfunc ForeignTestFunc() {}\n";
+        std::fs::write(&main_path, main).unwrap();
+        std::fs::write(&same_test_path, same_test).unwrap();
+        std::fs::write(&suffix_test_path, suffix_test).unwrap();
+        std::fs::write(root.join("foreign/foreign.ond"), foreign_normal).unwrap();
+        std::fs::write(&foreign_test_path, foreign_test).unwrap();
+
+        let main_uri = uri_from_path(&main_path).unwrap();
+        let test_uri = uri_from_path(&same_test_path).unwrap();
+        let mut state = ServerState::default();
+        let mut output = Vec::new();
+        for (uri, source) in [(&main_uri, main), (&test_uri, same_test)] {
+            state
+                .open_document(uri.clone(), source.to_string(), &mut output)
+                .unwrap();
+        }
+
+        let main_character = main.lines().last().unwrap().find('}').unwrap() as u32;
+        let ordinary = state.completions(&main_uri, 6, main_character).unwrap();
+        let ordinary_labels = ordinary
+            .iter()
+            .filter_map(|item| item["label"].as_str())
+            .collect::<Vec<_>>();
+        for expected in ["NormalConst", "NormalType", "normalValue", "normalFunc"] {
+            assert!(ordinary_labels.contains(&expected), "{ordinary_labels:?}");
+        }
+        for hidden in [
+            "SameTestConst",
+            "SameTestType",
+            "sameTestValue",
+            "sameTestFunc",
+            "suffixTestFunc",
+        ] {
+            assert!(
+                !ordinary_labels.contains(&hidden),
+                "unexpected {hidden}: {ordinary_labels:?}"
+            );
+        }
+
+        let test_character = same_test.lines().last().unwrap().find('}').unwrap() as u32;
+        let test_items = state.completions(&test_uri, 6, test_character).unwrap();
+        let test_labels = test_items
+            .iter()
+            .filter_map(|item| item["label"].as_str())
+            .collect::<Vec<_>>();
+        for expected in [
+            "NormalConst",
+            "NormalType",
+            "normalValue",
+            "normalFunc",
+            "SameTestConst",
+            "SameTestType",
+            "sameTestValue",
+            "sameTestFunc",
+            "suffixTestFunc",
+        ] {
+            assert!(
+                test_labels.contains(&expected),
+                "missing {expected}: {test_labels:?}"
+            );
+        }
+        // The foreign package is visible through its import, but its test-only exports are not.
+        let imported_test = same_test
+            .replace("package main\n", "package main\nimport \"foreign\"\n")
+            .replace("func TestSame() { }", "func TestSame() { foreign. }");
+        state
+            .change_document(
+                test_uri.clone(),
+                vec![TextDocumentContentChangeEvent {
+                    text: imported_test.clone(),
+                    range: None,
+                }],
+                &mut output,
+            )
+            .unwrap();
+        let selector_character = imported_test
+            .lines()
+            .last()
+            .unwrap()
+            .find("foreign.")
+            .unwrap() as u32
+            + "foreign.".len() as u32;
+        let imported_items = state.completions(&test_uri, 7, selector_character).unwrap();
+        let imported_labels = imported_items
+            .iter()
+            .filter_map(|item| item["label"].as_str())
+            .collect::<Vec<_>>();
+        for expected in ["ForeignConst", "ForeignType", "ForeignFunc"] {
+            assert!(
+                imported_labels.contains(&expected),
+                "missing {expected}: {imported_items:?}"
+            );
+        }
+        for hidden in [
+            "ForeignTestConst",
+            "ForeignTestType",
+            "ForeignTestValue",
+            "ForeignTestFunc",
+        ] {
+            assert!(
+                !imported_labels.contains(&hidden),
+                "test export leaked: {imported_items:?}"
+            );
+        }
+
+        // Incomplete selector completion reparses the current buffer and must apply the same
+        // test-source filtering to the repaired index.
+        let incomplete_main = main.replace("func main() { }", "func main() { sameTestValue. }");
+        state
+            .change_document(
+                main_uri.clone(),
+                vec![TextDocumentContentChangeEvent {
+                    text: incomplete_main.clone(),
+                    range: None,
+                }],
+                &mut output,
+            )
+            .unwrap();
+        let selector_character = incomplete_main
+            .lines()
+            .last()
+            .unwrap()
+            .find("sameTestValue.")
+            .unwrap() as u32
+            + "sameTestValue.".len() as u32;
+        let ordinary_members = state.completions(&main_uri, 6, selector_character).unwrap();
+        assert!(
+            ordinary_members.is_empty(),
+            "test-only variable exposed members: {ordinary_members:?}"
+        );
+
+        let incomplete_test =
+            same_test.replace("func TestSame() { }", "func TestSame() { sameTestValue. }");
+        state
+            .change_document(
+                test_uri.clone(),
+                vec![TextDocumentContentChangeEvent {
+                    text: incomplete_test.clone(),
+                    range: None,
+                }],
+                &mut output,
+            )
+            .unwrap();
+        let selector_character = incomplete_test
+            .lines()
+            .last()
+            .unwrap()
+            .find("sameTestValue.")
+            .unwrap() as u32
+            + "sameTestValue.".len() as u32;
+        let test_members = state.completions(&test_uri, 6, selector_character).unwrap();
+        let member_labels = test_members
+            .iter()
+            .filter_map(|item| item["label"].as_str())
+            .collect::<Vec<_>>();
+        assert!(member_labels.contains(&"sameTestField"), "{test_members:?}");
+        assert!(
+            member_labels.contains(&"sameTestMethod"),
+            "{test_members:?}"
+        );
+
+        let normal_member_test =
+            same_test.replace("func TestSame() { }", "func TestSame() { normalValue. }");
+        state
+            .change_document(
+                test_uri.clone(),
+                vec![TextDocumentContentChangeEvent {
+                    text: normal_member_test.clone(),
+                    range: None,
+                }],
+                &mut output,
+            )
+            .unwrap();
+        let selector_character = normal_member_test
+            .lines()
+            .last()
+            .unwrap()
+            .find("normalValue.")
+            .unwrap() as u32
+            + "normalValue.".len() as u32;
+        let normal_members = state.completions(&test_uri, 6, selector_character).unwrap();
+        let normal_member_labels = normal_members
+            .iter()
+            .filter_map(|item| item["label"].as_str())
+            .collect::<Vec<_>>();
+        assert!(
+            normal_member_labels.contains(&"normalField"),
+            "{normal_members:?}"
+        );
+        assert!(
+            normal_member_labels.contains(&"normalMethod"),
+            "{normal_members:?}"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn project_loader_includes_imported_ond_path_packages() {
         let base = normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-libraries-{}-{}",
