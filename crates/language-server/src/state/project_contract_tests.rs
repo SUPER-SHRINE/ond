@@ -14,6 +14,7 @@ fn project(label: &str, name: &str) -> PathBuf {
             .as_nanos()
     ));
     fs::create_dir_all(&root).unwrap();
+    let root = root.canonicalize().unwrap();
     fs::write(
         root.join("ond.toml"),
         format!("[project]\nname = \"{name}\"\n"),
