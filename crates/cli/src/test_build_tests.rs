@@ -40,7 +40,7 @@ fn test_build_discovers_unreachable_packages_and_separates_cache_modes() {
             .manifest
             .packages
             .iter()
-            .any(|p| p.package == "isolated")
+            .any(|p| p.package == "test/isolated")
     );
     let mut request = test_request(&f);
     request
@@ -62,7 +62,11 @@ fn test_build_discovers_unreachable_packages_and_separates_cache_modes() {
             .collect::<Vec<_>>(),
         [
             (".", "TestRoot", "main.TestRoot"),
-            ("isolated", "TestUnreachable", "isolated.TestUnreachable")
+            (
+                "test/isolated",
+                "TestUnreachable",
+                "test/isolated.TestUnreachable"
+            )
         ]
     );
     assert_ne!(
@@ -131,13 +135,13 @@ fn test_build_visibility_covers_values_types_methods_and_generic_helpers() {
     f.put("left/left_test.ond", "package left\nfunc Helper(){}\n");
     f.put(
         "main_test.ond",
-        "package main\nimport \"left\"\nfunc TestExternal(){left.Helper()}",
+        "package main\nimport \"test/left\"\nfunc TestExternal(){left.Helper()}",
     );
     assert!(compile(test_request(&f), "compiler").is_err());
 }
 
 #[test]
-fn test_build_rejects_invalid_signatures_and_import_cycles_and_requires_main_file() {
+fn test_build_rejects_invalid_signatures_and_import_cycles_and_requires_app_main_file() {
     for function in [
         "func TestBad(x:u32){}",
         "func TestBad()->u32{return 1}",
@@ -159,7 +163,7 @@ fn test_build_rejects_invalid_signatures_and_import_cycles_and_requires_main_fil
     let f = Fixture::new();
     f.put(
         "leaf/leaf_test.ond",
-        "package leaf\nimport \"left\"\nfunc TestCycle(){var _=left.Value()}",
+        "package leaf\nimport \"test/left\"\nfunc TestCycle(){var _=left.Value()}",
     );
     assert!(
         compile(test_request(&f), "compiler")
@@ -175,6 +179,113 @@ fn test_build_rejects_invalid_signatures_and_import_cycles_and_requires_main_fil
             .join(" ")
             .contains("main.ond")
     );
+}
+
+#[test]
+fn library_test_build_links_without_an_executable_main() {
+    for root_main_file in [false, true] {
+        let f = Fixture::new();
+        fs::remove_file(f.0.join("main.ond")).unwrap();
+        f.put(
+            "api.ond",
+            "package test\nimport \"test/left\"\nfunc private() -> i32 { return left.Value() }\nfunc identity[T](value: T) -> T { return value }\n",
+        );
+        if root_main_file {
+            f.put("main.ond", "package test\nfunc Root() {}\n");
+        }
+        f.put(
+            "api_test.ond",
+            "package test\nfunc TestRoot() { _ = private(); _ = identity[i32](1) }\n",
+        );
+        f.put(
+            "left/left_test.ond",
+            "package left\nfunc TestLeft() { _ = Value() }\n",
+        );
+
+        assert!(compile(f.request(), "compiler").is_err());
+        let id = compiler_identity().unwrap();
+        let request = test_request(&f);
+        let result = compile(request.clone(), &id).unwrap();
+        let cases = &result.manifest.tests.as_ref().unwrap().cases;
+        assert!(cases.iter().any(|case| {
+            case.package == "test" && case.name == "TestRoot" && case.symbol == "test.TestRoot"
+        }));
+        assert!(cases.iter().any(|case| {
+            case.package == "test/left"
+                && case.name == "TestLeft"
+                && case.symbol == "test/left.TestLeft"
+        }));
+        assert_eq!(result.manifest.program.entry_symbol, "main.main");
+        assert!(!f.0.join(".ond/__test_entry__/main.ond").exists());
+        assert_eq!(f.0.join("main.ond").exists(), root_main_file);
+        let sidecar = link_with_debug(request_link(result.manifest))
+            .unwrap()
+            .tests
+            .unwrap();
+        assert_eq!(sidecar.cases.len(), 2);
+        assert!(!compile(request, &id).unwrap().frontend_ran);
+    }
+}
+
+#[test]
+fn library_test_build_links_with_no_test_cases() {
+    let f = Fixture::new();
+    fs::remove_file(f.0.join("main.ond")).unwrap();
+    f.put(
+        "api.ond",
+        "package test\nfunc Value() -> i32 { return 1 }\n",
+    );
+    let manifest = compile(test_request(&f), &compiler_identity().unwrap())
+        .unwrap()
+        .manifest;
+    assert!(manifest.tests.as_ref().unwrap().cases.is_empty());
+    assert!(
+        link_with_debug(request_link(manifest))
+            .unwrap()
+            .tests
+            .unwrap()
+            .cases
+            .is_empty()
+    );
+}
+
+#[test]
+fn all_virtual_library_sources_build_tests_without_a_disk_entry_file() {
+    let f = Fixture::new();
+    f.put("virtual/ond.toml", "[project]\nname = \"test\"\n");
+    let mut request = test_request(&f);
+    request.project_root = f.0.join("virtual");
+    request.sources = BTreeMap::from([
+        ("api.ond".into(), "package test\nfunc Own() {}\n".into()),
+        (
+            "api_test.ond".into(),
+            "package test\nfunc TestRoot() { Own() }\n".into(),
+        ),
+    ]);
+    let result = compile(request.clone(), &compiler_identity().unwrap()).unwrap();
+    assert_eq!(result.manifest.tests.as_ref().unwrap().cases.len(), 1);
+    assert_eq!(
+        result.manifest.tests.as_ref().unwrap().cases[0].package,
+        "test"
+    );
+    assert_eq!(
+        link_with_debug(request_link(result.manifest))
+            .unwrap()
+            .tests
+            .unwrap()
+            .cases
+            .len(),
+        1
+    );
+    assert!(!request.project_root.join("main.ond").exists());
+    request.test = false;
+    assert!(compile(request.clone(), "compiler").is_err());
+
+    request.sources = BTreeMap::from([(
+        "main.ond".into(),
+        "package main\nfunc main() {}\nfunc TestRoot() {}\n".into(),
+    )]);
+    assert!(compile(request, "compiler").is_ok());
 }
 
 #[test]
@@ -241,7 +352,7 @@ fn test_build_unused_generic_cannot_reference_other_package_tests() {
         f.put(
             "main.ond",
             &format!(
-                "package main\nimport \"left\"\nfunc unused[T](x:T){{{body}}}\nfunc main(){{}}"
+                "package main\nimport \"test/left\"\nfunc unused[T](x:T){{{body}}}\nfunc main(){{}}"
             ),
         );
         f.put(
@@ -251,7 +362,7 @@ fn test_build_unused_generic_cannot_reference_other_package_tests() {
         assert!(compile(test_request(&f), "compiler").is_err(), "{body}");
     }
     let f = Fixture::new();
-    f.put("main.ond", "package main\nimport \"left\"\nfunc unused[T](x:T){var value:left.Normal;left.Helper()}\nfunc main(){}");
+    f.put("main.ond", "package main\nimport \"test/left\"\nfunc unused[T](x:T){var value:left.Normal;left.Helper()}\nfunc main(){}");
     f.put(
         "left/left.ond",
         "package left\ntype Normal struct {}\nfunc Helper(){}",
@@ -346,7 +457,7 @@ fn test_build_hidden_types_do_not_collide_with_normal_receiver_type_parameters()
 #[test]
 fn test_build_hidden_declarations_do_not_shadow_normal_import_aliases() {
     let f = Fixture::new();
-    f.put("main.ond", "package main\nimport helper \"left\"\nfunc use[T](){helper.Value()}\nfunc main(){helper.Value();use[u32]()}\n");
+    f.put("main.ond", "package main\nimport helper \"test/left\"\nfunc use[T](){helper.Value()}\nfunc main(){helper.Value();use[u32]()}\n");
     f.put(
         "main_test.ond",
         "package main\nfunc helper(){}\nfunc TestHelper(){helper()}\n",
@@ -357,7 +468,7 @@ fn test_build_hidden_declarations_do_not_shadow_normal_import_aliases() {
     f.put("main.ond", "package main\nfunc helper(){}\nfunc main(){}\n");
     f.put(
         "main_test.ond",
-        "package main\nimport helper \"left\"\nfunc TestHelper(){helper.Value()}\n",
+        "package main\nimport helper \"test/left\"\nfunc TestHelper(){helper.Value()}\n",
     );
     assert!(
         compile(test_request(&f), "compiler")

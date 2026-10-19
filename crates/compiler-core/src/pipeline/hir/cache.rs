@@ -27,7 +27,7 @@ struct Inputs {
 struct PackageInput {
     logical: String,
     directory: Option<PathBuf>,
-    files: Vec<(PathBuf, String)>,
+    files: Vec<(PathBuf, String, Option<String>)>,
 }
 
 #[derive(Debug)]
@@ -50,20 +50,6 @@ impl SemanticCache {
         // and must reflect added/removed test declarations even on normal hits.
         let mut diagnostics = validate_generic_body_names(loaded, &ast).into_vec();
         diagnostics.extend(super::validation::import_cycles(&ast).into_vec());
-        if !loaded
-            .packages
-            .iter()
-            .any(|package| package.logical_path == ".")
-        {
-            diagnostics.push(Diagnostic::error(
-                Span::synthetic(),
-                "project root must contain `main.ond`",
-            ));
-            diagnostics.push(Diagnostic::error(
-                Span::synthetic(),
-                "`main` package must define `func main()`",
-            ));
-        }
         let mut current = BTreeSet::new();
         for package in &ast.packages {
             for test in [false, true] {
@@ -145,7 +131,11 @@ fn collect_inputs(loaded: &LoadedProject, ast: &ast::Project, owner: &str, test:
             .iter()
             .map(|file| {
                 let source = loaded.sources.file(file.file_id);
-                (source.path().to_path_buf(), source.text().to_string())
+                (
+                    source.path().to_path_buf(),
+                    source.text().to_string(),
+                    source.display_path().map(str::to_string),
+                )
             })
             .collect::<Vec<_>>();
         files.sort_by(|a, b| a.0.cmp(&b.0));
@@ -183,8 +173,16 @@ fn validate_entry(inputs: Inputs, key: &(String, bool)) -> Entry {
         let files = package
             .files
             .iter()
-            .map(|(path, text)| {
-                let id = loaded.sources.add_file(path.clone(), text.clone());
+            .map(|(path, text, display_path)| {
+                let id = if let Some(display_path) = display_path {
+                    loaded.sources.add_file_with_display_path(
+                        path.clone(),
+                        text.clone(),
+                        display_path.clone(),
+                    )
+                } else {
+                    loaded.sources.add_file(path.clone(), text.clone())
+                };
                 if package.logical == key.0 && is_test_source(path) == key.1 {
                     selected.insert(id);
                 }

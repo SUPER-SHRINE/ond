@@ -72,7 +72,7 @@ pub(super) fn compile_files(files: &[(&str, &str)]) -> Result<Compilation, Front
         std::process::id()
     ));
     std::fs::create_dir_all(&root).unwrap();
-    std::fs::write(root.join("ond.toml"), "").unwrap();
+    std::fs::write(root.join("ond.toml"), "[project]\nname = \"test\"\n").unwrap();
     for (name, source) in files {
         let path = root.join(name);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();

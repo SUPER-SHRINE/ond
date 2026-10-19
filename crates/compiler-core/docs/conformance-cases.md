@@ -133,7 +133,7 @@ cargo test --workspace
 ## P0 scope/grammarの追加ケース
 
 - SYN-07: 七段階の隣接優先順位、各binary段階の左結合、unary・postfix連鎖をASTで照合。型の整合する式はHIR定数の型・値も照合。
-- PKG-01: manifest/main.ond欠落、空project・空source、root/directory/package句の不一致。package句だけの宣言なしpackageは受理する（「空source」と区別）。
+- PKG-01: manifestのname欠落・無効、実行compileでのmain.ond欠落、空project・空source、root/directory/package句の不一致。libraryはmain.ondなしで編集・依存として利用できる。package句だけの宣言なしpackageは受理する（「空source」と区別）。
 - PKG-02: root相対の入れ子import、root import拒否、未知/不正path、自己循環・三段循環。
 - PKG-03: 各fileが自身のimportを宣言し、fileの辞書順に依存せず型・const・global・関数を参照。同pathの重複と、別fileの同aliasが異なるpathを指すケース。
 - INIT-03: main欠落・重複・型名との衝突・不正signature、別packageのmain、initの引数/戻り値各組み合わせ。

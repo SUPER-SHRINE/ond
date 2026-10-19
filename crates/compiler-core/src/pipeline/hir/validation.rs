@@ -198,8 +198,12 @@ pub(super) fn validate_project(
         .packages
         .iter()
         .filter(|p| p.logical_path == ".")
-        .flat_map(|p| &p.files)
-        .any(|id| loaded.sources.file(*id).path() == loaded.root.join("main.ond"));
+        .any(|package| {
+            package
+                .files
+                .iter()
+                .any(|id| loaded.sources.file(*id).path() == package.directory.join("main.ond"))
+        });
     let check_entry = selected.is_none_or(|selected| {
         ast.packages.iter().any(|package| {
             package.logical_path == "."

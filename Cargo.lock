@@ -317,6 +317,8 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "ond-interface",
+ "serde",
+ "toml",
  "unicode-general-category",
 ]
 

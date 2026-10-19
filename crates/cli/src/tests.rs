@@ -18,15 +18,15 @@ impl Fixture {
         ));
         fs::create_dir(&root).unwrap();
         let f = Self(root);
-        f.put("ond.toml", "");
-        f.put("main.ond", "package main\nimport \"left\"\nimport \"right\"\nfunc main(){var _=left.Value()+right.Value()}");
+        f.put("ond.toml", "[project]\nname = \"test\"\n");
+        f.put("main.ond", "package main\nimport \"test/left\"\nimport \"test/right\"\nfunc main(){var _=left.Value()+right.Value()}");
         f.put(
             "left/left.ond",
-            "package left\nimport \"leaf\"\nfunc Value()->i32{return leaf.Value()}",
+            "package left\nimport \"test/leaf\"\nfunc Value()->i32{return leaf.Value()}",
         );
         f.put(
             "right/right.ond",
-            "package right\nimport \"leaf\"\nfunc Value()->i32{return leaf.Value()}",
+            "package right\nimport \"test/leaf\"\nfunc Value()->i32{return leaf.Value()}",
         );
         f.put("leaf/leaf.ond", "package leaf\nfunc Value()->i32{return 1}");
         f.put(
@@ -62,7 +62,10 @@ impl Drop for Fixture {
 fn diamond_cache_rebuilds_reverse_dependents_even_for_body_only_change() {
     let f = Fixture::new();
     let cold = compile(f.request(), "test-compiler").unwrap();
-    assert_eq!(cold.rebuilt, [".", "leaf", "left", "other", "right"]);
+    assert_eq!(
+        cold.rebuilt,
+        [".", "test/leaf", "test/left", "test/other", "test/right"]
+    );
     let warm = compile(f.request(), "test-compiler").unwrap();
     assert!(!warm.frontend_ran);
     assert!(warm.rebuilt.is_empty());
@@ -72,18 +75,21 @@ fn diamond_cache_rebuilds_reverse_dependents_even_for_body_only_change() {
     );
     f.put("leaf/leaf.ond", "package leaf\nfunc Value()->i32{return 2}");
     let changed = compile(f.request(), "test-compiler").unwrap();
-    assert_eq!(changed.rebuilt, [".", "leaf", "left", "right"]);
-    assert_eq!(changed.reused, ["other"]);
+    assert_eq!(
+        changed.rebuilt,
+        [".", "test/leaf", "test/left", "test/right"]
+    );
+    assert_eq!(changed.reused, ["test/other"]);
     // Corrupt cached Object bytes: regenerate that package, with its same source build identity.
     let reference = changed
         .manifest
         .packages
         .iter()
-        .find(|p| p.package == "other")
+        .find(|p| p.package == "test/other")
         .unwrap();
     fs::write(&reference.path, b"broken").unwrap();
     let repaired = compile(f.request(), "test-compiler").unwrap();
-    assert_eq!(repaired.rebuilt, ["other"]);
+    assert_eq!(repaired.rebuilt, ["test/other"]);
     assert!(cache::read_artifact(&repaired.manifest.packages[3]).is_ok());
 }
 #[test]
@@ -94,12 +100,12 @@ fn compiler_manifest_and_source_set_changes_invalidate_cache() {
     f.put("other/extra.ond", "package other\nconst Extra=42");
     assert_eq!(
         compile(f.request(), "compiler-b").unwrap().rebuilt,
-        ["other"]
+        ["test/other"]
     );
     fs::rename(f.0.join("other/extra.ond"), f.0.join("other/renamed.ond")).unwrap();
     assert_eq!(
         compile(f.request(), "compiler-b").unwrap().rebuilt,
-        ["other"]
+        ["test/other"]
     );
     fs::remove_file(f.0.join("other/renamed.ond")).unwrap();
     // Exact original source set can reuse the earlier artifact.
@@ -109,7 +115,10 @@ fn compiler_manifest_and_source_set_changes_invalidate_cache() {
             .rebuilt
             .is_empty()
     );
-    f.put("ond.toml", "# changed project settings\n");
+    f.put(
+        "ond.toml",
+        "[project]\nname = \"test\"\n# changed project settings\n",
+    );
     assert_eq!(compile(f.request(), "compiler-b").unwrap().rebuilt.len(), 5);
 }
 
@@ -118,7 +127,7 @@ fn generic_specializations_are_part_of_cache_identity() {
     let f = Fixture::new();
     f.put(
         "main.ond",
-        "package main\nimport \"shared\"\nimport \"types\"\nfunc main(){\nvar model: types.Model\nvar number: i32 = shared.Outer[i32](1)\n}",
+        "package main\nimport \"test/shared\"\nimport \"test/types\"\nfunc main(){\nvar model: types.Model\nvar number: i32 = shared.Outer[i32](1)\n}",
     );
     f.put(
         "shared/shared.ond",
@@ -131,16 +140,16 @@ fn generic_specializations_are_part_of_cache_identity() {
     link(request_link(cold.manifest.clone())).unwrap();
     f.put(
         "main.ond",
-        "package main\nimport \"shared\"\nimport \"types\"\nfunc main(){\nvar model: types.Model\nvar number: i32 = shared.Outer[i32](1)\nvar again: i32 = shared.Outer[i32](2)\n}\n// caller edit without a new specialization\n",
+        "package main\nimport \"test/shared\"\nimport \"test/types\"\nfunc main(){\nvar model: types.Model\nvar number: i32 = shared.Outer[i32](1)\nvar again: i32 = shared.Outer[i32](2)\n}\n// caller edit without a new specialization\n",
     );
     let same_specializations = compile(f.request(), &id).unwrap();
     assert_eq!(same_specializations.rebuilt, ["."]);
-    assert!(same_specializations.reused.contains(&"shared".into()));
+    assert!(same_specializations.reused.contains(&"test/shared".into()));
     let original_shared = cold
         .manifest
         .packages
         .iter()
-        .find(|package| package.package == "shared")
+        .find(|package| package.package == "test/shared")
         .unwrap();
     assert_eq!(
         original_shared.build_id,
@@ -148,27 +157,27 @@ fn generic_specializations_are_part_of_cache_identity() {
             .manifest
             .packages
             .iter()
-            .find(|package| package.package == "shared")
+            .find(|package| package.package == "test/shared")
             .unwrap()
             .build_id
     );
 
     f.put(
         "main.ond",
-        "package main\nimport \"shared\"\nimport \"types\"\nfunc main(){\nvar model: types.Model\nvar number: i32 = shared.Outer[i32](1)\nvar copy: types.Model = shared.Outer[types.Model](model)\n}",
+        "package main\nimport \"test/shared\"\nimport \"test/types\"\nfunc main(){\nvar model: types.Model\nvar number: i32 = shared.Outer[i32](1)\nvar copy: types.Model = shared.Outer[types.Model](model)\n}",
     );
     let changed = compile(f.request(), &id).unwrap();
     let old_shared = cold
         .manifest
         .packages
         .iter()
-        .find(|package| package.package == "shared")
+        .find(|package| package.package == "test/shared")
         .unwrap();
     let new_shared = changed
         .manifest
         .packages
         .iter()
-        .find(|package| package.package == "shared")
+        .find(|package| package.package == "test/shared")
         .unwrap();
     assert_ne!(old_shared.build_id, new_shared.build_id);
     link(request_link(changed.manifest.clone())).unwrap();
@@ -176,7 +185,7 @@ fn generic_specializations_are_part_of_cache_identity() {
     *mixed
         .packages
         .iter_mut()
-        .find(|package| package.package == "shared")
+        .find(|package| package.package == "test/shared")
         .unwrap() = old_shared.clone();
     assert!(
         link(request_link(mixed))
@@ -192,7 +201,7 @@ fn generic_specializations_are_part_of_cache_identity() {
 
     f.put("aaa/aaa.ond", "package aaa\ntype Added struct{}\n");
     let shifted = compile(f.request(), &id).unwrap();
-    assert!(shifted.reused.contains(&"shared".into()));
+    assert!(shifted.reused.contains(&"test/shared".into()));
     let shifted_image = link(request_link(shifted.manifest)).unwrap();
 
     let mut fresh_request = f.request();
@@ -215,8 +224,8 @@ fn nested_generic_cache_tracks_caller_type_layout_and_signatureless_arguments() 
     f.put(
         "main.ond",
         r#"package main
-import "shared"
-import "inner"
+import "test/shared"
+import "test/inner"
 type Token struct { Value:u32 }
 type Box[T] struct { Value:T }
 func main() {
@@ -230,7 +239,7 @@ func main() {
     );
     f.put(
         "shared/shared.ond",
-        "package shared\nimport \"inner\"\nfunc Outer[T](value:T)->T{return inner.Identity[T](value)}\n",
+        "package shared\nimport \"test/inner\"\nfunc Outer[T](value:T)->T{return inner.Identity[T](value)}\n",
     );
     f.put(
         "inner/inner.ond",
@@ -243,8 +252,8 @@ func main() {
     f.put(
         "main.ond",
         r#"package main
-import "shared"
-import "inner"
+import "test/shared"
+import "test/inner"
 type Token struct { Value:u32; Next:*Token }
 type Box[T] struct { Value:T }
 func main() {
@@ -257,7 +266,7 @@ func main() {
 "#,
     );
     let token_changed = compile(f.request(), &id).unwrap();
-    for owner in ["shared", "inner"] {
+    for owner in ["test/shared", "test/inner"] {
         let before = cold
             .manifest
             .packages
@@ -278,8 +287,8 @@ func main() {
     f.put(
         "main.ond",
         r#"package main
-import "shared"
-import "inner"
+import "test/shared"
+import "test/inner"
 type Token struct { Value:u32; Next:*Token }
 type Box[T] struct { Value:T; Extra:u32 }
 func main() {
@@ -292,7 +301,7 @@ func main() {
 "#,
     );
     let layout_changed = compile(f.request(), &id).unwrap();
-    for owner in ["shared", "inner"] {
+    for owner in ["test/shared", "test/inner"] {
         let before = token_changed
             .manifest
             .packages
@@ -313,8 +322,8 @@ func main() {
     f.put(
         "main.ond",
         r#"package main
-import "shared"
-import "inner"
+import "test/shared"
+import "test/inner"
 type Token struct { Value:u32; Next:*Token }
 type Box[T] struct { Value:T; Extra:u32 }
 type Added struct { Value:u32 }
@@ -331,7 +340,7 @@ func main() {
 "#,
     );
     let new_specializations = compile(f.request(), &id).unwrap();
-    for owner in ["shared", "inner"] {
+    for owner in ["test/shared", "test/inner"] {
         assert!(new_specializations.rebuilt.contains(&owner.to_owned()));
     }
     link(request_link(new_specializations.manifest.clone())).unwrap();
@@ -356,7 +365,7 @@ fn generic_cache_tracks_folded_layout_query_results() {
     let f = Fixture::new();
     f.put(
         "shared/shared.ond",
-        "package shared\nimport \"inner\"\nfunc Size[T]()->u32{return sizeof(T)}\nfunc Outer[T]()->u32{return inner.Align[T]()}\n",
+        "package shared\nimport \"test/inner\"\nfunc Size[T]()->u32{return sizeof(T)}\nfunc Outer[T]()->u32{return inner.Align[T]()}\n",
     );
     f.put(
         "inner/inner.ond",
@@ -366,7 +375,7 @@ fn generic_cache_tracks_folded_layout_query_results() {
     let source = |token: &str, extra: &str| {
         format!(
             r#"package main
-import "shared"
+import "test/shared"
 type Token struct {{ Value:{token} }}
 type Box[T] struct {{ Value:T; {extra} }}
 func main() {{
@@ -386,9 +395,9 @@ func main() {{
         let changed = compile(f.request(), &id).unwrap();
         // The second edit changes size alone; the alignment-only inner owner can be reused.
         let owners: &[&str] = if index == 0 {
-            &["shared", "inner"]
+            &["test/shared", "test/inner"]
         } else {
-            &["shared"]
+            &["test/shared"]
         };
         for owner in owners {
             let old = before
@@ -460,7 +469,7 @@ fn virtual_sources_conflicts_diagnostics_and_failed_build() {
     );
     assert_eq!(
         compile(request.clone(), "compiler").unwrap().rebuilt,
-        ["other"]
+        ["test/other"]
     );
     assert!(
         compile(request.clone(), "compiler")
@@ -509,7 +518,7 @@ fn virtual_sources_conflicts_diagnostics_and_failed_build() {
     assert!(compile(f.request(), "compiler").unwrap().rebuilt.is_empty());
     f.put(
         "leaf/leaf.ond",
-        "package leaf\nimport \"left\"\nfunc Value()->i32{return left.Value()}",
+        "package leaf\nimport \"test/left\"\nfunc Value()->i32{return left.Value()}",
     );
     assert!(
         compile(f.request(), "compiler")
@@ -600,11 +609,11 @@ fn serialized_packages_link_identically_to_full_codegen_without_runtime_initiali
     );
     f.put(
         "left/left.ond",
-        "package left\nimport \"leaf\"\nfunc Value()->i32{return leaf.Value()}",
+        "package left\nimport \"test/leaf\"\nfunc Value()->i32{return leaf.Value()}",
     );
     f.put(
         "main.ond",
-        "package main\nimport \"right\"\nimport \"left\"\nfunc main(){var _=left.Value()+right.Value()}",
+        "package main\nimport \"test/right\"\nimport \"test/left\"\nfunc main(){var _=left.Value()+right.Value()}",
     );
     let id = compiler_identity().unwrap();
     let cold = compile(f.request(), &id).unwrap();
@@ -633,7 +642,7 @@ fn serialized_packages_link_identically_to_full_codegen_without_runtime_initiali
         cache::encode(&reference).unwrap()
     );
     let mut bad = cold.manifest.clone();
-    bad.packages.retain(|p| p.package != "leaf");
+    bad.packages.retain(|p| p.package != "test/leaf");
     assert!(
         link(request_link(bad))
             .unwrap_err()
@@ -665,12 +674,12 @@ fn serialized_packages_link_identically_to_full_codegen_without_runtime_initiali
     *mixed
         .packages
         .iter_mut()
-        .find(|p| p.package == "leaf")
+        .find(|p| p.package == "test/leaf")
         .unwrap() = updated
         .manifest
         .packages
         .iter()
-        .find(|p| p.package == "leaf")
+        .find(|p| p.package == "test/leaf")
         .unwrap()
         .clone();
     assert!(
@@ -685,7 +694,7 @@ fn serialized_packages_link_identically_to_full_codegen_without_runtime_initiali
 fn cached_generic_owner_links_rebuilt_caller_after_type_id_shift() {
     let f = Fixture::new();
     let main = r#"package main
-import "api"
+import "test/api"
 func main() {
     cell := api.Cell[api.Token]{}
     _ = cell.Get()
@@ -715,7 +724,7 @@ operator (plain: Plain) + (cell: Cell[Token])->u32 { return cell.Value.Value }
         .manifest
         .packages
         .iter()
-        .find(|p| p.package == "api")
+        .find(|p| p.package == "test/api")
         .unwrap();
     f.put(
         "aaa/extra.ond",
@@ -723,7 +732,7 @@ operator (plain: Plain) + (cell: Cell[Token])->u32 { return cell.Value.Value }
     );
     f.put("main.ond", &format!("{main}\n// rebuild caller\n"));
     let after = compile(f.request(), &id).unwrap();
-    assert!(after.reused.iter().any(|p| p == "api"));
+    assert!(after.reused.iter().any(|p| p == "test/api"));
     assert!(after.rebuilt.iter().any(|p| p == "."));
     assert_eq!(
         owner.path,
@@ -731,7 +740,7 @@ operator (plain: Plain) + (cell: Cell[Token])->u32 { return cell.Value.Value }
             .manifest
             .packages
             .iter()
-            .find(|p| p.package == "api")
+            .find(|p| p.package == "test/api")
             .unwrap()
             .path
     );

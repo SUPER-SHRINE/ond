@@ -182,7 +182,7 @@ func run() -> (i32, i32) {
 fn calls_support_imports_forward_references_and_mutual_recursion() {
     let c = checked(
         r#"package main
-import "shared"
+import "test/shared"
 func main() {}
 func run() -> i32 { return shared.Double(later(3)); }
 func later(x: i32) -> i32 { return x + 1; }

@@ -223,7 +223,7 @@ pub const CASES: &[Evaluation] = &[
         files: &[
             File {
                 path: "main.ond",
-                text: "package main\nimport \"shared\"\nvar Trace: i32\nvar Result: i32\ntype S struct { Value: i32; }\nfunc main() {}\nfunc value(tag: i32, n: i32) -> i32 { Trace = Trace * 10 + tag; return n; }\nfunc test() -> (i32, i32, i32) {\n{ var shared = S{Value: value(1, shared.Exported + 1)}; Result = value(2, shared.Value); }\nreturn Trace, Result, shared.Exported;\n}\n",
+                text: "package main\nimport \"test/shared\"\nvar Trace: i32\nvar Result: i32\ntype S struct { Value: i32; }\nfunc main() {}\nfunc value(tag: i32, n: i32) -> i32 { Trace = Trace * 10 + tag; return n; }\nfunc test() -> (i32, i32, i32) {\n{ var shared = S{Value: value(1, shared.Exported + 1)}; Result = value(2, shared.Value); }\nreturn Trace, Result, shared.Exported;\n}\n",
             },
             File {
                 path: "shared/a.ond",

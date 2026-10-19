@@ -33,6 +33,7 @@ pub struct SourceFile {
     path: PathBuf,
     text: String,
     line_starts: Vec<usize>,
+    display_path: Option<String>,
 }
 
 impl SourceFile {
@@ -47,6 +48,7 @@ impl SourceFile {
             path,
             text,
             line_starts,
+            display_path: None,
         }
     }
 
@@ -56,6 +58,12 @@ impl SourceFile {
 
     pub fn text(&self) -> &str {
         &self.text
+    }
+
+    /// Return the project-relative or logical library path recorded by a project loader.
+    /// Files added directly to a [`SourceDb`] have no recorded display path.
+    pub fn display_path(&self) -> Option<&str> {
+        self.display_path.as_deref()
     }
 
     pub fn slice(&self, span: Span) -> &str {
@@ -93,6 +101,17 @@ impl SourceDb {
     pub fn add_file(&mut self, path: PathBuf, text: String) -> FileId {
         let id = FileId(self.files.len());
         self.files.push(SourceFile::new(path, text));
+        id
+    }
+
+    pub(crate) fn add_file_with_display_path(
+        &mut self,
+        path: PathBuf,
+        text: String,
+        display_path: String,
+    ) -> FileId {
+        let id = self.add_file(path, text);
+        self.files[id.0].display_path = Some(display_path);
         id
     }
 

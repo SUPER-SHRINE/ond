@@ -58,7 +58,11 @@ sidecarの`entry_point`はinitializerを実行してそのtest functionだけを
 通常ビルドは全ての通常sourceを対象にし、`test.ond`と`_test.ond`を除外する。\
 通常entryはpackage initializerを順に呼び、最後に`main.main`を呼ぶ。
 
-通常ビルドとテストビルドのいずれでも、project rootの`main.ond`必須条件は維持する。\
+実行projectの通常ビルドとテストビルドでは、rootの`main.ond`と`func main`を必須とする。\
+library projectはrootの`main.ond`と`func main`がなくても`ond compile --test`でテストビルドできる。\
+library rootにsourceがある場合は`package project名`を宣言し、rootのテストcaseもそのpackageに属する。\
+rootに`main.ond`という名前のlibrary sourceがあっても、`package main`や`func main`は要求しない。\
+libraryの通常compileは実行入口を要求する。\
 テストビルドでは通常の`main` functionを起動しない。
 
 テストビルドは通常sourceと対象project内のテストsource全体をbuildし、個々のテストを選ぶcompile範囲filterやpackage別binaryを設けない。\
@@ -119,7 +123,7 @@ Ondはtest functionを実行せず、console出力、assertion、合否報告、
 - 通常sourceや別packageからtest-only declarationを参照できない
 - test sourceから同packageのprivate declarationへアクセスできる
 - test sourceから通常sourceへのimportは許可し、循環importは既存規則で拒否する
-- project rootの`main.ond`必須条件を保つ
+- 実行projectを対象とするcompileではrootの`main.ond`と`func main`を必須とし、libraryの`--test`では不要とする
 - 通常manifestで`tests` fieldが不在、test manifestで`{"cases":[]}`または複数caseとなり、追加mode fieldやnullを使わない
 - 通常/test cacheを混同しない
 - test manifestの`symbol`が元test functionを指し、linkが個別wrapperのguest `entry_point`を確定する

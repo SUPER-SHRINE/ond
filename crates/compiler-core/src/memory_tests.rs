@@ -208,7 +208,7 @@ fn imported_private_fields_remain_private() {
         "var p = shared.Point{hidden: 1}",
     ] {
         let error = compile(
-            &format!("package main\nimport \"shared\"\nfunc main() {{\n{body}\n}}\n"),
+            &format!("package main\nimport \"test/shared\"\nfunc main() {{\n{body}\n}}\n"),
             Some("package shared\ntype Point struct { hidden: i32; Public: i32; }\n"),
         )
         .unwrap_err();

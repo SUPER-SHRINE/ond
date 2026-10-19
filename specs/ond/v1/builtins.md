@@ -118,13 +118,16 @@ report(thisFile(), thisLine())
 
 - 引数は取らない
 - `thisFile()` 自身を含むsource fileの論理pathを、null終端された読み取り専用byte列への`*u8`として返す
-- project root packageのfileはfile名だけを使い、それ以外はpackageのlogical import pathとfile名を`/`で連結する
+- project所有のfileはproject rootからの相対pathを使う。
+  root直下のfileはfile名だけとなり、subpackageでもproject名を含めない
+- 追加library rootまたは依存projectから渡されるfileは、そのpackageのlogical import pathとfile名を`/`で連結する
 - host上のproject root、library root、絶対pathは含めない
 - path separatorはhost OSによらず`/`とする
 - 指し示すstorageの寿命はプログラム全体とし、書き込んではならない
 - 同じ論理pathのstorageは同一Object内で共有してよい
 
-例えばproject rootの`main.ond`では`"main.ond\000"`相当、package `graphics/draw`の`render.ond`では`"graphics/draw/render.ond\000"`相当のstorageを指す。
+例えばproject rootの`main.ond`では`"main.ond\000"`相当、project `game`内の`draw/render.ond`では`"draw/render.ond\000"`相当のstorageを指す。
+追加library package `graphics/draw`の`render.ond`では`"graphics/draw/render.ond\000"`相当となる。
 
 ## 7. `thisLine`
 <!-- ond-spec-id: builtins/this-line -->

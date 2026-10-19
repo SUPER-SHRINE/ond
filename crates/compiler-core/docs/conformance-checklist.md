@@ -81,7 +81,7 @@ Q-03短絡castの決定反映後: 同コマンドで全289テスト成功、comp
 
 | ID | 確認対象 | 状態 / 既存証拠 | 不足・追加対象 |
 | --- | --- | --- | --- |
-| PKG-01 | manifest/main.ond必須、directoryとpackage名一致 | 検証済 A/D: [scope](../src/conformance/scope.rs) PKG-01.* とseed missing-main-file.reject | 空project/空sourceは拒否。package句だけで宣言のないpackageは受理（仕様は宣言数を要求しない） |
+| PKG-01 | 全projectでmanifestの有効なnameが必須。実行compileではmain.ondとfunc mainが必須。directoryとpackage名一致 | 検証済 A/D: [scope](../src/conformance/scope.rs) PKG-01.* とseed missing-main-file.reject | libraryはmain.ondなしで編集・依存として利用可能。空project/空sourceは実行compileで拒否。package句だけで宣言のないpackageは受理（仕様は宣言数を要求しない） |
 | PKG-02 | 相対import、root import禁止、存在しないimport、循環 | 検証済 A/D: [scope](../src/conformance/scope.rs) PKG-02.*、[LEX] import_paths_use_the_same_string_decoding | 入れ子path、root/未知/不正path、自己/三段循環の診断文・file/spanを照合 |
 | PKG-03 | import名のfile scope・同path重複・fileごとのalias | 検証済 A/D/H: [scope](../src/conformance/scope.rs) PKG-03.*、[GLOBAL] 初期化順 | 各fileが必要なimportを宣言し、辞書順が前/後のfileから型/const/global/functionを参照する。別fileの同aliasが異なるpathを指せることも確認 |
 | PKG-04 | 公開/非公開のtype・const・global・function | 部分 A/D/E: [SEM]/[GLOBAL]/[LEX] 公開判定、[P1制御表](./control-flow-conformance.md) import名のlocal shadowと復元 | 残りは全symbol種×公開/非公開×未importの対照。qualifier shadowの代表例は検証済 |

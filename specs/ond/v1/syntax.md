@@ -41,10 +41,18 @@ Ond の文法は semicolon 付きで定義し、source では自動挿入する�
 各 file は先頭に 1 個の package clause を持つ。
 
 - `ond.toml` がある directory を project root とし、source package の探索起点とする。
-- project root 自体は `main` package であり、`main.ond` を含まなければならない。project root 直下の全 `.ond` file は `package main` を宣言する。
+- 全projectの`ond.toml`は、有効なOndの識別子を`[project].name`に宣言する。
+- 実行projectのrootは`main` packageであり、`main.ond`と`func main`を含む。
+  root直下の全`.ond` fileは`package main`を宣言する。
+  library projectはrootの`main.ond`と`func main`がなくても編集・依存として利用できる。
+  library rootにsourceがある場合、そのpackage名はproject名と一致する。
 - 1 directory を 1 package とし、directory 内の全 `.ond` file は同じ package 名を宣言しなければならない。
 - project root 以外の package 名は directory 名と一致しなければならない。
-- import path は project root または実装が提供する追加 library root からの相対 directory を、`/` 区切りで表した string literal とする。project root の `main` package は import できない。
+- project内のsubpackageのimport pathは`project名/相対directory`を`/`区切りで表す。
+  library root packageのimport pathはproject名そのものとする。
+  project名を省いたsubpackageのpathは解決しない。
+  実装が提供する追加library rootのpackageは、そのroot内の論理pathで参照する。
+  実行projectのrootにある`main` packageはimportできない。
 - `import alias "path"` は明示的な import alias を宣言する。`.` import と grouped import は持たない。
 - alias を省略した import は、その package の宣言名で参照する。
 

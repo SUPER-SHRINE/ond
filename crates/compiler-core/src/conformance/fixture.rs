@@ -24,7 +24,11 @@ impl Fixture {
         std::fs::create_dir(&root).map_err(|e| e.to_string())?;
         let fixture = Self { root };
         if manifest {
-            std::fs::write(fixture.root.join("ond.toml"), "").map_err(|e| e.to_string())?;
+            std::fs::write(
+                fixture.root.join("ond.toml"),
+                "[project]\nname = \"test\"\n",
+            )
+            .map_err(|e| e.to_string())?;
         }
         for file in files {
             let path = fixture.root.join(file.path);

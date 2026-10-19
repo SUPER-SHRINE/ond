@@ -77,7 +77,7 @@ fn fibonacci_example_exits_and_writes_debug_output() {
 fn nil_function_pointer_call_faults() {
     let root = temp_dir();
     fs::create_dir_all(&root).unwrap();
-    fs::write(root.join("ond.toml"), "[project]\nname=\"nil-fn\"\n").unwrap();
+    fs::write(root.join("ond.toml"), "[project]\nname=\"nil_fn\"\n").unwrap();
     fs::write(
         root.join("main.ond"),
         "package main\n\nfunc main() {\n    var callback: func(value: u32) -> u32 = nil\n    callback(1 as u32)\n}\n",
@@ -132,7 +132,7 @@ fn array_bounds_fixture_does_not_depend_on_legacy_string_lowering() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("ond.toml"),
-        "[project]\nname=\"byte-array-bounds\"\n",
+        "[project]\nname=\"byte_array_bounds\"\n",
     )
     .unwrap();
     fs::write(
@@ -153,7 +153,7 @@ fn array_bounds_fixture_does_not_depend_on_legacy_string_lowering() {
 fn nested_call_arguments_preserve_previous_argument_values() {
     let root = temp_dir();
     fs::create_dir_all(&root).unwrap();
-    fs::write(root.join("ond.toml"), "[project]\nname=\"nested-call\"\n").unwrap();
+    fs::write(root.join("ond.toml"), "[project]\nname=\"nested_call\"\n").unwrap();
     fs::write(
         root.join("main.ond"),
         "package main\n\nfunc id(value: u32) -> u32 {\n    return value\n}\n\nfunc add(a: u32, b: u32, c: u32, d: u32, e: u32, f: u32) -> u32 {\n    return a + b + c + d + e + f\n}\n\nfunc fail() {\n    var local: [1 as u32]u8\n    var index: u32 = 1\n    local[index] = 1 as u8\n}\n\nfunc main() {\n    var result: u32 = add(1 as u32, id(2 as u32), 3 as u32, id(4 as u32), 5 as u32, id(6 as u32))\n    if result != 21 as u32 {\n        fail()\n    }\n}\n",
@@ -172,7 +172,7 @@ fn invalid_float_to_integer_cast_faults() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("ond.toml"),
-        "[project]\nname=\"float-cast-fault\"\n",
+        "[project]\nname=\"float_cast_fault\"\n",
     )
     .unwrap();
     fs::write(
@@ -195,7 +195,7 @@ fn float_arithmetic_pipeline_exits_zero() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("ond.toml"),
-        "[project]\nname=\"float-pipeline\"\n",
+        "[project]\nname=\"float_pipeline\"\n",
     )
     .unwrap();
     fs::write(
@@ -216,7 +216,7 @@ fn float_add_outputs_raw_bytes() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("ond.toml"),
-        "[project]\nname=\"float-add-bytes\"\n",
+        "[project]\nname=\"float_add_bytes\"\n",
     )
     .unwrap();
     fs::write(
@@ -239,7 +239,7 @@ fn float_neg_outputs_expected_bytes() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("ond.toml"),
-        "[project]\nname=\"float-neg-bytes\"\n",
+        "[project]\nname=\"float_neg_bytes\"\n",
     )
     .unwrap();
     fs::write(
@@ -262,7 +262,7 @@ fn float_from_i32_outputs_expected_bytes() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("ond.toml"),
-        "[project]\nname=\"float-from-i32-bytes\"\n",
+        "[project]\nname=\"float_from_i32_bytes\"\n",
     )
     .unwrap();
     fs::write(
@@ -283,7 +283,7 @@ fn float_from_i32_outputs_expected_bytes() {
 fn mixed_i32_u32_multi_return_exits_zero() {
     let root = temp_dir();
     fs::create_dir_all(&root).unwrap();
-    fs::write(root.join("ond.toml"), "[project]\nname=\"mixed-ret\"\n").unwrap();
+    fs::write(root.join("ond.toml"), "[project]\nname=\"mixed_ret\"\n").unwrap();
     fs::write(
         root.join("main.ond"),
         "package main\n\nfunc fail(addr: u32) {\n    var ptr: *u8 = addr as *u8\n    ptr[0 as u32] = 1 as u8\n}\n\nfunc decode(value: u32) -> (i32, u32) {\n    var expField: u32 = (value >> (23 as u32)) & (0xFF as u32)\n    return (expField as i32) - (127 as i32), value & (0x007F_FFFF as u32)\n}\n\nfunc main() {\n    var exp: i32\n    var frac: u32\n    exp, frac = decode(0x4010_0000 as u32)\n    if exp != 1 as i32 {\n        fail(0x1000_0101 as u32)\n    }\n    if frac != 0x0010_0000 as u32 {\n        fail(0x1000_0102 as u32)\n    }\n\n    var otherExp: i32\n    var otherFrac: u32\n    otherExp, otherFrac = decode(0x3FC0_0000 as u32)\n    if otherExp != 0 as i32 {\n        fail(0x1000_0103 as u32)\n    }\n    if otherFrac != 0x0040_0000 as u32 {\n        fail(0x1000_0104 as u32)\n    }\n    if otherExp < exp {\n        return\n    }\n    fail(0x1000_0105 as u32)\n}\n",
@@ -302,7 +302,7 @@ fn address_of_local_u32_supports_byte_reads() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("ond.toml"),
-        "[project]\nname=\"addr-local-u32\"\n",
+        "[project]\nname=\"addr_local_u32\"\n",
     )
     .unwrap();
     fs::write(
@@ -323,7 +323,7 @@ fn address_of_local_f32_supports_byte_reads() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("ond.toml"),
-        "[project]\nname=\"addr-local-f32\"\n",
+        "[project]\nname=\"addr_local_f32\"\n",
     )
     .unwrap();
     fs::write(
@@ -342,7 +342,7 @@ fn address_of_local_f32_supports_byte_reads() {
 fn dynamic_shift_ops_on_u32_work() {
     let root = temp_dir();
     fs::create_dir_all(&root).unwrap();
-    fs::write(root.join("ond.toml"), "[project]\nname=\"dynamic-shift\"\n").unwrap();
+    fs::write(root.join("ond.toml"), "[project]\nname=\"dynamic_shift\"\n").unwrap();
     fs::write(
         root.join("main.ond"),
         "package main\n\nfunc fail(addr: u32) {\n    var ptr: *u8 = addr as *u8\n    ptr[0 as u32] = 1 as u8\n}\n\nfunc main() {\n    var value: u32 = 0x0600_0000 as u32\n    var amount: u32 = 1 as u32\n    var shiftedRight: u32 = value >> amount\n    if shiftedRight != 0x0300_0000 as u32 {\n        fail(0x1000_0401 as u32)\n    }\n\n    var shiftedLeft: u32 = shiftedRight << amount\n    if shiftedLeft != value {\n        fail(0x1000_0402 as u32)\n    }\n}\n",
@@ -361,7 +361,7 @@ fn nested_bit_expression_on_u32_works() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("ond.toml"),
-        "[project]\nname=\"nested-bit-expr\"\n",
+        "[project]\nname=\"nested_bit_expr\"\n",
     )
     .unwrap();
     fs::write(
@@ -382,7 +382,7 @@ fn byte_reassembly_expression_works() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("ond.toml"),
-        "[project]\nname=\"byte-reassembly\"\n",
+        "[project]\nname=\"byte_reassembly\"\n",
     )
     .unwrap();
     fs::write(
@@ -401,7 +401,7 @@ fn byte_reassembly_expression_works() {
 fn divide_by_zero_faults() {
     let root = temp_dir();
     fs::create_dir_all(&root).unwrap();
-    fs::write(root.join("ond.toml"), "[project]\nname=\"div-zero\"\n").unwrap();
+    fs::write(root.join("ond.toml"), "[project]\nname=\"div_zero\"\n").unwrap();
     fs::write(
         root.join("main.ond"),
         "package main\n\nfunc main() {\n    var zero: u32 = 0\n    var value: u32 = (1 as u32) / zero\n    if value == 0 as u32 {\n        return\n    }\n}\n",

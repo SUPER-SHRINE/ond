@@ -28,7 +28,14 @@ hello/
 └── main.ond
 ```
 
-`ond.toml`は空でよい。project root自体は常に`main` packageになる。
+`ond.toml`にはproject名が必要である。\
+名前にはOndの識別子を使う。\
+実行projectのrootは`main` packageになる。
+
+```toml
+[project]
+name = "hello"
+```
 
 `main.ond`にはentry functionを定義する。
 

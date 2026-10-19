@@ -35,7 +35,7 @@ pub(super) const CASES: &[Case] = &[
         files: &[
             SourceFile {
                 path: "main.ond",
-                text: "package main\nimport \"shared\"\nfunc main() {}\n",
+                text: "package main\nimport \"test/shared\"\nfunc main() {}\n",
             },
             SourceFile {
                 path: "shared/値.ond",

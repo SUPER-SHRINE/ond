@@ -10,7 +10,7 @@ impl Fixture {
     fn new(label: &str) -> Self {
         let root = std::env::temp_dir().join(format!("ond-exports-{label}-{}", std::process::id()));
         fs::create_dir(&root).unwrap();
-        fs::write(root.join("ond.toml"), "").unwrap();
+        fs::write(root.join("ond.toml"), "[project]\nname = \"test\"\n").unwrap();
         Self(root)
     }
     fn request(&self) -> CompileRequest {
@@ -37,7 +37,7 @@ fn export_closure_roundtrips_recursive_types_private_owners_and_constant_bits() 
     request.sources = BTreeMap::from([
         (
             "main.ond".into(),
-            "package main\nimport \"api\"\nfunc main(){var _=api.Flag}".into(),
+            "package main\nimport \"test/api\"\nfunc main(){var _=api.Flag}".into(),
         ),
         (
             "api/api.ond".into(),
@@ -64,7 +64,7 @@ func secret(){}
         .manifest
         .packages
         .iter()
-        .find(|p| p.package == "api")
+        .find(|p| p.package == "test/api")
         .unwrap();
     let artifact = cache::read_artifact(reference).unwrap();
     let data = &artifact.interface;
@@ -74,12 +74,12 @@ func secret(){}
         !data
             .types
             .iter()
-            .any(|t| t.name.as_deref() == Some("api.unused"))
+            .any(|t| t.name.as_deref() == Some("test/api.unused"))
     );
     assert!(
         data.types
             .iter()
-            .any(|t| t.name.as_deref() == Some("api.hidden"))
+            .any(|t| t.name.as_deref() == Some("test/api.hidden"))
     );
     let Export::Type(node) = data.exports["Node"] else {
         panic!("not a type")
@@ -89,7 +89,7 @@ func secret(){}
         data.types
             .iter()
             .any(|t| matches!(&t.kind, Kind::Struct(fields)
-        if fields.iter().any(|f| f.name=="hidden" && f.private_owner.as_deref()==Some("api"))))
+        if fields.iter().any(|f| f.name=="hidden" && f.private_owner.as_deref()==Some("test/api"))))
     );
     assert!(
         matches!(&data.exports["Real"], Export::Constant(v) if v.kind == ValueKind::Float32(0x80000000))
@@ -114,7 +114,7 @@ func secret(){}
             .manifest
             .packages
             .iter()
-            .find(|p| p.package == "api")
+            .find(|p| p.package == "test/api")
             .unwrap(),
     )
     .unwrap();
@@ -157,7 +157,14 @@ fn optional_library_reachability_and_required_package_membership() {
         "package lib\nconst Extra=2".into(),
     );
     let result = compile(request, "test").unwrap();
-    assert_eq!(result.manifest.packages.len(), 3);
+    assert_eq!(result.manifest.packages.len(), 2);
+    assert!(
+        result
+            .manifest
+            .packages
+            .iter()
+            .any(|package| package.package == "test/lib")
+    );
 }
 
 #[test]
@@ -165,7 +172,7 @@ fn generic_metadata_identity_survives_unrelated_type_ids() {
     let f = Fixture::new("generic-identity");
     let mut request = f.request();
     request.sources = BTreeMap::from([
-        ("main.ond".into(), "package main\nimport \"api\"\nfunc main(){ cell:=api.Make(); _=cell.Get() }".into()),
+        ("main.ond".into(), "package main\nimport \"test/api\"\nfunc main(){ cell:=api.Make(); _=cell.Get() }".into()),
         ("api/api.ond".into(), "package api\ntype Token struct { Value:u32 }\ntype Cell[T] struct { Value:T }\nfunc (cell:Cell[T]) Get()->T { return cell.Value }\nfunc Make()->Cell[Token]{ return Cell[Token]{} }".into()),
     ]);
     let before = compile(request.clone(), "test").unwrap();
@@ -174,7 +181,7 @@ fn generic_metadata_identity_survives_unrelated_type_ids() {
             .manifest
             .packages
             .iter()
-            .find(|p| p.package == "api")
+            .find(|p| p.package == "test/api")
             .unwrap(),
     )
     .unwrap();
@@ -196,7 +203,7 @@ fn generic_metadata_identity_survives_unrelated_type_ids() {
             .manifest
             .packages
             .iter()
-            .find(|p| p.package == "api")
+            .find(|p| p.package == "test/api")
             .unwrap(),
     )
     .unwrap();

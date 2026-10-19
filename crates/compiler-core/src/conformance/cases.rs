@@ -88,7 +88,7 @@ pub(super) const CASES: &[Case] = &[
         files: &[
             SourceFile {
                 path: "main.ond",
-                text: "package main\nimport \"shared\"\nconst Answer = shared.Base * 2\nconst Flag = true\nconst Text = \"音\"\nconst Pointer: *u8 = nil\nconst F = -0.0\nfunc main() {}\nfunc result() -> i32 { return Answer; }\n",
+                text: "package main\nimport \"test/shared\"\nconst Answer = shared.Base * 2\nconst Flag = true\nconst Text = \"音\"\nconst Pointer: *u8 = nil\nconst F = -0.0\nfunc main() {}\nfunc result() -> i32 { return Answer; }\n",
             },
             SourceFile {
                 path: "shared/shared.ond",

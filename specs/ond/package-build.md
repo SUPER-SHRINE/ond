@@ -63,9 +63,14 @@ ond compile . -o - | ond link - --ram 0x10002000:0x03FFE000 --stack 1MiB --retur
 `--test`はmanifestへtest metadataを記録し、link時のtest sidecar生成を指定する。
 
 - project省略時はカレントディレクトリ。ond.tomlのあるprojectをコンパイルする。
+- すべてのond.tomlにOndの有効なidentifierである`[project].name`が必要である。
+  project自身の子packageも`project名/相対directory`でimportし、project名を省いたpathは解決しない。
+  実行projectのrootには`main.ond`と`func main`が必要であり、rootの`main` packageはimportできない。
+  libraryはrootの`main.ond`と`func main`がなくても編集・依存として利用でき、`ond compile --test`でテストビルドできる。
+  libraryを実行成果物として通常compileするcommandは設けない。
 - ond.tomlの`[dependencies]`のkeyはmanifest内の登録名であり、import pathには使用しない。
   依存先ond.tomlの`[project].name`を論理import pathの先頭へ割り当てる。この名前はOndの
-  identifierでなければならず、依存先では必須とする。これにより利用側が登録名を変更しても、
+  identifierでなければならない。これにより利用側が登録名を変更しても、
   依存先自身のimport pathは変化しない。依存root直下のpackageはproject名、子directoryは
   `project名/相対directory`でimportする。
 - 相対pathはond.tomlのdirectory基準、絶対pathも許可する。解決先directoryにはond.tomlが必須である。

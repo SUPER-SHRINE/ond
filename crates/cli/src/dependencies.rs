@@ -71,6 +71,7 @@ pub struct ResolvedDependencies {
 pub fn resolve_dependencies(project_root: &Path) -> DriverResult<ResolvedDependencies> {
     let manifest_path = project_root.join("ond.toml");
     let manifest = read_manifest(&manifest_path)?;
+    let own_namespace = project_namespace(project_root, &manifest)?;
     let existing_lock = read_lock(&project_root.join("ond.lock"))?;
     let mut resolver = Resolver {
         project_root,
@@ -79,7 +80,7 @@ pub fn resolve_dependencies(project_root: &Path) -> DriverResult<ResolvedDepende
             version: 1,
             ..LockFile::default()
         },
-        roots_by_namespace: BTreeMap::new(),
+        roots_by_namespace: BTreeMap::from([(own_namespace, project_root.to_path_buf())]),
         visited_roots: BTreeSet::new(),
         sources: BTreeMap::new(),
     };
@@ -411,13 +412,12 @@ fn validate_dependency_key(key: &str) -> DriverResult<()> {
 }
 
 fn validate_namespace(name: &str) -> DriverResult<()> {
-    let mut chars = name.chars();
-    let valid_start = chars
-        .next()
-        .is_some_and(|character| character == '_' || character.is_alphabetic());
     if name == "_"
-        || !valid_start
-        || !chars.all(|character| character == '_' || character.is_alphanumeric())
+        || !ond_compiler_core::parse_source_file(
+            ond_compiler_core::source::FileId(0),
+            &format!("package {name}\n"),
+        )
+        .is_ok_and(|file| file.package.name == name)
     {
         return Err(vec![format!("invalid dependency namespace `{name}`")]);
     }
@@ -525,7 +525,7 @@ mod tests {
         fs::write(
             app.join("ond.toml"),
             format!(
-                "[dependencies]\nrelative = {{ path = \"../relative\" }}\nabsolute = {{ path = {:?} }}\n",
+                "[project]\nname = \"app\"\n[dependencies]\nrelative = {{ path = \"../relative\" }}\nabsolute = {{ path = {:?} }}\n",
                 absolute.to_string_lossy()
             )
             .replace('\\', "/"),
@@ -548,7 +548,7 @@ mod tests {
         fs::create_dir_all(library.join("nested")).unwrap();
         fs::write(
             app.join("ond.toml"),
-            "[dependencies]\nlib = { path = \"../library\" }\n",
+            "[project]\nname = \"app\"\n[dependencies]\nlib = { path = \"../library\" }\n",
         )
         .unwrap();
         fs::write(
@@ -592,7 +592,7 @@ mod tests {
         let repository_url = repository.to_string_lossy().replace('\\', "/");
         fs::write(
             app.join("ond.toml"),
-            format!("[dependencies]\ngitlib = {{ git = {repository_url:?} }}\n"),
+            format!("[project]\nname = \"app\"\n[dependencies]\ngitlib = {{ git = {repository_url:?} }}\n"),
         )
         .unwrap();
 
@@ -614,7 +614,7 @@ mod tests {
         fs::create_dir_all(&app).unwrap();
         fs::write(
             app.join("ond.toml"),
-            "[dependencies]\nconsumer_alias = { path = \"../library\" }\n",
+            "[project]\nname = \"app\"\n[dependencies]\nconsumer_alias = { path = \"../library\" }\n",
         )
         .unwrap();
         fs::write(library.join("ond.toml"), "[project]\nname = \"portable\"\n").unwrap();
@@ -645,7 +645,7 @@ mod tests {
         fs::create_dir_all(&app).unwrap();
         fs::write(
             app.join("ond.toml"),
-            "[dependencies]\nlib = { path = \"../library\" }\n",
+            "[project]\nname = \"app\"\n[dependencies]\nlib = { path = \"../library\" }\n",
         )
         .unwrap();
         fs::write(library.join("ond.toml"), "").unwrap();

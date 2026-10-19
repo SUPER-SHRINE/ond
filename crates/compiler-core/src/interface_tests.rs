@@ -165,7 +165,7 @@ func main() {}
 fn imported_types_can_implement_exported_generic_interfaces() {
     compile(
         r#"package main
-import "shared"
+import "test/shared"
 
 type Values struct { value: u32 }
 func (values: *Values) Get(index: u32) -> u32 { return values.value + index }
