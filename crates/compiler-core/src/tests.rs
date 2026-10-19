@@ -13,10 +13,10 @@ fn import_aliases_disambiguate_packages_with_the_same_declared_name() {
         std::env::temp_dir().join(format!("ond-import-alias-{}-{unique}", std::process::id()));
     fs::create_dir_all(root.join("my/json")).unwrap();
     fs::create_dir_all(root.join("json")).unwrap();
-    fs::write(root.join("ond.toml"), "").unwrap();
+    fs::write(root.join("ond.toml"), "[project]\nname = \"test\"\n").unwrap();
     fs::write(
         root.join("main.ond"),
-        "package main\nimport std_json \"json\"\nimport \"my/json\"\nfunc main() { var _ = std_json.Value + json.Value }\n",
+        "package main\nimport std_json \"test/json\"\nimport \"test/my/json\"\nfunc main() { var _ = std_json.Value + json.Value }\n",
     )
     .unwrap();
     fs::write(
@@ -52,7 +52,11 @@ fn compiles_source_through_target_neutral_mir() {
     let root =
         std::env::temp_dir().join(format!("ond-compiler-core-{}-{unique}", std::process::id()));
     fs::create_dir_all(&root).unwrap();
-    fs::write(root.join("ond.toml"), "[target.unrelated]\nvalue = 1\n").unwrap();
+    fs::write(
+        root.join("ond.toml"),
+        "[project]\nname = \"test\"\n[target.unrelated]\nvalue = 1\n",
+    )
+    .unwrap();
     fs::write(root.join("main.ond"), "package main\n\nfunc main() {}\n").unwrap();
 
     let compilation = compile_project(&root).unwrap();
@@ -72,7 +76,7 @@ fn resolves_function_signature_without_target_layout() {
         .as_nanos();
     let root = std::env::temp_dir().join(format!("ond-typed-hir-{}-{unique}", std::process::id()));
     fs::create_dir_all(&root).unwrap();
-    fs::write(root.join("ond.toml"), "").unwrap();
+    fs::write(root.join("ond.toml"), "[project]\nname = \"test\"\n").unwrap();
     fs::write(
         root.join("main.ond"),
         "package main\n\nfunc identity(value: *u8) -> *u8 {\n    return value\n}\n\nfunc main() {}\n",
@@ -129,7 +133,7 @@ fn lowers_integer_division_checks_before_the_operation() {
     let root =
         std::env::temp_dir().join(format!("ond-mir-division-{}-{unique}", std::process::id()));
     fs::create_dir_all(&root).unwrap();
-    fs::write(root.join("ond.toml"), "").unwrap();
+    fs::write(root.join("ond.toml"), "[project]\nname = \"test\"\n").unwrap();
     fs::write(
         root.join("main.ond"),
         "package main\n\nfunc quotient(left: i32, right: i32) -> i32 {\n    return left / right\n}\n\nfunc main() {}\n",
@@ -172,10 +176,10 @@ fn resolves_an_imported_defined_type_in_a_signature() {
     let root =
         std::env::temp_dir().join(format!("ond-imported-type-{}-{unique}", std::process::id()));
     fs::create_dir_all(root.join("shared")).unwrap();
-    fs::write(root.join("ond.toml"), "").unwrap();
+    fs::write(root.join("ond.toml"), "[project]\nname = \"test\"\n").unwrap();
     fs::write(
         root.join("main.ond"),
-        "package main\n\nimport \"shared\"\n\nfunc consume(value: shared.Value) {}\n\nfunc main() {}\n",
+        "package main\n\nimport \"test/shared\"\n\nfunc consume(value: shared.Value) {}\n\nfunc main() {}\n",
     )
     .unwrap();
     fs::write(
@@ -200,7 +204,7 @@ fn resolves_an_imported_defined_type_in_a_signature() {
         .unwrap();
     let ty = function.signature.parameters[0].ty;
     let definition = compilation.hir.types.get(ty).unwrap();
-    assert_eq!(definition.name.as_deref(), Some("shared.Value"));
+    assert_eq!(definition.name.as_deref(), Some("test/shared.Value"));
     assert_eq!(
         definition.kind,
         crate::semantic::TypeKind::Defined {
@@ -220,7 +224,7 @@ fn types_local_declarations_and_assignments_before_mir_lowering() {
     let root =
         std::env::temp_dir().join(format!("ond-typed-locals-{}-{unique}", std::process::id()));
     fs::create_dir_all(&root).unwrap();
-    fs::write(root.join("ond.toml"), "").unwrap();
+    fs::write(root.join("ond.toml"), "[project]\nname = \"test\"\n").unwrap();
     fs::write(
         root.join("main.ond"),
         "package main\n\nfunc calculate(input: u32) -> u32 {\n    var base: u32 = 10\n    result := base + input\n    result = result + 1\n    return result\n}\n\nfunc main() {}\n",
@@ -269,7 +273,7 @@ fn represents_pointer_recursive_structs_with_type_ids() {
         std::process::id()
     ));
     fs::create_dir_all(&root).unwrap();
-    fs::write(root.join("ond.toml"), "").unwrap();
+    fs::write(root.join("ond.toml"), "[project]\nname = \"test\"\n").unwrap();
     fs::write(
         root.join("main.ond"),
         "package main\n\ntype Node struct {\n    next: *Node\n    value: u32\n}\n\nfunc main() {}\n",

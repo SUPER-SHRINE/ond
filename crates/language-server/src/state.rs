@@ -1066,6 +1066,8 @@ fn project_error_diagnostic(message: &str) -> Value {
 }
 
 #[cfg(test)]
+mod project_contract_tests;
+#[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
     use std::path::PathBuf;
@@ -1076,7 +1078,7 @@ mod tests {
     use crate::protocol::TextDocumentContentChangeEvent;
     use crate::util::{normalize_path, same_path, uri_from_path};
 
-    fn published_diagnostics(output: &[u8], uri: &str) -> Vec<Value> {
+    pub(super) fn published_diagnostics(output: &[u8], uri: &str) -> Vec<Value> {
         let mut messages = Vec::new();
         let mut offset = 0;
         while offset < output.len() {
@@ -1132,7 +1134,7 @@ mod tests {
         std::fs::write(
             root.join("ond.toml"),
             format!(
-                "[dependencies]\nstandard = \"{dependency_path}\"\nnested = \"{nested_dependency_path}\"\n"
+                "[project]\nname = \"lsp\"\n[dependencies]\nstandard = \"{dependency_path}\"\nnested = \"{nested_dependency_path}\"\n"
             ),
         )
         .unwrap();
@@ -1298,7 +1300,7 @@ mod tests {
         std::fs::create_dir_all(&project).unwrap();
         std::fs::write(
             project.join("ond.toml"),
-            "[dependencies]\nlocal_alias = { path = \"../library\" }\n",
+            "[project]\nname = \"app\"\n[dependencies]\nlocal_alias = { path = \"../library\" }\n",
         )
         .unwrap();
         std::fs::write(
@@ -1362,7 +1364,9 @@ mod tests {
         let dependency_path = library.to_string_lossy().replace('\\', "/");
         std::fs::write(
             project.join("ond.toml"),
-            format!("[dependencies]\nstandard = \"{dependency_path}\"\n"),
+            format!(
+                "[project]\nname = \"app\"\n[dependencies]\nstandard = \"{dependency_path}\"\n"
+            ),
         )
         .unwrap();
         std::fs::write(project.join("main.ond"), "package main\nfunc main() {}\n").unwrap();
@@ -1867,7 +1871,7 @@ mod tests {
         )
         .unwrap();
         let path = root.join("main.ond");
-        let source = "package main\nimport \"runtime\"\ntype S struct {}\nfunc (s: S) Value() {}\nfunc main() { var p: runtime.P[S]; p. }\n";
+        let source = "package main\nimport \"members/runtime\"\ntype S struct {}\nfunc (s: S) Value() {}\nfunc main() { var p: runtime.P[S]; p. }\n";
         std::fs::write(&path, source).unwrap();
         let uri = uri_from_path(&path).unwrap();
         let mut state = ServerState::default();
@@ -1888,7 +1892,7 @@ mod tests {
             "{completions:?}"
         );
 
-        let source = "package main\nimport \"runtime\"\ntype S struct { A: u32 }\nfunc main() { var p: runtime.CellPointer[S]; p.Get(). }\n";
+        let source = "package main\nimport \"members/runtime\"\ntype S struct { A: u32 }\nfunc main() { var p: runtime.CellPointer[S]; p.Get(). }\n";
         state
             .change_document(
                 uri.clone(),
@@ -2515,7 +2519,7 @@ mod tests {
         )
         .unwrap();
         let path = root.join("main.ond");
-        let source = "package main\nimport \"shared\"\nfunc explicit(value: shared.Pair) { value.Left = 1 }\nfunc composite() { value := shared.Pair{}; value.Left = 1 }\nfunc allocated() { value := new(shared.Pair); value.Left = 1 }\nfunc factory() { value := shared.NewPair(); value.Left = 1 }\nfunc nested(value: shared.Pair) { value.Child.Visible = 1 }\nfunc generic(value: shared.Box[u32]) { value.Visible = 1 }\n";
+        let source = "package main\nimport \"members/shared\"\nfunc explicit(value: shared.Pair) { value.Left = 1 }\nfunc composite() { value := shared.Pair{}; value.Left = 1 }\nfunc allocated() { value := new(shared.Pair); value.Left = 1 }\nfunc factory() { value := shared.NewPair(); value.Left = 1 }\nfunc nested(value: shared.Pair) { value.Child.Visible = 1 }\nfunc generic(value: shared.Box[u32]) { value.Visible = 1 }\n";
         std::fs::write(&path, source).unwrap();
         let uri = uri_from_path(&path).unwrap();
         let mut state = ServerState::default();
@@ -2577,7 +2581,7 @@ mod tests {
         )
         .unwrap();
         let path = root.join("main.ond");
-        let valid = "package main\nimport \"shared\"\nfunc plain(value: shared.Item) { _ = value.Read() }\nfunc generic(value: *shared.Box[u16]) { _ = value.Get() }\n";
+        let valid = "package main\nimport \"members/shared\"\nfunc plain(value: shared.Item) { _ = value.Read() }\nfunc generic(value: *shared.Box[u16]) { _ = value.Get() }\n";
         std::fs::write(&path, valid).unwrap();
         let uri = uri_from_path(&path).unwrap();
         let mut state = ServerState::default();
@@ -2676,7 +2680,7 @@ mod tests {
         let uri = uri_from_path(&path).unwrap();
         let mut state = ServerState::with_library_roots(vec![libraries]);
         state.documents.insert(
-            path,
+            path.clone(),
             DocumentState {
                 text: source.to_string(),
             },
@@ -2687,10 +2691,18 @@ mod tests {
             .iter()
             .filter_map(|item| item["label"].as_str())
             .collect::<Vec<_>>();
-        assert_eq!(labels, vec!["tools/diag", "tools/log"]);
+        assert_eq!(labels, vec!["tools/log"]);
         assert_eq!(completions[0]["kind"], 9);
-        assert_eq!(completions[0]["textEdit"]["newText"], "tools/diag");
+        assert_eq!(completions[0]["textEdit"]["newText"], "tools/log");
         assert_eq!(completions[0]["textEdit"]["range"]["start"]["character"], 8);
+        state.documents.insert(
+            path,
+            DocumentState {
+                text: "package main\nimport \"lsp/to\n".to_string(),
+            },
+        );
+        let own = state.completions(&uri, 1, 14).unwrap();
+        assert!(own.iter().any(|item| item["label"] == "lsp/tools/diag"));
         std::fs::remove_dir_all(base).unwrap();
     }
 
@@ -2822,7 +2834,7 @@ mod tests {
         }
         // The foreign package is visible through its import, but its test-only exports are not.
         let imported_test = same_test
-            .replace("package main\n", "package main\nimport \"foreign\"\n")
+            .replace("package main\n", "package main\nimport \"app/foreign\"\n")
             .replace("func TestSame() { }", "func TestSame() { foreign. }");
         state
             .change_document(
@@ -3066,8 +3078,9 @@ mod tests {
         std::fs::create_dir_all(root.join("managed/string")).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"standard\"\n").unwrap();
         let path = root.join("main.ond");
-        let baseline = "package main\nimport \"collection/span\"\nfunc main() { span.Init(1) }\n";
-        let source = "package main\nimport \"collection/span\"\nfunc main() { s }\n";
+        let baseline =
+            "package main\nimport \"standard/collection/span\"\nfunc main() { span.Init(1) }\n";
+        let source = "package main\nimport \"standard/collection/span\"\nfunc main() { s }\n";
         std::fs::write(&path, baseline).unwrap();
         std::fs::write(
             root.join("collection/span/api.ond"),
@@ -3126,7 +3139,8 @@ mod tests {
             "missing import alias: {completions:?}"
         );
 
-        let incomplete = "package main\nimport \"collection/span\"\nfunc main() { span. }\n";
+        let incomplete =
+            "package main\nimport \"standard/collection/span\"\nfunc main() { span. }\n";
         state
             .change_document(
                 uri.clone(),
@@ -3162,8 +3176,8 @@ mod tests {
         let main = root.join("main.ond");
         let same = root.join("same.ond");
         let model = root.join("model/item.ond");
-        let initial = "package main\nimport \"model\"\nfunc Use(stale: model.Item) { var staleLocal: model.Item; _ = staleLocal.Field }\nfunc main() { Shared() }\n";
-        let updated = "package main\nimport \"model\"\nconst Fresh: u32 = 1\nfunc Use(current: model.Item) { var local: model.Item; _ = current; _ = local }\nfunc main() { Shared() }\n";
+        let initial = "package main\nimport \"app/model\"\nfunc Use(stale: model.Item) { var staleLocal: model.Item; _ = staleLocal.Field }\nfunc main() { Shared() }\n";
+        let updated = "package main\nimport \"app/model\"\nconst Fresh: u32 = 1\nfunc Use(current: model.Item) { var local: model.Item; _ = current; _ = local }\nfunc main() { Shared() }\n";
         std::fs::write(&main, initial).unwrap();
         std::fs::write(&same, "package main\nfunc Shared() {}\n").unwrap();
         std::fs::write(&model, "package model\ntype Item struct { Field: u32 }\n").unwrap();
@@ -3885,7 +3899,7 @@ mod tests {
         std::fs::create_dir_all(&dependency).unwrap();
         std::fs::write(
             root.join("ond.toml"),
-            "[dependencies]\nbroken = { path = \"../dependency\" }\n",
+            "[project]\nname = \"app\"\n[dependencies]\nbroken = { path = \"../dependency\" }\n",
         )
         .unwrap();
         std::fs::write(dependency.join("ond.toml"), "").unwrap();
@@ -3946,7 +3960,7 @@ mod tests {
         std::fs::create_dir_all(root.join("foreign")).unwrap();
         let foreign = root.join("foreign/foreign_test.ond");
         let foreign_source =
-            "package foreign\nimport \"left\"\nfunc TestForeign(){left.Helper()}\n";
+            "package foreign\nimport \"rename/left\"\nfunc TestForeign(){left.Helper()}\n";
         std::fs::write(&foreign, foreign_source).unwrap();
         let foreign_uri = uri_from_path(&foreign).unwrap();
         let at = foreign_source

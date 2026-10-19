@@ -1,10 +1,12 @@
 # プロジェクトとパッケージ
 
-Ondでは`ond.toml`があるdirectoryがproject rootになる。1 directoryが1 packageに対応し、同じdirectoryの`.ond`ファイルは同じpackage名を宣言する。
+Ondでは`ond.toml`があるdirectoryがproject rootになる。\
+1 directoryが1 packageに対応し、同じdirectoryの`.ond`ファイルは同じpackage名を宣言する。
 
 ## project内のpackage
 
-次のprojectでは、rootが`main` package、`math` directoryが`math` packageになる。
+次のprojectでは、rootが`main` package、`math` directoryが`math` packageになる。\
+各projectは`ond.toml`にOndの識別子として有効な名前を宣言する。
 
 ```text
 game/
@@ -12,6 +14,13 @@ game/
 ├── main.ond
 └── math/
     └── arithmetic.ond
+```
+
+`ond.toml`:
+
+```toml
+[project]
+name = "game"
 ```
 
 `math/arithmetic.ond`:
@@ -29,7 +38,7 @@ func Add(left: i32, right: i32) -> i32 {
 ```ond
 package main
 
-import "math"
+import "game/math"
 
 func main() {
     var result = math.Add(20, 22)
@@ -37,13 +46,18 @@ func main() {
 }
 ```
 
-import pathは`/`区切りを使う。aliasを明示することもできる。
+import pathは`/`区切りを使う。\
+aliasを明示することもできる。
 
 ```ond
-import arithmetic "math"
+import arithmetic "game/math"
 ```
 
-importのscopeはファイル単位である。同じpackageの別ファイルでも、そこで使うpackageはそのファイル自身がimportする。
+project内のsubpackageも`project名/packageのpath`でimportする。\
+`math`のようなproject名を省いたpathは使えない。\
+実行projectのrootである`main` packageはimportできない。\
+importのscopeはファイル単位である。\
+同じpackageの別ファイルでも、そこで使うpackageはそのファイル自身がimportする。
 
 ## 別projectへの依存
 
@@ -54,6 +68,13 @@ importのscopeはファイル単位である。同じpackageの別ファイル�
 name = "shared"
 ```
 
+libraryにはrootの`main.ond`と`func main`は不要である。\
+rootにsourceがある場合は`package shared`を宣言し、`shared`でimportできる。\
+subpackageは`shared/collections`のように参照する。\
+libraryを編集したり依存として利用したりする際に、単独の実行projectへ変換する必要はない。\
+libraryのテストは`ond compile --test ./shared`でビルドできる。\
+rootに`main.ond`や`func main`がなくてもよい。
+
 利用側の`ond.toml`からpath依存を登録する。
 
 ```toml
@@ -61,7 +82,8 @@ name = "shared"
 common = { path = "../shared" }
 ```
 
-`common`はmanifest内の登録名であり、sourceのimport pathには使わない。依存先が宣言したproject名を先頭にしてimportする。
+`common`はmanifest内の登録名であり、sourceのimport pathには使わない。\
+依存先が宣言したproject名を先頭にしてimportする。
 
 ```ond
 import "shared"
@@ -87,7 +109,9 @@ project依存ではなく、SDKなどが生成したpackageを一時的に追加
 ond compile ./game --library-dir ./generated
 ```
 
-複数のrootを指定できる。`OND_PATH`環境変数でもOS標準のpath-list区切りを使って指定できる。project、依存project、追加libraryの同名packageを暗黙に混合したり上書きしたりはしない。
+複数のrootを指定できる。\
+`OND_PATH`環境変数でもOS標準のpath-list区切りを使って指定できる。\
+project、依存project、追加libraryの同名packageを暗黙に混合したり上書きしたりはしない。
 
 ## source探索から除外する
 

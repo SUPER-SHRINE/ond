@@ -25,7 +25,7 @@ mod tests {
     fn compile_project_error(files: &[(&str, &str)]) -> String {
         let root = temp_dir();
         fs::create_dir_all(&root).unwrap();
-        write_file(&root, "ond.toml", "[project]\nname=\"compile-fail\"\n");
+        write_file(&root, "ond.toml", "[project]\nname=\"compile_fail\"\n");
         for (path, contents) in files {
             write_file(&root, path, contents);
         }
@@ -85,7 +85,7 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         fs::write(
             root.join("ond.toml"),
-            "[project]\nname=\"small-int-types\"\n",
+            "[project]\nname=\"small_int_types\"\n",
         )
         .unwrap();
         fs::write(
@@ -111,17 +111,17 @@ mod tests {
         fs::write(root.join("ond.toml"), "[project]\nname=\"cycle\"\n").unwrap();
         fs::write(
             root.join("main.ond"),
-            "package main\n\nimport \"foo\"\n\nfunc main() {\n    foo.Run()\n}\n",
+            "package main\n\nimport \"cycle/foo\"\n\nfunc main() {\n    foo.Run()\n}\n",
         )
         .unwrap();
         fs::write(
             root.join("foo").join("foo.ond"),
-            "package foo\n\nimport \"bar\"\n\nfunc Run() {\n    bar.Run()\n}\n",
+            "package foo\n\nimport \"cycle/bar\"\n\nfunc Run() {\n    bar.Run()\n}\n",
         )
         .unwrap();
         fs::write(
             root.join("bar").join("bar.ond"),
-            "package bar\n\nimport \"foo\"\n\nfunc Run() {\n    foo.Run()\n}\n",
+            "package bar\n\nimport \"cycle/foo\"\n\nfunc Run() {\n    foo.Run()\n}\n",
         )
         .unwrap();
 
@@ -225,7 +225,7 @@ mod tests {
     fn compile_project_accepts_ordinary_function_named_init() {
         let root = temp_dir();
         fs::create_dir_all(&root).unwrap();
-        write_file(&root, "ond.toml", "[project]\nname=\"init-name\"\n");
+        write_file(&root, "ond.toml", "[project]\nname=\"init_name\"\n");
         write_file(
             &root,
             "main.ond",
@@ -239,7 +239,7 @@ mod tests {
         let error = compile_project_error(&[
             (
                 "main.ond",
-                "package main\n\nimport \"foo\"\n\nfunc main() {\n    foo.hidden()\n}\n",
+                "package main\n\nimport \"compile_fail/foo\"\n\nfunc main() {\n    foo.hidden()\n}\n",
             ),
             ("foo/foo.ond", "package foo\n\nfunc hidden() {\n}\n"),
         ]);

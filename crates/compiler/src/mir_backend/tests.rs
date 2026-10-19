@@ -24,7 +24,7 @@ impl Fixture {
         fs::create_dir(&path).unwrap();
         fs::write(
             path.join("ond.toml"),
-            "[target.kagura]\nram = 65536\nstack = 8192\n",
+            "[project]\nname = \"test\"\n[target.kagura]\nram = 65536\nstack = 8192\n",
         )
         .unwrap();
         fs::write(path.join("main.ond"), source).unwrap();
@@ -225,7 +225,7 @@ fn methods_preserve_exact_receivers_nil_and_evaluation_order() {
 #[test]
 fn exported_methods_on_an_inferred_private_type_work_across_packages() {
     let fixture = Fixture::new(
-        "package main\nimport \"shared\"\ntype Reader interface { Read() -> i32; }\nfunc main() { var direct = shared.New().Read(); var dynamic = (shared.New() as Reader).Read(); *(4294934608 as u32 as *u32) = (direct + dynamic) as u32; }\n",
+        "package main\nimport \"test/shared\"\ntype Reader interface { Read() -> i32; }\nfunc main() { var direct = shared.New().Read(); var dynamic = (shared.New() as Reader).Read(); *(4294934608 as u32 as *u32) = (direct + dynamic) as u32; }\n",
     );
     fs::create_dir(fixture.0.join("shared")).unwrap();
     fs::write(

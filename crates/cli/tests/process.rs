@@ -34,7 +34,7 @@ impl Fixture {
         ));
         fs::create_dir(&p).unwrap();
         let f = Self(p);
-        f.put("game/ond.toml", "");
+        f.put("game/ond.toml", "[project]\nname = \"game\"\n");
         f.put(
             "game/main.ond",
             "package main\nimport \"math\"\nfunc main(){var _=math.Value()}",
@@ -106,7 +106,7 @@ fn manifest_path_dependencies_include_subpackages_and_import_aliases() {
     let f = Fixture::new();
     f.put(
         "game/ond.toml",
-        "[dependencies]\nstandard_alias = { path = \"../standard\" }\nmy_alias = { path = \"../my\" }\n",
+        "[project]\nname = \"game\"\n[dependencies]\nstandard_alias = { path = \"../standard\" }\nmy_alias = { path = \"../my\" }\n",
     );
     f.put(
         "game/main.ond",
@@ -154,7 +154,9 @@ fn git_dependency_checkout_accepts_a_canonical_project_root() {
     let repository_url = repository.to_string_lossy().replace('\\', "/");
     f.put(
         "game/ond.toml",
-        &format!("[dependencies]\nlocal = {{ git = {repository_url:?} }}\n"),
+        &format!(
+            "[project]\nname = \"game\"\n[dependencies]\nlocal = {{ git = {repository_url:?} }}\n"
+        ),
     );
     f.put(
         "game/main.ond",
@@ -179,7 +181,7 @@ fn dependency_can_import_its_sibling_by_its_own_project_namespace() {
     let f = Fixture::new();
     f.put(
         "game/ond.toml",
-        "[dependencies]\nrenamed = { path = \"../portable\" }\n",
+        "[project]\nname = \"game\"\n[dependencies]\nrenamed = { path = \"../portable\" }\n",
     );
     f.put(
         "game/main.ond",
@@ -211,7 +213,7 @@ fn manifest_resolve_ignore_excludes_generated_source_trees() {
     let f = Fixture::new();
     f.put(
         "game/ond.toml",
-        "[resolve]\nignore = [\"generated/kagura\"]\n",
+        "[project]\nname = \"game\"\n[resolve]\nignore = [\"generated/kagura\"]\n",
     );
     f.put("game/main.ond", "package main\nfunc main(){}\n");
     f.put("game/generated/kagura/invalid.ond", "this is not Ond");
@@ -228,12 +230,12 @@ fn manifest_resolve_ignore_excludes_generated_source_trees() {
         manifest
             .packages
             .iter()
-            .any(|package| package.package == "generated/portable")
+            .any(|package| package.package == "game/generated/portable")
     );
 
     f.put(
         "game/main.ond",
-        "package main\nimport \"generated/kagura\"\nfunc main(){}\n",
+        "package main\nimport \"game/generated/kagura\"\nfunc main(){}\n",
     );
     let ignored_import = run(&f.0, &["compile", "game", "-o", "-"], None);
     assert!(!ignored_import.status.success());
@@ -434,6 +436,33 @@ fn errors_are_stderr_only_and_preserve_previous_outputs() {
 fn library_package_collisions_and_unused_packages() {
     let f = Fixture::new();
     f.put("game/math/other.ond", "package math\nfunc Other(){}");
+    let distinct = run(
+        &f.0,
+        &["compile", "game", "--library-dir", "libraries", "-o", "-"],
+        None,
+    );
+    assert!(
+        distinct.status.success(),
+        "{}",
+        String::from_utf8_lossy(&distinct.stderr)
+    );
+    let distinct: CompilationManifest = serde_json::from_slice(&distinct.stdout).unwrap();
+    assert!(
+        distinct
+            .packages
+            .iter()
+            .any(|package| package.package == "game/math")
+    );
+    assert!(
+        distinct
+            .packages
+            .iter()
+            .any(|package| package.package == "math")
+    );
+    f.put(
+        "libraries/game/math/conflict.ond",
+        "package math\nfunc Other(){}",
+    );
     let bad = run(
         &f.0,
         &["compile", "game", "--library-dir", "libraries", "-o", "-"],
@@ -441,6 +470,7 @@ fn library_package_collisions_and_unused_packages() {
     );
     assert!(!bad.status.success());
     assert!(String::from_utf8_lossy(&bad.stderr).contains("conflicts"));
+    fs::remove_file(f.0.join("libraries/game/math/conflict.ond")).unwrap();
     fs::remove_file(f.0.join("game/math/other.ond")).unwrap();
     f.put(
         "libraries/unused/unused.ond",
@@ -499,6 +529,81 @@ fn library_package_collisions_and_unused_packages() {
     );
     assert!(!bad.status.success());
     assert!(String::from_utf8_lossy(&bad.stderr).contains("conflicting library"));
+}
+
+#[test]
+fn libraries_with_matching_physical_names_keep_qualified_package_identity() {
+    let f = Fixture::new();
+    f.put("game/main.ond", "package main\nimport own \"game/math\"\nimport extra \"math\"\nfunc main() { _ = own.Value() + extra.Value() }\n");
+    for own in [
+        "package math\nfunc Value()->i32{return 7}",
+        "package math\nfunc Value()->i32{return 9}",
+    ] {
+        f.put("game/math/value.ond", own);
+        let output = run(
+            &f.0,
+            &["compile", "game", "--library-dir", "libraries", "-o", "-"],
+            None,
+        );
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let manifest: CompilationManifest = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(
+            manifest
+                .packages
+                .iter()
+                .map(|p| p.package.as_str())
+                .collect::<Vec<_>>(),
+            [".", "game/math", "math"]
+        );
+    }
+}
+
+#[test]
+fn ignored_or_nested_project_files_do_not_shadow_library_packages() {
+    for directory in ["generated", ".ond", "nested"] {
+        for own_value in [7, 9] {
+            let f = Fixture::new();
+            let package = format!("game/{directory}/math");
+            f.put(
+                "game/main.ond",
+                &format!(
+                    "package main\nimport \"{package}\"\nfunc main() {{ _ = math.Value() }}\n"
+                ),
+            );
+            f.put(
+                &format!("game/{directory}/math/value.ond"),
+                &format!("package math\nfunc Value()->i32{{return {own_value}}}"),
+            );
+            f.put(
+                &format!("libraries/{package}/value.ond"),
+                "package math\nfunc Value()->i32{return 7}",
+            );
+            if directory == "generated" {
+                f.put(
+                    "game/ond.toml",
+                    "[project]\nname = \"game\"\n[resolve]\nignore = [\"generated\"]\n",
+                );
+            } else if directory == "nested" {
+                f.put("game/nested/ond.toml", "[project]\nname = \"nested\"\n");
+            }
+            let output = run(
+                &f.0,
+                &["compile", "game", "--library-dir", "libraries", "-o", "-"],
+                None,
+            );
+            assert!(
+                output.status.success(),
+                "{directory}/{own_value}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let manifest: CompilationManifest = serde_json::from_slice(&output.stdout).unwrap();
+            assert!(manifest.packages.iter().any(|item| item.package == package));
+        }
+    }
 }
 
 #[test]

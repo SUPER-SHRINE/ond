@@ -42,13 +42,13 @@ fn unicode_does_not_change_ascii_only_export_policy() {
     compile_files(&[
         (
             "main.ond",
-            "package main\nimport \"shared\"\nfunc main() { _ = shared.A値 }",
+            "package main\nimport \"test/shared\"\nfunc main() { _ = shared.A値 }",
         ),
         ("shared/shared.ond", "package shared\nconst A値 = 1"),
     ])
     .unwrap();
     crate::test_support::reject(
-        "package main\nimport \"shared\"\nfunc main() { _ = shared.値 }",
+        "package main\nimport \"test/shared\"\nfunc main() { _ = shared.値 }",
         Some("package shared\nconst 値 = 1"),
         "not exported",
         "shared.値",
@@ -217,7 +217,7 @@ fn strings_are_validated_even_without_hir_lowering() {
 
 #[test]
 fn import_paths_use_the_same_string_decoding() {
-    for path in [r#""\u0073hared""#, "`shared`", r#""shared""#] {
+    for path in [r#""te\u0073t/shared""#, "`test/shared`", r#""test/shared""#] {
         let source = format!("package main\nimport {path}\nfunc main() {{ _ = shared.Value }}");
         compile_files(&[
             ("main.ond", &source),

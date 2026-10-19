@@ -20,7 +20,7 @@ pub type ExternalSources = BTreeMap<String, ExternalSource>;
 /// multiple roots must be byte-for-byte identical, and a root may not contain
 /// `.ond` files directly.
 pub fn load_library_sources(
-    project: &Path,
+    _project: &Path,
     roots: &[PathBuf],
     overrides: &BTreeMap<PathBuf, String>,
 ) -> Result<ExternalSources, FrontendError> {
@@ -51,20 +51,6 @@ pub fn load_library_sources(
                     return Err(failure(format!("conflicting library package: {package}")));
                 }
                 continue;
-            }
-
-            let directory = project.join(&package);
-            if directory.is_dir() {
-                let existing = read_project_package(&directory, &package, overrides)?;
-                if !existing.is_empty() {
-                    if existing != source_texts(&files) {
-                        return Err(failure(format!(
-                            "library conflicts with project package: {package}"
-                        )));
-                    }
-                    packages.insert(package, files);
-                    continue;
-                }
             }
 
             result.extend(files.clone());
@@ -156,11 +142,34 @@ fn load_project_with_inputs_impl(
         excluded_dirs,
         include_tests,
     )?;
+    let project_name = crate::project::project_name(&loaded.manifest_path)?;
     loaded.packages.retain(|package| {
         !excluded_dirs
             .iter()
             .any(|directory| package.directory.starts_with(directory))
     });
+
+    let root_is_app = crate::project::is_application_root(
+        loaded
+            .packages
+            .iter()
+            .filter(|package| package.directory == loaded.root)
+            .flat_map(|package| package.files.iter())
+            .map(|id| {
+                let file = loaded.sources.file(*id);
+                (file.path(), file.text())
+            })
+            .chain(
+                required_sources
+                    .iter()
+                    .filter(|(name, _)| {
+                        !name.contains('/')
+                            && (include_tests || !crate::project::is_test_source(Path::new(name)))
+                    })
+                    .map(|(name, text)| (Path::new(name), text.as_str())),
+            ),
+    );
+    let root_package = if root_is_app { "." } else { &project_name };
 
     let physical = loaded
         .packages
@@ -169,26 +178,20 @@ fn load_project_with_inputs_impl(
         .collect::<BTreeSet<_>>();
     let required = required_sources
         .keys()
-        .map(|name| package_for_source_name(name))
+        .map(|name| own_package_for_source_name(name, &project_name, root_package))
         .collect::<BTreeSet<_>>();
     let mut optional = BTreeSet::new();
-    let mut logical_sources = BTreeSet::new();
 
     for (name, text) in required_sources {
         if !include_tests && crate::project::is_test_source(Path::new(name)) {
             continue;
         }
-        if optional_sources.contains_key(name) || external_sources.contains_key(name) {
-            return Err(failure(format!(
-                "source is both required and optional: {name}"
-            )));
-        }
         validate_source_name(name)?;
-        logical_sources.insert(name.clone());
         let path = loaded.root.join(name);
         merge_source(
             &mut loaded,
             name,
+            own_package_for_source_name(name, &project_name, root_package),
             path,
             text,
             SourceKind::Required,
@@ -200,43 +203,22 @@ fn load_project_with_inputs_impl(
         )?;
     }
 
-    for (name, text) in optional_sources {
-        if crate::project::is_test_source(Path::new(name)) {
-            continue;
-        }
-        if !logical_sources.insert(name.clone()) {
-            return Err(failure(format!("duplicate optional source: {name}")));
-        }
-        validate_source_name(name)?;
-        let path = loaded.root.join(name);
-        merge_source(
+    let virtual_libraries = optional_sources
+        .iter()
+        .map(|(name, text)| {
+            (
+                name.clone(),
+                ExternalSource {
+                    path: loaded.root.join(".ond/__virtual_libraries__").join(name),
+                    text: text.clone(),
+                },
+            )
+        })
+        .collect();
+    for sources in [&virtual_libraries, external_sources] {
+        merge_optional_packages(
             &mut loaded,
-            name,
-            path,
-            text,
-            SourceKind::OptionalVirtual,
-            &mut PackageClassification {
-                physical: &physical,
-                required: &required,
-                optional: &mut optional,
-            },
-        )?;
-    }
-
-    for (name, source) in external_sources {
-        if crate::project::is_test_source(Path::new(name)) {
-            continue;
-        }
-        if !logical_sources.insert(name.clone()) {
-            return Err(failure(format!("duplicate optional source: {name}")));
-        }
-        validate_source_name(name)?;
-        merge_source(
-            &mut loaded,
-            name,
-            source.path.clone(),
-            &source.text,
-            SourceKind::External,
+            sources,
             &mut PackageClassification {
                 physical: &physical,
                 required: &required,
@@ -253,19 +235,97 @@ fn load_project_with_inputs_impl(
     Ok(loaded)
 }
 
+fn merge_optional_packages(
+    loaded: &mut LoadedProject,
+    sources: &ExternalSources,
+    classification: &mut PackageClassification<'_>,
+) -> Result<(), FrontendError> {
+    let mut external_packages = BTreeMap::<String, Vec<(&String, &ExternalSource)>>::new();
+    for (name, source) in sources {
+        if !crate::project::is_test_source(Path::new(name)) {
+            validate_source_name(name)?;
+            external_packages
+                .entry(package_for_source_name(name))
+                .or_default()
+                .push((name, source));
+        }
+    }
+    for (package, files) in external_packages {
+        if let Some(existing) = loaded
+            .packages
+            .iter()
+            .find(|item| item.logical_path == package)
+        {
+            let own_files = existing
+                .files
+                .iter()
+                .filter(|id| !crate::project::is_test_source(loaded.sources.file(**id).path()))
+                .map(|id| {
+                    let source = loaded.sources.file(*id);
+                    (
+                        source
+                            .display_path()
+                            .map(Path::new)
+                            .unwrap_or_else(|| source.path())
+                            .file_name()
+                            .unwrap()
+                            .to_string_lossy()
+                            .to_string(),
+                        source.text().to_string(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            let external_files = files
+                .iter()
+                .map(|(name, source)| {
+                    (
+                        Path::new(name)
+                            .file_name()
+                            .unwrap()
+                            .to_string_lossy()
+                            .to_string(),
+                        source.text.clone(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            if own_files != external_files {
+                return Err(failure(format!(
+                    "library conflicts with project package: {package}"
+                )));
+            }
+            continue;
+        }
+        for (name, source) in files {
+            merge_source(
+                loaded,
+                name,
+                package.clone(),
+                source.path.clone(),
+                &source.text,
+                SourceKind::External,
+                classification,
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
 fn merge_source(
     loaded: &mut LoadedProject,
     name: &str,
+    package: String,
     path: PathBuf,
     text: &str,
     kind: SourceKind,
     packages: &mut PackageClassification<'_>,
 ) -> Result<(), FrontendError> {
-    if let Some(file) = loaded
-        .sources
-        .files()
-        .iter()
-        .find(|file| file.path() == path)
+    if kind == SourceKind::Required
+        && let Some(file) = loaded
+            .sources
+            .files()
+            .iter()
+            .find(|file| file.path() == path)
     {
         if file.text() != text {
             return Err(failure(format!(
@@ -282,8 +342,10 @@ fn merge_source(
     }
 
     let relative = Path::new(name);
-    let package = package_for_source_name(name);
-    let file = loaded.sources.add_file(path.clone(), text.to_string());
+    let file =
+        loaded
+            .sources
+            .add_file_with_display_path(path.clone(), text.to_string(), name.to_string());
     if kind != SourceKind::Required
         && !packages.physical.contains(&package)
         && !packages.required.contains(&package)
@@ -315,7 +377,6 @@ fn merge_source(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SourceKind {
     Required,
-    OptionalVirtual,
     External,
 }
 
@@ -493,32 +554,6 @@ fn scan_library_root(
     Ok(())
 }
 
-fn read_project_package(
-    directory: &Path,
-    package: &str,
-    overrides: &BTreeMap<PathBuf, String>,
-) -> Result<BTreeMap<String, String>, FrontendError> {
-    let mut existing = BTreeMap::new();
-    for entry in fs::read_dir(directory)
-        .map_err(|error| failure(error.to_string()))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| failure(error.to_string()))?
-    {
-        let path = entry.path();
-        if path.extension().is_some_and(|extension| extension == "ond")
-            && path.is_file()
-            && !crate::project::is_test_source(&path)
-        {
-            let name = format!(
-                "{package}/{}",
-                path.file_name().expect("file has a name").to_string_lossy()
-            );
-            existing.insert(name, read_source(&path, overrides)?);
-        }
-    }
-    Ok(existing)
-}
-
 fn read_source(
     path: &Path,
     overrides: &BTreeMap<PathBuf, String>,
@@ -546,6 +581,15 @@ fn package_for_source_name(name: &str) -> String {
     name.rsplit_once('/')
         .map_or(".", |(package, _)| package)
         .to_string()
+}
+
+fn own_package_for_source_name(name: &str, project_name: &str, root_package: &str) -> String {
+    let relative = package_for_source_name(name);
+    if relative == "." {
+        root_package.to_string()
+    } else {
+        format!("{project_name}/{relative}")
+    }
 }
 
 fn failure(message: impl Into<String>) -> FrontendError {

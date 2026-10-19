@@ -152,12 +152,14 @@ fn test_entries_reuse_private_normal_declarations_and_preserve_main_requirement(
             ("test.ond", "package main\nfunc main() {}\n"),
         ],
         vec![("test.ond", "package main\nfunc TestOnly() {}\n")],
-        vec![("dep/api.ond", "package dep\nfunc Run() {}\n")],
     ] {
         let loaded = project(&files);
         assert!(SemanticCache::default().validate(&loaded).is_err());
         assert!(crate::compile_loaded_project(loaded).is_err());
     }
+    let library = project(&[("dep/api.ond", "package dep\nfunc Run() {}\n")]);
+    SemanticCache::default().validate(&library).unwrap();
+    assert!(crate::compile_loaded_project(library).is_err());
 }
 
 #[test]

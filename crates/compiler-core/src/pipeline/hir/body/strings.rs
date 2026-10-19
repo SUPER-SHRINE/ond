@@ -101,17 +101,22 @@ impl BodyLowerer<'_> {
             .universe
             .iter()
             .find(|package| package.id == self.package_id)?;
-        let file_name = sources
-            .file(span.file)
-            .path()
-            .file_name()
-            .map(|name| name.to_string_lossy().replace('\\', "/"))
-            .unwrap_or_else(|| "<source>".to_string());
-        let path = if package.logical_path == "." {
-            file_name
-        } else {
-            format!("{}/{file_name}", package.logical_path)
-        };
+        let path = sources.file(span.file).display_path().map_or_else(
+            || {
+                let file_name = sources
+                    .file(span.file)
+                    .path()
+                    .file_name()
+                    .map(|name| name.to_string_lossy().replace('\\', "/"))
+                    .unwrap_or_else(|| "<source>".to_string());
+                if package.logical_path == "." {
+                    file_name
+                } else {
+                    format!("{}/{file_name}", package.logical_path)
+                }
+            },
+            str::to_string,
+        );
         let array = self.lower_string_bytes(path.into_bytes(), *span, None)?;
         let element = hir::Expr {
             kind: hir::ExprKind::Index {

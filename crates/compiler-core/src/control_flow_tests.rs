@@ -104,7 +104,7 @@ fn executes_cfg_scopes_loops_and_short_circuit() {
         .as_nanos();
     let root = std::env::temp_dir().join(format!("ond-cfg-{}-{unique}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();
-    std::fs::write(root.join("ond.toml"), "").unwrap();
+    std::fs::write(root.join("ond.toml"), "[project]\nname = \"test\"\n").unwrap();
     std::fs::write(
         root.join("main.ond"),
         r#"package main

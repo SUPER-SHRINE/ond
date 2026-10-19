@@ -11,12 +11,19 @@ Comment syntax for v1: `//` starts a line comment and `/* ... */` starts and end
 <!-- ond-spec-id: language/source-and-packages -->
 
 - `ond.toml` がある directory を project root とする。
-- project root 自体を `main` package とし、project root には `main.ond` が必須である。
-- project root 直下の全 `.ond` file は `package main` を宣言する。
+- 全projectは`ond.toml`の`[project].name`へOndの有効な識別子を宣言する。
+- 実行projectのrootは`main` packageとし、`main.ond`と`func main`を必須とする。
+  root直下の全`.ond` fileは`package main`を宣言する。
+- library projectのrootにsourceがある場合、そのpackage名はproject名と一致する。
+  libraryを編集または依存として利用する場合、rootの`main.ond`と`func main`は不要である。
 - 各ファイルは `package name` で所属パッケージを宣言する。
 - 1 ディレクトリを 1 パッケージとし、ディレクトリ内の全 `.ond` ファイルは同じパッケージに属する。
 - project root 以外のパッケージ名はディレクトリ名と一致しなければならない。
-- `import` はパッケージ単位で行い、project root または実装が提供する追加 library root からの相対ディレクトリで解決する。project root の `main` package は import できない。
+- `import`はパッケージ単位で行う。
+  project内のsubpackageは`project名/相対ディレクトリ`、libraryのroot packageは`project名`で参照する。
+  project名を省いたsubpackageのpathは解決しない。
+  実装が提供する追加library rootのpackageは、そのroot内の既存の論理pathで参照する。
+  実行projectのrootにある`main` packageはimportできない。
 - `import alias "path"` で参照名を明示できる。省略時は import 先の package 宣言名を参照名とする。
 - import 名の scope は宣言したファイルに限る。同じパッケージの別ファイルで使用する場合も、そのファイル自身が import を宣言する。
 - 循環 import はコンパイルエラーとする。

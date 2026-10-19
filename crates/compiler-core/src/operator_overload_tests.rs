@@ -553,7 +553,7 @@ func main() {}
 fn imported_generic_types_and_functions_are_specialized_in_their_owner_package() {
     let compilation = test_support::compile(
         r#"package main
-import "shared"
+import "test/shared"
 
 func observe() -> u32 {
     return shared.Wrap[u32](31).Value
@@ -875,7 +875,7 @@ func main() {
 fn imported_generic_operators_are_specialized_in_their_owner_package() {
     let compilation = test_support::compile(
         r#"package main
-import "shared"
+import "test/shared"
 
 func observe() -> u32 {
     values := shared.Values[u32]{Data: [1]u32{37}}
@@ -909,7 +909,7 @@ fn generic_pointer_operators_are_found_through_a_bridge_import() {
         (
             "main.ond",
             r#"package main
-import facade "bridge"
+import facade "test/bridge"
 
 func observe() -> u32 {
     values := facade.Make[u32]()
@@ -922,7 +922,7 @@ func main() {}
         (
             "bridge/bridge.ond",
             r#"package bridge
-import ownerpkg "owner"
+import ownerpkg "test/owner"
 
 func Make[T]() -> ownerpkg.Values[T] {
     return ownerpkg.Values[T]{Data: [1]T{37}}
@@ -991,7 +991,7 @@ func main() {}
 fn imported_generic_interface_operators_are_discovered_from_the_owner_package() {
     test_support::compile(
         r#"package main
-import "shared"
+import "test/shared"
 
 type Pair struct { Values: [1]u32 }
 func (pair: *Pair) Get(index: u32) -> u32 { return pair.Values[index] }
@@ -1022,7 +1022,7 @@ fn generic_interface_operators_are_found_through_a_bridge_import() {
         (
             "main.ond",
             r#"package main
-import facade "bridge"
+import facade "test/bridge"
 
 func main() {
     values := facade.Make()
@@ -1033,7 +1033,7 @@ func main() {
         (
             "bridge/bridge.ond",
             r#"package bridge
-import ownerpkg "owner"
+import ownerpkg "test/owner"
 
 type Pair struct { Values: [1]u32 }
 var pair = Pair{Values: [1]u32{37}}

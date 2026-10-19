@@ -132,6 +132,8 @@ mod operator_len_tests;
 #[cfg(test)]
 mod operator_overload_tests;
 #[cfg(test)]
+mod project_contract_tests;
+#[cfg(test)]
 mod semantic_tests;
 #[cfg(test)]
 mod specification_decision_tests;

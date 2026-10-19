@@ -6,6 +6,67 @@ use super::{
 use std::fs;
 
 #[test]
+fn source_paths_distinguish_own_packages_from_nested_external_roots() {
+    let fixture = Fixture::new(
+        "package main\nimport own \"test/shared\"\nimport external \"shared\"\nfunc main(){own.File();external.File()}",
+    );
+    fs::create_dir(fixture.0.join("shared")).unwrap();
+    fs::write(
+        fixture.0.join("shared/shared.ond"),
+        "package shared\nfunc File()->*u8{return thisFile()}",
+    )
+    .unwrap();
+    let external = ond_compiler_core::ExternalSources::from([(
+        "shared/lib.ond".to_string(),
+        ond_compiler_core::ExternalSource {
+            path: fixture.0.join("vendor/shared/lib.ond"),
+            text: "package shared\nfunc File()->*u8{return thisFile()}".to_string(),
+        },
+    )]);
+    let loaded = ond_compiler_core::load_project_with_inputs(
+        &fixture.0,
+        &Default::default(),
+        &[],
+        &Default::default(),
+        &Default::default(),
+        &external,
+    )
+    .unwrap();
+    let compilation = crate::pipeline::compile_loaded_project(loaded).unwrap();
+    for (package, path, debug_path) in [
+        (
+            "test/shared",
+            b"shared/shared.ond\0".as_slice(),
+            "shared/shared.ond",
+        ),
+        ("shared", b"shared/lib.ond\0".as_slice(), "shared/lib.ond"),
+    ] {
+        let object = compilation
+            .objects
+            .iter()
+            .find(|object| object.name == package)
+            .unwrap();
+        let rodata = object
+            .sections
+            .iter()
+            .find(|section| section.kind == SectionKind::Rodata)
+            .unwrap();
+        assert!(rodata.data.windows(path.len()).any(|bytes| bytes == path));
+        let debug = compilation
+            .debug_objects
+            .iter()
+            .find(|debug| debug.package == package)
+            .unwrap();
+        assert!(debug.functions.iter().any(|function| {
+            function
+                .source
+                .as_ref()
+                .is_some_and(|source| source.path == debug_path)
+        }));
+    }
+}
+
+#[test]
 fn global_objects_use_checked_natural_bss_layout_and_abs32_relocations() {
     let f = Fixture::new(
         "package main\nvar a:u8=1\nvar b:u16=2\nvar c:u8=3\nvar z:struct{}\nfunc main(){b=9}",
@@ -104,7 +165,7 @@ fn source_location_builtins_use_shared_logical_paths_and_one_based_lines() {
     assert_eq!(paths.len(), 2);
     assert_eq!(paths[0].offset, paths[1].offset);
 
-    let fixture = Fixture::new("package main\nimport \"shared\"\nfunc main(){shared.File()}");
+    let fixture = Fixture::new("package main\nimport \"test/shared\"\nfunc main(){shared.File()}");
     fs::create_dir(fixture.0.join("shared")).unwrap();
     fs::write(
         fixture.0.join("shared/shared.ond"),
@@ -114,7 +175,7 @@ fn source_location_builtins_use_shared_logical_paths_and_one_based_lines() {
     let objects = codegen_objects(&fixture.core()).unwrap();
     let object = objects
         .iter()
-        .find(|object| object.name == "shared")
+        .find(|object| object.name == "test/shared")
         .unwrap();
     let rodata = object
         .sections
@@ -163,7 +224,7 @@ fn null_terminated_literal_storage_shares_exact_and_suffix_values() {
 #[test]
 fn exported_aggregate_constant_address_links_across_packages() {
     let fixture = Fixture::new(
-        "package main\nimport \"shared\"\nfunc main(){var p=&shared.Data[0];*(4294934608 as u32 as *u32) = p[0] as u32+p[1] as u32}",
+        "package main\nimport \"test/shared\"\nfunc main(){var p=&shared.Data[0];*(4294934608 as u32 as *u32) = p[0] as u32+p[1] as u32}",
     );
     fs::create_dir(fixture.0.join("shared")).unwrap();
     fs::write(
@@ -203,7 +264,8 @@ fn global_capacity_overflow_is_an_error_not_a_large_host_allocation() {
 
 #[test]
 fn combined_package_bss_overflow_is_diagnosed_by_linker() {
-    let f = Fixture::new("package main\nimport \"other\"\nvar A:[2147483648]u8\nfunc main(){}");
+    let f =
+        Fixture::new("package main\nimport \"test/other\"\nvar A:[2147483648]u8\nfunc main(){}");
     fs::create_dir(f.0.join("other")).unwrap();
     fs::write(
         f.0.join("other/other.ond"),

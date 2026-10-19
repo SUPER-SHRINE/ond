@@ -272,11 +272,16 @@ fn debug_paths(
                 .unwrap_or(file.path())
                 .to_string_lossy()
                 .replace('\\', "/");
-            let path = if package.logical_path == "." {
-                relative
-            } else {
-                format!("{}/{relative}", package.logical_path)
-            };
+            let path = file.display_path().map_or_else(
+                || {
+                    if package.logical_path == "." {
+                        relative
+                    } else {
+                        format!("{}/{relative}", package.logical_path)
+                    }
+                },
+                str::to_string,
+            );
             paths.insert(*file_id, path);
         }
     }

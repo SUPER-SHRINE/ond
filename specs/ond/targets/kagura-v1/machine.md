@@ -113,10 +113,10 @@ test buildでもSDKによるload・zero初期化・SP設定の境界を保ち、
 ## 7. Project Configuration
 <!-- ond-spec-id: targets/kagura-v1/project-configuration -->
 
-`ond.toml`があるdirectoryをproject rootとし、root自体がmain packageとなる。manifestは依存関係と
+`ond.toml`があるdirectoryをproject rootとし、実行projectのrootがmain packageとなる。manifestは依存関係と
 source探索境界を定義する。RAM配置とstack予約量はmachine SDKまたは`ond link`の`LinkPlan`が決定し、
 Ond project manifestには保持しない。
 
-`[project].name`は依存先projectのimport名前空間として使用する。依存されるprojectではOndの
+`[project].name`はproject自身と依存先projectのimport名前空間として使用する。すべてのprojectでOndの
 identifierとして有効な名前を必須とする。project name以外のproject metadataおよび一覧表示は
 v1のコンパイル結果には影響しない。

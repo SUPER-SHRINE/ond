@@ -64,7 +64,7 @@ fn runtime_global_initializers_are_rejected() {
 #[test]
 fn imported_globals_and_lexical_shadowing_work() {
     let compilation = compile(
-        "package main\nimport \"shared\"\nvar Value = 1\nfunc main() {}\nfunc result() -> (i32, i32) {\nvar Value = 9\nshared.Value = Value\nreturn Value, shared.Value\n}\n",
+        "package main\nimport \"test/shared\"\nvar Value = 1\nfunc main() {}\nfunc result() -> (i32, i32) {\nvar Value = 9\nshared.Value = Value\nreturn Value, shared.Value\n}\n",
         Some("package shared\nvar Value = 2\n"),
     )
     .unwrap();
@@ -132,7 +132,7 @@ fn disconnected_packages_need_no_startup_order() {
     let compilation = compile_files(&[
         (
             "main.ond",
-            "package main\nimport \"used\"\nfunc main() {}\n",
+            "package main\nimport \"test/used\"\nfunc main() {}\n",
         ),
         ("used/a.ond", "package used\nvar Value = 1\n"),
         ("unused/a.ond", "package unused\nvar Value = 2\n"),
