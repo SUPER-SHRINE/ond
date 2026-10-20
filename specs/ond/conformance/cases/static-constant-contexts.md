@@ -6,12 +6,7 @@
 規範定義元: [EVAL-01の定義元](../../language/v1/expressions.md#式と評価順)、[SYN-12の定義元](../../language/v1/lexical.md#文法の定義元)。\
 要件索引は[requirements](../requirements.md)、既存fixture宣言は[registry](../../../../crates/compiler-core/src/conformance/constant_contexts.rs)を参照する。
 
-共通のproject入力は`ond.toml`の`[project]`に`name = "test"`を置いた実行projectである。\
-generated numeric/型境界のsourceはすべて`main.ond`の内容として読み、static表は各file名を入力欄に記す。
-
-`accept`単独は受理を期待し、値の記載がある行はその型・値まで照合する。\
-構文解釈は表のParse phaseで照合し、内部AST/MIRの構造検査は外部適合判定へ含めない。\
-診断と原因位置の比較は[共通case契約](./README.md#入力と期待結果の読み方)に従う。
+入力・phase・比較の共通条件は[case契約](./README.md#入力と期待結果の読み方)に従う。
 
 | Case ID | 要件ID | 入力 | 仕様由来の期待結果 | Phase・原因位置 |
 | --- | --- | --- | --- | --- |

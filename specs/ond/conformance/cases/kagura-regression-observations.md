@@ -25,8 +25,6 @@ func main() { *(4294934608 as u32 as *u32) = (calc()) as u32 }
 | <code>allocation_zeroing_reuse_and_explicit_initialization_execute/3</code> | <code>type Z struct{}<br>func calc()-&gt;u32{var a=new(Z);var b=new([0]u16);var c=alloc[u8](0);free(c);var ok:u32;if a!=nil &amp;&amp; b!=nil &amp;&amp; c==nil{ok=1};free(a);free(b);return ok}</code> | 1 |
 | <code>failed_allocation_and_overflow_preserve_existing_memory/1</code> | <code>func calc()-&gt;u32{var a=alloc[u8](8);a[0]=42;var b=alloc[u8](4294967295);var c=alloc[u8](65536);var d=new([65536]u8);var result=a[0] as u32;if b==nil &amp;&amp; c==nil &amp;&amp; d==nil{result=result+1};free(a);return result}</code> | 43 |
 
-`failed_allocation_and_overflow_preserve_existing_memory/2`のu8 allocationに対する4-byte address剰余比較、`allocation_zeroing_reuse_and_explicit_initialization_execute/2`の解放address再利用比較、および`first_fit_splitting_coalescing_and_tail_reclamation_execute`はallocator方式の実装回帰として追跡する。
-
 ## Bounds失敗と後続write
 <!-- ond-spec-id: conformance/kagura-regression/bounds-before-write -->
 
@@ -63,8 +61,6 @@ func main(){}
 ## Layoutの実装追跡と外部case
 <!-- ond-spec-id: conformance/kagura-regression/layout-tracking -->
 
-`layout_and_abi_have_independent_fixed_expectations`は内部layout関数への入力と結果を検査する実装回帰識別名である。\
-外部のlayout値は[BI-04](./layout-operators.md)、ABIは[引数](../../targets/kagura-v1/abi.md#4-arguments)と[戻り値](../../targets/kagura-v1/abi.md#5-return-values)、local storageの寿命と配置のcaseは[MEM-02](./memory-placement.md)を参照する。
-
-`global_objects_use_checked_natural_bss_layout_and_abs32_relocations`のsection選択、正確offset、relocation命令選択とinitializer構造は実装回帰の追跡対象とする。\
-外部のglobal値と初期化は[global入力](./regression-observations.md#globals_are_zeroed_or_initialized_from_compile_time_values)、外部Object条件は[成果物](../../artifacts.md#object)を定義元とする。
+外部のlayout値は[BI-04](./layout-operators.md)、ABIは[引数](../../targets/kagura-v1/abi.md#4-arguments)と[戻り値](../../targets/kagura-v1/abi.md#5-return-values)、local storageの寿命と配置のcaseは[MEM-02](./memory-placement.md)を参照する。\
+外部のglobal値と初期化は[global入力](./regression-observations.md#globals_are_zeroed_or_initialized_from_compile_time_values)、Object条件は[成果物](../../artifacts.md#object)を定義元とする。\
+実装検査IDのscopeと対応規範は[Sourceとの管理境界](../../../../AGENTS.md#sourceとの管理境界)に記す。

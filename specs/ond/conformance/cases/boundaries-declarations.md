@@ -7,12 +7,7 @@
 規範定義元: [DECL-01の定義元](../../language/v1/declarations.md#宣言)、[DECL-02の定義元](../../language/v1/declarations.md#宣言)。\
 要件索引は[requirements](../requirements.md)、既存fixture宣言は[registry](../../../../crates/compiler-core/src/conformance/boundaries/declarations.rs)を参照する。
 
-共通のproject入力は`ond.toml`の`[project]`に`name = "test"`を置いた実行projectである。\
-generated numeric/型境界のsourceはすべて`main.ond`の内容として読み、static表は各file名を入力欄に記す。
-
-`accept`単独は受理を期待し、値の記載がある行はその型・値まで照合する。\
-構文解釈は表のParse phaseで照合し、内部AST/MIRの構造検査は外部適合判定へ含めない。\
-診断と原因位置の比較は[共通case契約](./README.md#入力と期待結果の読み方)に従う。
+入力・phase・比較の共通条件は[case契約](./README.md#入力と期待結果の読み方)に従う。
 
 | Case ID | 要件ID | 入力 | 仕様由来の期待結果 | Phase・原因位置 |
 | --- | --- | --- | --- | --- |
@@ -72,7 +67,7 @@ generated numeric/型境界のsourceはすべて`main.ond`の内容として読�
 | <code>DECL-02.nonconstant.address</code> | `DECL-02` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>var g = 0<br>const X = &amp;g<br>func main() {}<br></code> | <code>compile error</code> | <code>Core; reject; 原因位置: main.ond</code> |
 | <code>DECL-02.nonconstant.array-global</code> | `DECL-02` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>var g = 0<br>const X = [2]i32{g, 0}<br>func main() {}<br></code> | <code>compile error</code> | <code>Core; reject; 原因位置: main.ond</code> |
 | <code>DECL-02.nonconstant.struct-global</code> | `DECL-02` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>var g = 0<br>const X = S{x: g}<br>func main() {}<br></code> | <code>compile error</code> | <code>Core; reject; 原因位置: main.ond</code> |
-| <code>DECL-02.function-nil-value</code> | `DECL-02` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>const F: func() = nil<br>const Result = F<br>func main() {}<br></code> | <code>accept; Result: func() -&gt; () = typed nil</code> | <code>Core; accept</code> |
+| <code>DECL-02.function-nil-value</code> | `DECL-02` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>const F: func() = nil<br>const Result = F<br>func main() {}<br></code> | <code>accept; Result: func() = typed nil</code> | <code>Core; accept</code> |
 | <code>DECL-02.named-array-values</code> | `DECL-02` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>type Array [2]i32<br>const A = Array{1, 2}<br>const Result = A[0] + A[1]<br>func main() {}<br></code> | <code>accept; Result: i32 = integer bits 0x0000000000000003</code> | <code>Core; accept</code> |
 | <code>DECL-02.named-array-key</code> | `DECL-02` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>type Array [3]i32<br>const A = Array{1 + 1: 7}<br>const Result = A[0] + A[2]<br>func main() {}<br></code> | <code>accept; Result: i32 = integer bits 0x0000000000000007</code> | <code>Core; accept</code> |
 | <code>DECL-02.named-struct-values</code> | `DECL-02` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>const A = S{x: 3}<br>const Result = A.x<br>func main() {}<br></code> | <code>accept; Result: i32 = integer bits 0x0000000000000003</code> | <code>Core; accept</code> |

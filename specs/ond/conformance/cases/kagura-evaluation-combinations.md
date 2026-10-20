@@ -22,15 +22,9 @@ fault caseは後続effectを実行せず、表の出力を保持して停止す�
 ## 内部MIRを操作する組合せ回帰
 <!-- ond-spec-id: conformance/cases/kagura-internal-combinations -->
 
-以下のIDは内部MIRへlocalを追加してframeを構成する実装回帰の追跡対象であり、外部適合caseには含めない。\
-内部frame数値から計算したstack sizeや内部MIR操作を別実装へ要求しない。\
 外部の引数・戻り値・保存register、stack容量faultは[ABI](../../targets/kagura-v1/abi.md)と[メモリ管理](../../language/v1/execution.md#メモリ管理)を定義元とする。
 
-| 実装回帰ID | 対応する外部主題 |
-| --- | --- |
-| `ABI.far-large-aggregate-helper` | 引数・aggregate return・保存register・stackのABI契約 |
-| `FRAME.exact-fit` | 呼出しに必要なstack容量と正常終了 |
-| `FRAME.next-call-fault` | stack容量不足時のfaultと完了済み状態の保持 |
+内部組合せ検査IDのscopeと対応規範は[Sourceとの管理境界](../../../../AGENTS.md#sourceとの管理境界)に記す。
 
 ## 共有caseとsuite数
 <!-- ond-spec-id: conformance/cases/kagura-shared-inventory -->

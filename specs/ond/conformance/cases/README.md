@@ -16,7 +16,6 @@
 | numeric-float-vectors | 25 | [numeric-float-vectors](./numeric-float-vectors.md) |
 | numeric-floats | 69 | [numeric-floats](./numeric-floats.md) |
 | numeric-integers | 397 | [numeric-integers](./numeric-integers.md) |
-| numeric-runtime（内部追跡） | 1 | [numeric-runtime](./numeric-runtime.md) |
 | static-constant-contexts | 25 | [static-constant-contexts](./static-constant-contexts.md) |
 | static-control-headers | 26 | [static-control-headers](./static-control-headers.md) |
 | static-diagnostics | 6 | [static-diagnostics](./static-diagnostics.md) |
@@ -35,22 +34,23 @@
 適用版はOnd Language v1とKagura v1のdata layoutである。\
 各caseは他caseから独立したprojectとして扱い、sourceとmanifestは入力欄をそのままUTF-8で作成する。\
 既定manifestは`ond.toml`に`[project]`と`name = "test"`をLFで記す。\
-`PKG-01.missing_manifest`だけはmanifestを置かず、それ以外の例外はfamily本文に記す。\
-追加library、依存project、cacheは明示された入力がある場合だけ用いる。
-
+`PKG-01.missing_manifest`だけはmanifestを置かず、それ以外の例外は各familyに記す。\
+追加library、依存project、cacheは入力欄に明示された場合だけ用いる。\
+file見出しのない単一file入力は`main.ond`として扱う。\
+file見出しがある場合は、見出しに続くsourceを各fileの内容として復元する。\
 表の入力欄はHTML entityを元の文字へ復号し、`<br>`をLF、`&#13;`をCRとしてsource byte列を復元する。\
 file見出しとfile間の区切りはsourceへ含めず、各code本文の末尾LFは保持する。\
-`main.ond:<br>`等のfile見出しに続く部分が当該fileの内容であり、fileを分ける`<br><br>次のfile名:<br>`は区切りとして読む。
+`main.ond:<br>`等のfile見出しに続く部分が当該fileの内容であり、`<br><br>次のfile名:<br>`はfile区切りとして読む。
 
 Phase列は観測操作を次のように指定する。
 
 | Phase | 操作と成功期待 |
 | --- | --- |
-| Parse | projectを読み込み、token化と構文解析を行う。受理は構文の成立のみを表し、名前・型・entryの成立や実行成功を含まない。構文解釈期待は結合・型形式として照合する |
+| Parse | projectを読み込み、token化と構文解析を行う。受理は構文の成立を表し、構文解釈期待は表に記した結合・型形式を照合する |
 | Core | project全体の名前・型・定数・静的条件を検査する。成功時は記載された宣言の型と値を照合する |
-| MemoryVm | Coreの検査後、freshなglobal zero/constant初期化状態で記載された関数を指定argument列により1回呼ぶ。返値列、fault、実行済みeffectを照合する。実装固有のIRやVM命令を要求しない |
+| MemoryVm | Coreの検査後、freshなglobal zero/constant初期化状態で記載された関数を指定argument列により1回呼び、返値列、fault、実行済みeffectを照合する |
 
-`accept`は当該phaseの成功を表す。\
+`accept`単独は当該phaseの成功を表し、表の値欄に型・値が記載されている場合はそれらも比較する。\
 `reject`は当該phaseで入力の不成立を診断して失敗することを表し、[診断と成功結果](../../language/v1/declarations.md#診断と成功結果)の原因位置と独立したエラーの収集を比較する。\
 原因位置にfileを記した行は、そのfileの不成立な名前・式・宣言等に対応するUTF-8 byte範囲を持つことを照合する。\
 `project`はmanifest欠落・entry欠落・import graphなどproject入力全体の不成立に対応する。\
@@ -65,9 +65,8 @@ boolのargumentと返値は0/1、f32はu32 bit patternとし、bytesは要素ご
 ## 外部allocatorと実装回帰
 <!-- ond-spec-id: conformance/case-implementation-boundary -->
 
-外部allocatorの適合範囲は[言語のheap契約](../../language/v1/execution.md#メモリ管理)と[Kaguraの配置境界](../../targets/kagura-v1/machine.md#31-heap-allocator)を適用する。\
-`first_fit_splitting_coalescing_and_tail_reclamation_execute`、`FP-02.numeric-dynamic-mir-contracts`、zero-storage callback、`MIR-01`、内部frame組合せは実装追跡対象であり、外部適合caseの通過数へ加えない。\
-これらのIDと外部契約の対応は[追跡索引](../implementation-index.md)と[内部numeric追跡](./numeric-runtime.md)を参照する。
+allocatorの外部観測は[言語のheap契約](../../language/v1/execution.md#メモリ管理)と[Kaguraの配置境界](../../targets/kagura-v1/machine.md#31-heap-allocator)を適用する。\
+実装検査IDのscopeと対応規範は[Sourceとの管理境界](../../../../AGENTS.md#sourceとの管理境界)に記す。
 
 ## 追加の回帰入力
 <!-- ond-spec-id: conformance/cases/additional-observations -->
@@ -89,4 +88,4 @@ boolのargumentと返値は0/1、f32はu32 bit patternとし、bytesは要素ご
 
 - [整数336件](./kagura-integers.md)
 - [数値変換93件](./kagura-casts.md)
-- [評価/fault8件、内部組合せ3件、共有50件](./kagura-evaluation-combinations.md)
+- [評価/fault8件、共有50件](./kagura-evaluation-combinations.md)

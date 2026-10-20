@@ -11,7 +11,7 @@
 
 ```ebnf
 TopLevelDecl  = ConstDecl | VarDecl | TypeDecl | FuncDecl | OperatorDecl .
-OperatorDecl  = "operator" Receiver ( "+" | "-" | "*" | "/" | "%" | "[]" | "[]=" | "len" ) Signature Block .
+OperatorDecl  = "operator" Receiver ( "+" | "-" | "*" | "/" | "%" | "[" "]" [ "=" ] | "len" ) Signature Block .
 ConstDecl     = "const" ConstSpec | "const" "(" { ConstSpec ";" } ")" .
 ConstSpec     = IdentifierList [ ":" Type ] "=" ExpressionList .
 VarDecl       = "var" VarSpec | "var" "(" { VarSpec ";" } ")" .

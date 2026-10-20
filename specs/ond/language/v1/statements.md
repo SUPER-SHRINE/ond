@@ -100,9 +100,21 @@ getterは[operator解決](./expressions.md#user-defined-operator)で選んだind
 - `if`、`else`、`for` は必ず block を伴う
 - `if` と条件付き `for` の条件は `bool` でなければならない
 - `for`は本章のEBNFで示す無条件、条件付き、3 clauseの形を持つ
+- `if`はinitがあれば1回実行してからconditionを1回評価し、trueならthen block、falseならelse節へ進み、else節の省略時は後続文へ進む
+- 条件付き`for`は各反復の前にconditionを評価し、trueならbodyへ、falseならloop後続文へ進む
+- 3 clause形式の`for`でconditionが省略された場合、conditionはtrueとして扱う
+- 3 clause形式の`for`はinitがあれば1回実行してからconditionを評価し、trueならbodyへ、falseならloop後続文へ進む
+- 無条件`for`は初回からbodyを実行する
+- loop bodyからの遷移は次の表に従う
+
+| bodyの終了経路 | 無条件形式 | 条件付き形式 | 3 clause形式 |
+| --- | --- | --- | --- |
+| 通常完了 | 次のbody | condition評価 | post、condition評価 |
+| `continue` | 次のbody | condition評価 | post、condition評価 |
+| `break` | loop後続文 | loop後続文 | loop後続文 |
+
+- 3 clause形式でpostが省略された場合、body通常完了後と`continue`後はcondition評価へ進む
 - `break` と `continue` は最内の `for` を対象とする
-  - `continue`はloop bodyの残りを飛ばし、3 clause形式ではpostを実行してからconditionを再評価する
-  - 条件付き形式はconditionの再評価、無条件形式は次のbody実行へ進む
 - `return` は現在の関数を終了する
 - `trap`の停止とdebug理由の記録は[builtin trap](./builtins.md#8-trap)に従う
 

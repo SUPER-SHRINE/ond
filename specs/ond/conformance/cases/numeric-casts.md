@@ -1,18 +1,14 @@
 # numeric-castsの入力と期待値
 <!-- ond-spec-id: conformance/cases/numeric-casts -->
 
-定数castは変換先範囲、runtime castは下位bit保持とsource符号拡張、int↔f32はroundTiesToEvenと0方向丸めから期待値を導く。\
-NaN/Infと変換先範囲違反はcompile errorになる。
+定数cast caseは変換先範囲、runtime cast caseは下位bit保持とsource符号拡張、int↔f32 caseはroundTiesToEvenと0方向丸めから期待値を導く。\
+この表の定数整数castで値が変換先型の範囲を超える場合はcompile errorを期待し、範囲条件は[型変換](../../language/v1/types.md#型同一性)を参照する。\
+定数f32から整数への変換でNaN/Infまたは変換先型の範囲を超える入力はcompile errorを期待し、範囲条件は[型変換](../../language/v1/types.md#型同一性)を参照する。
 
 規範定義元: [CAST-02の定義元](../../language/v1/types.md#型同一性)、[CAST-03の定義元](../../language/v1/types.md#型同一性)。\
 要件索引は[requirements](../requirements.md)、既存fixture宣言は[registry](../../../../crates/compiler-core/src/conformance/numeric/casts.rs)を参照する。
 
-共通のproject入力は`ond.toml`の`[project]`に`name = "test"`を置いた実行projectである。\
-generated numeric/型境界のsourceはすべて`main.ond`の内容として読み、static表は各file名を入力欄に記す。
-
-`accept`単独は受理を期待し、値の記載がある行はその型・値まで照合する。\
-構文解釈は表のParse phaseで照合し、内部AST/MIRの構造検査は外部適合判定へ含めない。\
-診断と原因位置の比較は[共通case契約](./README.md#入力と期待結果の読み方)に従う。
+入力・phase・比較の共通条件は[case契約](./README.md#入力と期待結果の読み方)に従う。
 
 | Case ID | 要件ID | 入力 | 仕様由来の期待結果 | Phase・原因位置 |
 | --- | --- | --- | --- | --- |

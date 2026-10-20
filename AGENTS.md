@@ -102,7 +102,17 @@ case固有の入力・期待値と一般規則の再掲を区別し、各caseを
 
 - 外部言語、target、ABI、成果物、linking、CLI、cache、debug、test buildの契約は`specs/ond/`へ置く
 - Rust型、内部AST/HIR/MIR、phase、helper、validator構造、命令選択・探索方式はsourceで管理する
-- 内部検査IDは追跡用に保持し、別実装に同じ内部形式を要求しない
+- 実装検査IDは本書の追跡表でscopeと対応規範を記録し、別実装の外部適合条件を定義する根拠にしない
+
+| 実装追跡ID・識別名 | scope | 対応する外部規範 |
+| --- | --- | --- |
+| `MIR-01`; `validator_rejects_use_before_definition`; `validator_rejects_non_dominating_branch_value`; `validator_rejects_wrong_operation_and_direct_target`; `validator_requires_division_and_bounds_guards` | MIR validatorのID、型、演算、支配、guard、global、initializer検証 | [Language v1](specs/ond/language/v1/README.md)、[診断](specs/ond/language/v1/declarations.md#診断と成功結果)、[cache](specs/ond/build/cache.md)、[成果物](specs/ond/artifacts.md)、[linking](specs/ond/linking.md) |
+| `DECL-01.zero.0`–`DECL-01.zero.13`; zero-storage callback | zero storage内部形状とcallback | [宣言](specs/ond/language/v1/declarations.md#宣言) |
+| `NUM-02.imported-constant.core` | imported constantのfolded MIR形状 | [整数定数演算](specs/ond/language/v1/expressions.md#integer-constant-arithmetic)、[package scope](specs/ond/language/v1/names-and-scopes.md#scopeとshadowing) |
+| `FP-02.numeric-dynamic-mir-contracts` | dynamic numeric MIRのopcode、型、guard形状 | [整数演算](specs/ond/language/v1/expressions.md#integer-arithmetic)、[f32演算](specs/ond/language/v1/expressions.md#floating-point-arithmetic)、[型変換](specs/ond/language/v1/types.md#型同一性) |
+| `ABI.far-large-aggregate-helper`; `FRAME.exact-fit`; `FRAME.next-call-fault` | 内部frame構築を伴うKagura評価組合せ | [Kagura ABI](specs/ond/targets/kagura-v1/abi.md)、[heapとstack容量](specs/ond/language/v1/execution.md#メモリ管理) |
+| `first_fit_splitting_coalescing_and_tail_reclamation_execute`; `failed_allocation_and_overflow_preserve_existing_memory/2`; `allocation_zeroing_reuse_and_explicit_initialization_execute/2` | allocator方式、alignmentと解放address再利用の実装検査 | [heap契約](specs/ond/language/v1/execution.md#メモリ管理)、[Kagura heap配置](specs/ond/targets/kagura-v1/machine.md#31-heap-allocator) |
+| `layout_and_abi_have_independent_fixed_expectations`; `global_objects_use_checked_natural_bss_layout_and_abs32_relocations` | 内部layout関数、section/offset、relocation選択、initializer構造 | [Kagura data layout](specs/ond/targets/kagura-v1/machine.md#5-data-layout)、[ABI](specs/ond/targets/kagura-v1/abi.md)、[Object](specs/ond/artifacts.md#object) |
 
 ## Semantic ID
 <!-- ond-spec-id: language/semantic-id-policy -->

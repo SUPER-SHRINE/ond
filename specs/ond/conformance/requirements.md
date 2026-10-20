@@ -1,8 +1,7 @@
 # 適合要件と規範定義元の索引
 <!-- ond-spec-id: conformance/requirements-index -->
 
-規範定義元とcase対応を各表に記し、入力条件と仕様由来期待値は[case索引](./cases/README.md)を参照する。\
-Rust runner、HIR/MIR内部検査、テスト実行器は実装sourceが管理する。
+規範定義元とcase対応を各表に記し、入力条件と仕様由来期待値は[case索引](./cases/README.md)を参照する。
 
 各適合caseは、ここに示す要件IDと対応する仕様を参照する。\
 要件の詳細な定義は、各節に示す仕様を正とする。
@@ -132,7 +131,6 @@ Rust runner、HIR/MIR内部検査、テスト実行器は実装sourceが管理�
 | --- | --- | --- | --- |
 | DIAG-01 | source errorを位置付き診断で返し、全検査成功時に成功結果を得る | [DIAG-01の定義元](../language/v1/declarations.md#診断と成功結果) | [static-diagnostics](./cases/static-diagnostics.md)、[diagnostic-causes](./cases/diagnostic-causes.md) |
 | DIAG-02 | Unicode/複数fileの診断位置 | [DIAG-02の定義元](../language/v1/declarations.md#診断と成功結果) | [static-diagnostics](./cases/static-diagnostics.md)、[static-seed](./cases/static-seed.md)、[diagnostic-causes](./cases/diagnostic-causes.md) |
-| MIR-01 | 外部適合から除外する実装内部IRのID/type/op/dominance/guard/global/init検証の追跡 | [内部IR検証](./implementation-index.md) | [validator_rejects_use_before_definitionの入力・期待](./implementation-index.md#既存回帰と要件) |
 
 ## 成果物・build・target
 <!-- ond-spec-id: conformance/requirements-artifact-build-target -->

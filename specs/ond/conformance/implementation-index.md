@@ -73,10 +73,8 @@
 ## 内部IRとcacheの管理元
 <!-- ond-spec-id: conformance/internal-source-owners -->
 
-内部IRの型と検証は実装固有の追跡対象であり、外部の適合判定には[言語](../language/v1/README.md)、[診断](../language/v1/declarations.md#診断と成功結果)、[cache](../build/cache.md)、[heap](../language/v1/execution.md#メモリ管理)、[成果物](../artifacts.md)、[linking](../linking.md)の規範を適用する。
-
-`DECL-01.zero.0`〜`DECL-01.zero.13`のzero storage形状と、`NUM-02.imported-constant.core`のfolded MIR形状は実装検査の追跡対象とする。\
-同じIDの外部caseは、[宣言の受理](./cases/boundaries-declarations.md)と[定数値](./cases/static-seed.md)をそれぞれのphaseで比較する。
+内部実装の追跡範囲は[Sourceとの管理境界](../../../AGENTS.md#sourceとの管理境界)に定める。\
+外部から観測する宣言受理と定数値は[宣言case](./cases/boundaries-declarations.md)と[定数case](./cases/static-seed.md)で比較する。
 
 ## 既存回帰と要件
 <!-- ond-spec-id: conformance/existing-regression-requirements -->
@@ -121,7 +119,3 @@
 | `INIT-02` | [regression-observations](./cases/regression-observations.md) |
 | `OUT-01` | [kagura-regression-observations](./cases/kagura-regression-observations.md) |
 | `OUT-02` | [regression-observations](./cases/regression-observations.md) |
-
-`MIR-01`は内部IRのID、型、演算、支配、guard、global、initializer検証の実装追跡IDとする。\
-同じ主題の回帰識別名`validator_rejects_use_before_definition`、`validator_rejects_non_dominating_branch_value`、`validator_rejects_wrong_operation_and_direct_target`、`validator_requires_division_and_bounds_guards`は外部適合caseへ含めない。\
-`global_objects_use_checked_natural_bss_layout_and_abs32_relocations`、`layout_and_abi_have_independent_fixed_expectations`、allocator address再利用、numeric MIR、frame組合せの追跡と外部規則は[実装境界](./cases/kagura-regression-observations.md#layoutの実装追跡と外部case)、[numeric](./cases/numeric-runtime.md)、[組合せ](./cases/kagura-evaluation-combinations.md#内部mirを操作する組合せ回帰)を参照する。
