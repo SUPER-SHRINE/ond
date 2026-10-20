@@ -158,6 +158,43 @@ pub(super) const CASES: &[Case] = &[
 ];
 
 #[test]
+fn diag01_independent_causes_are_both_reported() {
+    let source = "package main\nfunc a(){var x:i32=true}\nfunc b(){var y=missing}\nfunc main(){}\n";
+    let expected = [
+        ExpectedDiagnostic {
+            severity: Severity::Error,
+            message: Message::Any,
+            location: Location::WithinSource {
+                file: "main.ond",
+                text: "var x:i32=true",
+                occurrence: 0,
+            },
+        },
+        ExpectedDiagnostic {
+            severity: Severity::Error,
+            message: Message::Any,
+            location: Location::Source {
+                file: "main.ond",
+                text: "missing",
+                occurrence: 0,
+            },
+        },
+    ];
+    run(&Case {
+        id: "DIAG-01.independent-causes",
+        specs: &["DIAG-01"],
+        layer: Layer::Core,
+        manifest: true,
+        files: &[SourceFile {
+            path: "main.ond",
+            text: source,
+        }],
+        expected: Expected::Reject(&expected),
+    })
+    .unwrap();
+}
+
+#[test]
 fn source_diagnostic_contracts() {
     for case in CASES {
         run(case).unwrap();

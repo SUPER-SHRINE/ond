@@ -73,6 +73,10 @@ impl LinkedMachine {
         })
     }
 
+    pub(super) fn read_word(&mut self, address: u32) -> u32 {
+        self.bus.read32(address).unwrap()
+    }
+
     pub fn pc(&self) -> u32 {
         self.cpu.pc()
     }

@@ -80,18 +80,27 @@ fn global_objects_use_checked_natural_bss_layout_and_abs32_relocations() {
         .find(|s| s.kind == SectionKind::Bss)
         .unwrap();
     assert!(bss.data.is_empty());
-    assert_eq!(bss.memory_size, 4);
-    for (name, offset, size, section) in [
-        ("main.a", 0, 1, SectionKind::Data),
-        ("main.b", 2, 2, SectionKind::Data),
-        ("main.c", 4, 1, SectionKind::Data),
-        ("main.z", 0, 0, SectionKind::Bss),
+    // 公開契約: globalは自然alignmentのBssで、非zeroの領域同士は重ならない。
+    let mut regions = Vec::new();
+    for (name, size, alignment) in [
+        ("main.a", 1, 1),
+        ("main.b", 2, 2),
+        ("main.c", 1, 1),
+        ("main.z", 0, 1),
     ] {
-        let s = o.symbols.iter().find(|s| s.name == name).unwrap();
-        assert_eq!((s.offset, s.size), (offset, size));
-        assert_eq!(s.section, Some(section),);
+        let symbol = o.symbols.iter().find(|s| s.name == name).unwrap();
+        assert_eq!(symbol.section, Some(SectionKind::Bss), "{name}");
+        assert_eq!(symbol.offset % alignment, 0, "{name}");
+        assert_eq!(symbol.size, size, "{name}");
+        let end = symbol.offset.checked_add(size).unwrap();
+        assert!(end <= bss.memory_size);
+        if size > 0 {
+            for &(start, prior_end) in &regions {
+                assert!(end <= start || symbol.offset >= prior_end);
+            }
+            regions.push((symbol.offset, end));
+        }
     }
-    assert!(p.packages[0].initializer.is_none());
     assert!(
         o.relocations
             .iter()

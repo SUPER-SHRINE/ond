@@ -680,3 +680,45 @@ mod tests {
         root
     }
 }
+
+#[cfg(test)]
+mod conformance_lock_tests {
+    use super::*;
+    const K: &str = "version = 2\n[[package]]\nowner = \"app\"\nname = \"math_dep\"\ngit = \"https://example.invalid/math.git\"\nrev = \"release\"\ncommit = \"0123456789012345678901234567890123456789\"\n";
+    struct Scratch(PathBuf);
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+    fn read_input(text: &str) -> DriverResult<LockFile> {
+        let root = Scratch(std::env::temp_dir().join(format!(
+                "ond-lock-conformance-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            )));
+        fs::create_dir(&root.0).unwrap();
+        let path = root.0.join("ond.lock");
+        fs::write(&path, text).unwrap();
+        read_lock(&path)
+    }
+    #[test]
+    fn dep01_schema() {
+        read_input(K).expect("DEP-01.schema: real lock reader; no repository resolution");
+    }
+    #[test]
+    fn dep01_zero_edges() {
+        read_input("version = 2\npackage = []\n").expect("DEP-01.zero-edges");
+    }
+    #[test]
+    fn dep01_version_one() {
+        read_input(K).expect("DEP-01.version-one: revision 2 baseline precondition");
+        assert!(
+            read_input(&K.replacen("version = 2", "version = 1", 1)).is_err(),
+            "DEP-01.version-one"
+        );
+    }
+}

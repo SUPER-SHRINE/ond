@@ -134,5 +134,6 @@ fn startup_object(init_symbols: &[String], main_symbol: &str) -> Object {
 }
 #[path = "branch_tests.rs"]
 mod branch_tests;
+mod conformance_observations;
 mod machine;
 mod runtime_tests;

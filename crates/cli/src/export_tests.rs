@@ -94,7 +94,7 @@ func secret(){}
     assert!(
         matches!(&data.exports["Real"], Export::Constant(v) if v.kind == ValueKind::Float32(0x80000000))
     );
-    assert!(matches!(&data.exports["Empty"], Export::Constant(v) if v.kind == ValueKind::Nil));
+    assert!(matches!(&data.exports["Empty"], Export::Constant(v) if v.kind == ValueKind::Zero));
     assert!(
         matches!(&data.exports["Bytes"], Export::Constant(v) if matches!(&v.kind, ValueKind::Composite(items) if items.len()==3))
     );
@@ -209,3 +209,6 @@ fn generic_metadata_identity_survives_unrelated_type_ids() {
     .unwrap();
     assert_eq!(artifact.interface, changed.interface);
 }
+
+#[path = "artifact_conformance_tests.rs"]
+mod artifact_conformance_tests;

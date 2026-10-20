@@ -436,3 +436,6 @@ fn local_branch_boundaries_are_expanded_in_both_directions() {
         assert_eq!(first as u16 as i16, if near { delta as i16 } else { 1 });
     }
 }
+
+#[path = "memory_placement_tests.rs"]
+mod memory_placement_tests;

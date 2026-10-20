@@ -775,3 +775,72 @@ fn test_build_defaults_sidecars_and_stdout_contract() {
         serde_json::from_slice(&fs::read(f.0.join("empty.ondtest")).unwrap()).unwrap();
     assert!(empty.cases.is_empty());
 }
+
+fn artifact_path_case(mode: &str) {
+    let f = Fixture::new();
+    let compiled = run(
+        &f.0,
+        &["compile", "game", "--library-dir", "libraries", "-o", "-"],
+        None,
+    );
+    assert!(compiled.status.success(), "{:?}", compiled);
+    let mut manifest: CompilationManifest = serde_json::from_slice(&compiled.stdout).unwrap();
+    let build = f.0.join("build");
+    let cwd = f.0.join("run");
+    fs::create_dir_all(&build).unwrap();
+    fs::create_dir_all(&cwd).unwrap();
+    for reference in &mut manifest.packages {
+        let name = reference.path.file_name().unwrap().to_owned();
+        let base = if mode == "stdin" { &cwd } else { &build };
+        let destination = if mode == "absolute" {
+            f.0.join("shared").join(&name)
+        } else {
+            base.join("cache").join(&name)
+        };
+        fs::create_dir_all(destination.parent().unwrap()).unwrap();
+        fs::copy(&reference.path, &destination).unwrap();
+        reference.path = if mode == "absolute" {
+            destination
+        } else {
+            PathBuf::from("cache").join(name)
+        };
+    }
+    let bytes = serde_json::to_vec(&manifest).unwrap();
+    let path = build.join("app.ondbuild");
+    fs::write(&path, &bytes).unwrap();
+    let path = path.to_str().unwrap();
+    let mut args = LINK.to_vec();
+    args[1] = path;
+    let output = if mode == "stdin" {
+        run(&cwd, LINK, Some(&bytes))
+    } else {
+        run(&cwd, &args, None)
+    };
+    assert!(
+        output.status.success(),
+        "ART-01.path-{mode}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice::<LinkedImage>(&output.stdout).unwrap();
+    if mode == "absolute" {
+        let stdin = run(&cwd, LINK, Some(&bytes));
+        assert!(
+            stdin.status.success(),
+            "ART-01.path-absolute stdin: {}",
+            String::from_utf8_lossy(&stdin.stderr)
+        );
+        serde_json::from_slice::<LinkedImage>(&stdin.stdout).unwrap();
+    }
+}
+#[test]
+fn art01_path_file() {
+    artifact_path_case("file");
+}
+#[test]
+fn art01_path_stdin() {
+    artifact_path_case("stdin");
+}
+#[test]
+fn art01_path_absolute() {
+    artifact_path_case("absolute");
+}

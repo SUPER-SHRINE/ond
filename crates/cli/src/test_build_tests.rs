@@ -61,7 +61,7 @@ fn test_build_discovers_unreachable_packages_and_separates_cache_modes() {
             .map(|c| (c.package.as_str(), c.name.as_str(), c.symbol.as_str()))
             .collect::<Vec<_>>(),
         [
-            (".", "TestRoot", "main.TestRoot"),
+            ("test", "TestRoot", "main.TestRoot"),
             (
                 "test/isolated",
                 "TestUnreachable",

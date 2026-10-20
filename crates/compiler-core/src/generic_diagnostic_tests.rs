@@ -1,4 +1,112 @@
 use crate::test_support::compile;
+use std::{
+    fs,
+    process::{Command, Stdio},
+    sync::Mutex,
+    time::{Duration, Instant, SystemTime},
+};
+
+static TYPE05_CHILD: Mutex<()> = Mutex::new(());
+
+fn type05_reject_isolated(test_name: &str, source: &str) {
+    const ROOT_ENV: &str = "OND_TYPE05_CHILD_ROOT";
+    if let Some(root) = std::env::var_os(ROOT_ENV) {
+        let loaded = crate::load_project(&root).unwrap();
+        crate::ond::parse_project(&loaded)
+            .expect("TYPE-05 input must parse before semantic rejection");
+        let file = loaded.packages[0].files[0];
+        let error = match crate::compile_loaded_project(loaded) {
+            Err(error) => error,
+            Ok(_) => {
+                panic!("TYPE-05 {test_name}: expected semantic rejection, compilation succeeded")
+            }
+        };
+        let source = fs::read_to_string(std::path::Path::new(&root).join("main.ond")).unwrap();
+        let (request, root_use, declaration) = match test_name {
+            "type05_growing_function" => ("Grow[*T]()", "Grow[u8]()", "func Grow[T]"),
+            "type05_mutual_function" => ("F[T]()", "F[u8]()", "func F[T]"),
+            "type05_flipped_function" => ("Flip[B,A]()", "Flip[u8,u16]()", "func Flip[A,B]"),
+            "type05_growing_nominal" | "type05_nested_growing_nominal" => {
+                ("Grow[*T]", "Grow[u8]", "type Grow[T]")
+            }
+            "type05_growing_method" => ("next.Grow()", "b.Grow()", "func (b:Box[T]) Grow()"),
+            "type05_growing_operator" => ("next+next", "b+b", "operator (b:Box[T]) +"),
+            _ => panic!("unregistered TYPE-05 rejection case"),
+        };
+        let touches = |span: crate::source::Span, needle: &str| {
+            let start = source.find(needle).unwrap();
+            span.file == file
+                && !span.is_synthetic()
+                && span.start < span.end
+                && span.end <= source.len()
+                && source.is_char_boundary(span.start)
+                && source.is_char_boundary(span.end)
+                && span.start >= start
+                && span.end <= start + needle.len()
+        };
+        assert!(
+            error.diagnostics().iter().any(|d| {
+                d.severity == crate::diagnostic::Severity::Error
+                    && !d.message.contains("internal")
+                    && (touches(d.primary.span, request) || touches(d.primary.span, root_use))
+                    && d.related
+                        .iter()
+                        .any(|label| touches(label.span, declaration))
+            }),
+            "TYPE-05 requires a source cause with the generic declaration/use related: {error}"
+        );
+        fs::write(std::path::Path::new(&root).join("completed"), test_name).unwrap();
+        return;
+    }
+
+    let _guard = TYPE05_CHILD
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    let root = std::env::temp_dir().join(format!(
+        "ond-type05-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("ond.toml"), "[project]\nname = \"test\"\n").unwrap();
+    fs::write(root.join("main.ond"), source).unwrap();
+    let module = module_path!().rsplit("::").next().unwrap();
+    let exact = format!("{module}::{test_name}");
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .arg("--exact")
+        .arg(exact)
+        .env(ROOT_ENV, &root)
+        .stdout(Stdio::from(fs::File::create(root.join("stdout")).unwrap()))
+        .stderr(Stdio::from(fs::File::create(root.join("stderr")).unwrap()))
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break Some(status);
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            break None;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    let output = format!(
+        "{}\n{}",
+        fs::read_to_string(root.join("stdout")).unwrap(),
+        fs::read_to_string(root.join("stderr")).unwrap()
+    );
+    let completed = fs::read_to_string(root.join("completed")).ok().as_deref() == Some(test_name);
+    let _ = fs::remove_dir_all(&root);
+    assert!(
+        status.is_some_and(|status| status.success()) && completed,
+        "TYPE-05 child failed, timed out, or did not execute {test_name}: {status:?}\n{output}"
+    );
+}
 
 fn assert_related(source: &str, error: &crate::FrontendError, primary: &str, related: &[&str]) {
     let diagnostics = error
@@ -287,5 +395,126 @@ fn failed_descendant_collects_all_requests_through_a_large_generic_ring() {
             .filter(|label| label.message == "nested generic function instantiation requested here")
             .count(),
         241,
+    );
+}
+
+#[test]
+fn type05_direct_function() {
+    let source = "package main\nfunc F[T](){F[T]()}\nfunc main(){F[u8]()}\n";
+    compile(source, None).unwrap();
+}
+
+#[test]
+fn type05_independent_functions() {
+    let source = "package main\nfunc F[T](){F[T]()}\nfunc main(){F[u8]();F[u16]()}\n";
+    compile(source, None).unwrap();
+}
+
+#[test]
+fn type05_finite_function_chain() {
+    let source = "package main\nfunc F[T](){G[*T]()}\nfunc G[T](){}\nfunc main(){F[u8]()}\n";
+    compile(source, None).unwrap();
+}
+
+#[test]
+fn type05_growing_function() {
+    type05_reject_isolated(
+        "type05_growing_function",
+        "package main\nfunc Grow[T](){Grow[*T]()}\nfunc main(){Grow[u8]()}\n",
+    );
+}
+
+#[test]
+fn type05_mutual_function() {
+    type05_reject_isolated(
+        "type05_mutual_function",
+        "package main\nfunc F[T](){G[*T]()}\nfunc G[T](){F[T]()}\nfunc main(){F[u8]()}\n",
+    );
+}
+
+#[test]
+fn type05_flipped_function() {
+    type05_reject_isolated(
+        "type05_flipped_function",
+        "package main\nfunc Flip[A,B](){Flip[B,A]()}\nfunc main(){Flip[u8,u16]()}\n",
+    );
+}
+
+#[test]
+fn type05_finite_nominal() {
+    let source = "package main\ntype Box[T] struct{value:T}\nvar B:Box[Box[u8]]\nfunc main(){}\n";
+    compile(source, None).unwrap();
+}
+
+#[test]
+fn type05_pointer_nominal() {
+    let source =
+        "package main\ntype Node[T] struct{next:*Node[T]}\nvar N:Node[u8]\nfunc main(){}\n";
+    compile(source, None).unwrap();
+}
+
+#[test]
+fn type05_growing_nominal() {
+    type05_reject_isolated(
+        "type05_growing_nominal",
+        "package main\ntype Grow[T] struct{next:*Grow[*T]}\nvar G:Grow[u8]\nfunc main(){}\n",
+    );
+}
+
+#[test]
+fn type05_growing_method() {
+    type05_reject_isolated(
+        "type05_growing_method",
+        "package main\ntype Box[T] struct{}\nfunc (b:Box[T]) Grow(){var next:Box[*T];next.Grow()}\nfunc main(){var b:Box[u8];b.Grow()}\n",
+    );
+}
+
+#[test]
+fn type05_growing_operator() {
+    type05_reject_isolated(
+        "type05_growing_operator",
+        "package main\ntype Box[T] struct{}\noperator (b:Box[T]) +(rhs:Box[T])->u8{var next:Box[*T];return next+next}\nfunc main(){var b:Box[u8];_=b+b}\n",
+    );
+}
+
+#[test]
+fn type05_nested_growing_nominal() {
+    type05_reject_isolated(
+        "type05_nested_growing_nominal",
+        "package main\ntype Relay[U] U\ntype Grow[T] struct{next:*Relay[Grow[*T]]}\nvar G:Grow[u8]\nfunc main(){}\n",
+    );
+}
+
+#[test]
+fn diag02_generic_related_causes() {
+    let source = "package main\ntype S struct{}\nfunc Need[T](x:T)->u32{return x.missing}\nfunc Outer[T](x:T)->u32{return Need[T](x)}\nfunc main(){_=Outer[S](S{});_=Need[S](S{});_=Need[u32](1)}\n";
+    let error = compile(source, None).expect_err("both generic instantiations must fail");
+    let within = |span: crate::source::Span, needle: &str| {
+        let start = source.find(needle).unwrap();
+        !span.is_synthetic()
+            && span.start < span.end
+            && span.start >= start
+            && span.end <= start + needle.len()
+            && source.is_char_boundary(span.start)
+            && source.is_char_boundary(span.end)
+    };
+    let causes = error
+        .diagnostics()
+        .iter()
+        .filter(|d| {
+            d.severity == crate::diagnostic::Severity::Error && within(d.primary.span, "x.missing")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(causes.len(), 2, "DIAG-02.generic-related-causes: {error}");
+    let has = |d: &crate::diagnostic::Diagnostic, needle: &str| {
+        d.related.iter().any(|label| within(label.span, needle))
+    };
+    let s_cause = causes
+        .iter()
+        .position(|d| has(d, "Outer[S](S{})") && has(d, "Need[S](S{})") && has(d, "Need[T](x)"));
+    let u32_cause = causes.iter().position(|d| has(d, "Need[u32](1)"));
+    assert!(
+        s_cause.is_some() && u32_cause.is_some() && s_cause != u32_cause,
+        "DIAG-02.generic-related-causes: independent specializations and all requests required: {error}"
     );
 }
