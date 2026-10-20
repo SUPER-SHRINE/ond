@@ -111,7 +111,7 @@
 | `STR-02` | [regression-observations](./cases/regression-observations.md) |
 | `LEN-01` | [regression-observations](./cases/regression-observations.md) |
 | `MEM-01` | [kagura-regression-observations](./cases/kagura-regression-observations.md) |
-| `MEM-02` | [kagura-regression-observations](./cases/kagura-regression-observations.md) |
+| `MEM-02` | [memory-placement](./cases/memory-placement.md) |
 | `MEM-03` | [kagura-regression-observations](./cases/kagura-regression-observations.md) |
 | `MEM-04` | [regression-observations](./cases/regression-observations.md) |
 | `FLOW-01` | [regression-observations](./cases/regression-observations.md) |

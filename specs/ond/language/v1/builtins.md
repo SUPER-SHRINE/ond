@@ -139,16 +139,11 @@ trap `raw reason`
 binding名は[scopeの組み込み名規則](./names-and-scopes.md#scopeとshadowing)に従い検査する。\
 field名等のmember名には組み込み名の綴りを使える。
 
-## 10. よくある compile error
+## 10. 入力の成立条件
 <!-- ond-spec-id: builtins/compile-errors -->
 
-- `alloc(...)` は引数 1 個のみ
-- `free(...)` は引数 1 個のみ
-- `len(...)` は引数 1 個のみ
-- `len(...)` の引数は配列、または一致する `operator len` を持つ型
-- `operator len` は戻り値型に `u32` を1個明示する必要がある
-- `thisFile()` と `thisLine()` は引数を取らない
-- `trap` の直後にはUTF-8として有効なstring literalを置く
+引数の個数・型・結果は各組み込みの[alloc](#2-alloc)、[free](#3-free)、[len](#4-len)、[new](#5-new)、[thisFile](#6-thisfile)、[thisLine](#7-thisline)の定義を適用する。\
+custom lenのsignatureは[operator宣言](./expressions.md#user-defined-operator)、trapのoperandは[trap](#8-trap)を定義元とし、不成立の入力はcompile errorとなる。
 
 ## 11. 関連仕様
 <!-- ond-spec-id: builtins/related-specifications -->

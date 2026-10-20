@@ -87,8 +87,8 @@ a, b = pair()
 関数はトップレベルで宣言する。
 
 ```ond
-func split(ptr: *u8, len: i32) -> (*u8, i32) {
-    return ptr, len
+func split(ptr: *u8, length: i32) -> (*u8, i32) {
+    return ptr, length
 }
 ```
 

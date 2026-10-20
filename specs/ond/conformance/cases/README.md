@@ -77,6 +77,7 @@ boolのargumentと返値は0/1、f32はu32 bit patternとし、bytesは要素ご
 - [字句](./lexical-observations.md)
 - [言語回帰の外部観測](./regression-observations.md)
 - [Kagura回帰の外部観測](./kagura-regression-observations.md)
+- [Stackとstartup storageの外部観測](./memory-placement.md)
 - [cacheとlink](./build-observations.md)
 
 ## Kagura backendの実行入力

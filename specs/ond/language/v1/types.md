@@ -137,7 +137,8 @@ box := Box[u32]{value: Identity[u32](7)}
 評価される定数変換の結果を表現できない場合はコンパイルエラーとする。\
 短絡評価により値が評価されない部分では、定数変換の範囲検査も省略する。\
 名前解決と型検査は両辺について行う。\
-実行時の整数変換は変換先の幅の下位 bit を保持し、符号拡張またはゼロ拡張して変換する。\
+実行時の整数間変換は、source型の幅と符号で解釈した数学的整数値vに対し、変換先の幅Mのbit patternをv mod 2^M（0以上2^M未満）とする。\
+結果値はこのbit patternを変換先型の符号で解釈し、[整数表現](./expressions.md#integer-arithmetic)に従う。\
 整数からf32への変換は整数の数学値nに対し、n<0ならs=1、他はs=0、m=abs(n)として[binary32のR(s,m)](./expressions.md#floating-point-arithmetic)を1回適用する。\
 f32から整数は、有限値を0方向へ切り捨てた整数nを先に求め、そのnが変換先型の範囲内ならnを返す。\
 NaN、Inf、またはnが範囲外の場合はcompile-timeならcompile error、runtimeならtargetのfaultとなる。
@@ -163,9 +164,7 @@ Kagura target における型のサイズ、alignment、zero value は [Ond for 
 - 固定長配列と推論長配列に共通して、長さ `N` は整数で `0 <= N <= 2^32-1` とする
   - 配列要素の有効な index は `0 <= index < N` とする
   - `N = 0` の配列に有効な index はない
-- Kagura target では `N * sizeof(T) <= 2^32-1` byte を満たさない配列型を compile error とする
-  - 推論長配列、defined type、入れ子の配列、generic の具体化結果にも同じ上限を適用する
-  - 使用箇所に関係なく型を検査し、要素型の padding とゼロサイズの扱いは [Data Layout](../../targets/kagura-v1/machine.md#5-data-layout) に従う
+- Kagura targetの配列型のbyte size上限、適用箇所、paddingとゼロサイズの扱いは[Data Layout](../../targets/kagura-v1/machine.md#5-data-layout)に従う
 - 配列の長さはコンパイル時定数でなければならない
 - 配列のindex演算は[operator解決](./expressions.md#user-defined-operator)を先に行い、builtinを選んだ場合に以下の配列access規則を適用する
 - builtin配列アクセスは`array[index]`とする
@@ -173,8 +172,7 @@ Kagura target における型のサイズ、alignment、zero value は [Ond for 
 - 配列長取得は[builtin len](./builtins.md#41-配列に対する-len)に従う
 - 定数 index が `0 <= index < N` を満たさない場合はコンパイルエラーとする
 - 実行時に決まる index には bounds check を生成し、範囲外なら回復不能なtrapで停止する
-- 単純代入 `=` の直接の配列格納先では、左辺の operand と右辺をすべて評価して値を保持した後、各格納先への書き込みの直前に bounds check を行う
-- 配列読み取り、配列要素のアドレス取得、および compound assignment の bounds check は、それぞれの評価時に行う
+- 配列読取り、address取得と代入のbounds check時点は[評価と代入の順序](./statements.md#静的成立条件)に従う
 - compiler は index が範囲内だと証明できる場合だけ runtime bounds check を省略できる
 - struct は `type Name struct { field: T }` と宣言し、`value.field` で field へアクセスする
 - 配列と struct の代入および引数渡しは値コピーとする

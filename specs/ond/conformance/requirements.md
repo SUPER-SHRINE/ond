@@ -101,7 +101,7 @@ Rust runner、HIR/MIR内部検査、テスト実行器は実装sourceが管理�
 | BI-03 | thisFile/thisLineの型・arity・論理位置 | [BI-03の定義元](../language/v1/builtins.md#6-thisfile) | [boundaries-builtins](./cases/boundaries-builtins.md) |
 | BI-04 | sizeof/alignofの型operandとlayout値 | [BI-04の定義元](../language/v1/builtins.md#組み込み構文) | [layout-operators](./cases/layout-operators.md) |
 | MEM-01 | new zero/alignment、alloc failure/0、free nil等 | [MEM-01の定義元](../language/v1/execution.md#メモリ管理) | [failed_allocation_and_overflow_preserve_existing_memoryの入力・期待](./implementation-index.md#既存回帰と要件) |
-| MEM-02 | stack/startup配置、escapeしても暗黙heap化なし | [MEM-02の定義元](../language/v1/execution.md#メモリ管理) | [layout_and_abi_have_independent_fixed_expectationsの入力・期待](./implementation-index.md#既存回帰と要件) |
+| MEM-02 | stack/startup配置、escapeしても暗黙heap化なし | [MEM-02の定義元](../language/v1/execution.md#メモリ管理) | [memory-placement](./cases/memory-placement.md) |
 | MEM-03 | bounds check失敗のnon-return/fault契約 | [MEM-03の定義元](../language/v1/execution.md#メモリ管理) | [bounds_fault_precedes_destination_writeの入力・期待](./implementation-index.md#既存回帰と要件) |
 | MEM-04 | raw pointerの有効領域・寿命・free入力を利用側が管理 | [MEM-04の定義元](../language/v1/execution.md#メモリ管理) | [arrays_including_string_literals_are_bounds_checked_but_raw_pointers_are_notの入力・期待](./implementation-index.md#既存回帰と要件) |
 

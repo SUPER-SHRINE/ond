@@ -120,7 +120,11 @@ N-bit表現Bのunsigned値はB、signed値はB<2^(N-1)ならB、それ以外はB
 - `b == 0` の `/` と `%` は compile-time なら compile error、実行時なら fault とする
 - signed division の `minInt / -1` は compile-time なら compile error、実行時なら fault とする
   - 対応する remainder `minInt % -1` は `0` とする
-- bitwise 演算は `N` bit の表現に対して行う
+- bitwise演算はoperandの`N` bit表現に対して、bit位置i（0<=i<N）ごとに次の関数を適用する
+  - operand表現A/Bのbitをa_i=floor(A/2^i) mod 2、b_i=floor(B/2^i) mod 2とする
+  - `A & B`はa_i × b_i、`A | B`はmax(a_i,b_i)、`A ^ B`は(a_i+b_i) mod 2を結果bitとする
+  - `A &^ B`はa_i × (1-b_i)、単項`^A`は1-a_iを結果bitとする
+  - 結果bit c_iから表現C=Σ(c_i × 2^i)を構成し、上記のresult型の幅と符号で値を解釈する
 - signed comparison は two's-complement の符号付き値、unsigned comparison は符号なし値を比較する
 - shift の左 operand と結果は同じ integer 型とする
 - shift count の型は `u32` とする

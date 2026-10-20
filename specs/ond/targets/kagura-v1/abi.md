@@ -35,6 +35,22 @@ Objectの`CallSlot`/`JumpSlot`によるlinker thunkは`r12`だけを変更し、
 - stack 上の ABI word は 4 byte とする
 - stack object の alignment は `min(natural_alignment, 4)` とする
 
+本章の`RET`と`CALLR rN, 0`は、[固定Kagura snapshot](./README.md#参照するkagura規範)のCPU §7のJZに対する次のaliasを表す。\
+PとRは命令開始時のPCとregister値であり、正常完了時の状態変化は次のとおりである。
+
+| Alias | JZ展開 | 正常完了時の状態 |
+| --- | --- | --- |
+| RET | `JZ r0,r0,r15,0` | PC=R15、link writeはr0への書込みとして破棄 |
+| CALLR rN, 0（1<=N<=15） | `JZ r15,r0,rN,0` | r15=(P+4) mod 2^32、PC=RN |
+
+表の他のregisterは保持する。\
+JZ自身はload/storeを行わず、命令fetchとfaultのbus効果は固定CPU/bus規範に従う。\
+N=15の場合もjump先は書込み前のR15である。\
+間接jump先のalignment違反はUNALIGNED_PCとなり、fault時の状態保持は固定CPUのfault規則に従う。\
+JZのbase register指定r0はPC相対形式を選ぶため、間接callのaddressはr1〜r15に保持する。\
+値0への間接callもこのregisterに0を保持して実行し、その先のfetch結果はmemory mapに従う。\
+call/returnを生成する命令列は本章のABIを満たす。
+
 ## 3. Value Classification
 <!-- ond-spec-id: targets/kagura-v1/abi-value-classification -->
 
@@ -128,7 +144,7 @@ bounds checkの失敗は呼び出しを追加せず、その場でCPU trapを実
 <!-- ond-spec-id: targets/kagura-v1/abi-function-pointer -->
 
 function pointer は 4-byte aligned な 32-bit entry address とする。\
-間接 call は `CALLR register, 0` を使い、direct call と同じ ABI に従う。
+間接callは[CALLR register, 0](#2-call-boundary)を使い、direct callと同じABIに従う。
 
 ## 10. Stack frame容量
 <!-- ond-spec-id: targets/kagura-v1/large-stack-frame -->

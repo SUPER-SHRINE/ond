@@ -64,7 +64,7 @@ func main(){}
 <!-- ond-spec-id: conformance/kagura-regression/layout-tracking -->
 
 `layout_and_abi_have_independent_fixed_expectations`は内部layout関数への入力と結果を検査する実装回帰識別名である。\
-外部のlayout値は[BI-04](./layout-operators.md)、ABIは[引数](../../targets/kagura-v1/abi.md#4-arguments)と[戻り値](../../targets/kagura-v1/abi.md#5-return-values)、local storageの寿命と配置は[メモリ管理](../../language/v1/execution.md#メモリ管理)を参照する。
+外部のlayout値は[BI-04](./layout-operators.md)、ABIは[引数](../../targets/kagura-v1/abi.md#4-arguments)と[戻り値](../../targets/kagura-v1/abi.md#5-return-values)、local storageの寿命と配置のcaseは[MEM-02](./memory-placement.md)を参照する。
 
 `global_objects_use_checked_natural_bss_layout_and_abs32_relocations`のsection選択、正確offset、relocation命令選択とinitializer構造は実装回帰の追跡対象とする。\
 外部のglobal値と初期化は[global入力](./regression-observations.md#globals_are_zeroed_or_initialized_from_compile_time_values)、外部Object条件は[成果物](../../artifacts.md#object)を定義元とする。

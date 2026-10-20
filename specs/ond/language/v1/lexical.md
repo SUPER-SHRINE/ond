@@ -48,6 +48,13 @@ exponentは省略可能な`+`または`-`と1個以上の10進数字である。
 数字間のunderscore、および直後に16進数字を持つhex prefix直後の一つのunderscoreが成立する。\
 float値への丸めは[型と変換](./types.md#型同一性)に従う。
 
+数値literalの数学値は、underscoreをすべて除いた綴りから次のように定める。\
+整数literalはprefixを除いた数字列を指定基数の非負整数として読む。単独の`0`の数学値は0であり、8進形式の先頭`0`は値0の数字として残しても同じ値となる。\
+decimal floatでは小数点を除いた仮数の10進整数をD、小数点後の数字数をf、exponentの符号付き10進整数をe（省略時0）とし、正確値をD × 10^(e-f)とする。\
+hexadecimal floatではprefixと小数点を除いた仮数の16進整数をH、小数点後の16進数字数をf、p/P後の符号付き10進整数をpとし、正確値をH × 2^(p-4f)とする。\
+小数点を省略した仮数のfは0とする。\
+単項`+`/`-`は[整数演算](./expressions.md#integer-arithmetic)と[f32演算](./expressions.md#floating-point-arithmetic)の定義に従う。
+
 quoted stringは`"`で囲み、通常文字とescapeをbyte列へdecodeする。\
 通常文字とUnicode escapeはUTF-8でencodeし、直接のCRは保持する。\
 直接のLF、閉じquoteの欠落、不正escapeはcompile errorとなる。\
@@ -66,8 +73,7 @@ raw string内のLFは値に含まれ、閉じbacktickの欠落はcompile error�
 escapeによるNULとU+FEFFの表現は成立する。\
 import pathとtrap reasonではdecode結果がUTF-8であることを追加の成立条件とする。
 
-文字分類の規範版はUnicode 16.0.0である。\
-Go specificationのLexical elementsはこれらの規則の由来を示す参考資料として位置づけ、Ondのtoken集合と成立条件は本章を定義元とする。
+文字分類の規範版はUnicode 16.0.0である。
 
 ## Semicolonと改行
 <!-- ond-spec-id: syntax/semicolons-and-line-breaking -->

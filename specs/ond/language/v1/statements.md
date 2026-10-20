@@ -49,7 +49,7 @@ ForClauseBlock= [ SimpleStmt ] ";" [ Expression ] ";" [ SimpleStmt ] Block .
 - `DeferStmt`の宣言位置は`for` bodyと別のdefer blockの外側であることを成立条件とし、違反した位置はcompile errorとなる
 - defer blockの制御構文は[defer規則](#defer)に従う
 - `ExpressionStmt`はcall expressionで構成し、それ以外の単独式はcompile errorとなる
-- `TrapStmt`のstring literalはUTF-8としてdecodeできなければならず、通常のexpressionや値ではない
+- `TrapStmt`のoperandは[builtin trapの成立条件](./builtins.md#8-trap)に従う
 - `for init; cond; post {}` の `init` と `post` に使えるのは `SimpleStmt` のうち `ExpressionStmt`、`Assignment`、`IncDecStmt`、`ShortVarDecl` である
   - 空欄は省略を表す
 - `if init; cond {}` の `init` に使えるのも同じである
@@ -96,8 +96,7 @@ getterは[operator解決](./expressions.md#user-defined-operator)で選んだind
   - `continue`はloop bodyの残りを飛ばし、3 clause形式ではpostを実行してからconditionを再評価する
   - 条件付き形式はconditionの再評価、無条件形式は次のbody実行へ進む
 - `return` は現在の関数を終了する
-- `trap "reason"`は回復不能なCPU trapで現在の実行を終了する
-  - 理由をdebug metadataに記録し、その場で停止する
+- `trap`の停止とdebug理由の記録は[builtin trap](./builtins.md#8-trap)に従う
 
 ### `defer`
 <!-- ond-spec-id: statements/defer -->
