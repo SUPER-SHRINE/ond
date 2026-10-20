@@ -188,7 +188,6 @@ impl<'a> Lexer<'a> {
             "type" => TokenKind::Type,
             "func" => TokenKind::Func,
             "struct" => TokenKind::Struct,
-            "interface" => TokenKind::Interface,
             "return" => TokenKind::Return,
             "defer" => TokenKind::Defer,
             "break" => TokenKind::Break,

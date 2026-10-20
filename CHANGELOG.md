@@ -101,7 +101,7 @@
 
 - 言語、ABI、MIR、Object／LinkedImage、Rust公開APIの後方互換性は保証しない。
 - 正式な検証環境はWindows x64とRust 1.91.1に限定する。
-- ROM生成、asset配置、実行環境はEnbuなどの機種SDKから提供する。
+- ROM生成、asset配置、実行環境の構成は、対象実行環境向けのtoolやlibraryが提供する。
 - 差分buildのcache garbage collectionは未実装である。
 
 0.1.3は本リポジトリで最初のリリースです。\

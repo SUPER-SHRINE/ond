@@ -19,7 +19,9 @@ fn validate(case: &Case) -> Result<(), String> {
     }
     let mut paths = BTreeSet::new();
     for spec in case.specs {
-        if !include_str!("../../docs/conformance-checklist.md").contains(&format!("| {spec} |")) {
+        if !include_str!("../../../../specs/ond/conformance/requirements.md")
+            .contains(&format!("| {spec} |"))
+        {
             return Err(format!("unknown checklist spec ID: {spec}"));
         }
     }

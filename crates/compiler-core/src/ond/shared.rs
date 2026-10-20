@@ -26,7 +26,6 @@ enum TokenKind {
     Type,
     Func,
     Struct,
-    Interface,
     Return,
     Defer,
     Break,

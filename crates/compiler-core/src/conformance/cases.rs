@@ -179,6 +179,7 @@ fn registry_is_valid() {
     let all: Vec<_> = [
         CASES,
         scope::CASES,
+        layout_operators::CASES,
         precedence::CASES,
         constant_contexts::CASES,
         &evaluation::CASES,
