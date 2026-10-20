@@ -22,7 +22,7 @@
 | Name | Form | Summary |
 | --- | --- | --- |
 | `new` | `new(T)` | 型 `T` 1 個分の zero-initialized heap 領域を確保する |
-| 配列長 `len` | `len([N]T)` | 配列長を compile-time constant `u32` として返す |
+| 配列長 `len` | `len(value)`（`value: [N]T`） | 配列長を compile-time constant `u32` として返す |
 | layout | `sizeof(T)`, `alignof(T)` | 型の size / alignment を `u32` で返す |
 | `trap` | `trap "reason"` | 理由をdebug metadataへ記録し、回復不能なCPU trapで停止する |
 
@@ -39,13 +39,7 @@ var ptr: *Actor = alloc[Actor](4 as u32)
 - 引数は 1 個だけ必要
 - 返り値は `*T`
 - `count` は `u32`
-- `alignof(T)` で領域を確保する
-- 初期値は未規定
-- allocation failure 時は `nil`
-- `alloc[T](0)` は `nil`
-
-複数の同型要素を持つ連続領域の確保に使う。\
-`alloc[u8]`とすればraw byte bufferとして使える。
+- 確保領域、alignment、初期状態、失敗とzero-sizeの結果は[メモリ管理](./execution.md#メモリ管理)に従う
 
 ## 3. `free`
 <!-- ond-spec-id: builtins/free -->
@@ -57,10 +51,7 @@ free(nil)
 
 - 引数は 1 個だけ必要
 - 返り値はない
-- `alloc(...)` または `new(...)` が返した未解放の先頭 pointer を渡す
-- `nil`を渡すとallocation状態を保持して正常に完了する
-
-有効な入力と解放結果は[heap契約](../../targets/kagura-v1/machine.md#31-heap-allocator)に従い、利用側が未解放の先頭pointerと生存期間を管理する。
+- 有効な引数と解放結果は[メモリ管理](./execution.md#メモリ管理)に従う
 
 ## 4. `len`
 <!-- ond-spec-id: builtins/len -->
@@ -78,7 +69,8 @@ var size: u32 = len(buffer)
   - 例えば`len("日本語")`は`9`である
 - operand は通常どおり一度評価する
 
-配列lenはoperandの型情報から解決するbuiltin構文である。
+配列lenはoperandの型情報から解決するbuiltin構文である。\
+operandに通常callを含む`len(f())`は、const初期値など定数値を要求する位置ではcompile errorとなる。
 
 operand 内で評価される定数変換は範囲検査の対象となり、表現範囲外なら compile error とする。\
 `&&` / `||` の短絡評価で未評価となる部分には、通常の短絡規則を適用する。
@@ -98,11 +90,7 @@ var ptr: *[4]u8 = new([4]u8)
 - `new(T)` は関数ではなく専用構文
 - 返り値は `*T`
 - `new([4]u8)`の返り値は`*[4]u8`であり、assignment等では通常の型同一性を検査する
-- `T` 1 個分の領域を確保する
-- zero value で初期化する
-- allocation failure 時は `nil`
-
-`alloc[T]`は未初期化の`T`を複数個格納する領域、`new(T)`はzero初期化した`T`を1個格納する領域の確保に使う。
+- 確保領域、初期化、失敗とzero-sizeの結果は[メモリ管理](./execution.md#メモリ管理)に従う
 
 ## 6. `thisFile`
 <!-- ond-spec-id: builtins/this-file -->
@@ -167,5 +155,5 @@ field名等のmember名には組み込み名の綴りを使える。
 
 - [Ond Language v1](./README.md)
 - [Ond Debug Metadata v1](../../debug-metadata/v1.md)
-- [Ond Compiler IR](../../conformance/implementation-index.md)
+- [適合と実装追跡](../../conformance/implementation-index.md)
 - [Ond for Kagura Machine Profile v1](../../targets/kagura-v1/machine.md)

@@ -10,16 +10,15 @@
 共通のproject入力は`ond.toml`の`[project]`に`name = "test"`を置いた実行projectである。\
 generated numeric/型境界のsourceはすべて`main.ond`の内容として読み、static表は各file名を入力欄に記す。
 
-以下は移行時の既存case宣言に含まれる入力と仕様由来Expectedデータを記録したものであり、compilerを実行して得た結果の転記ではない。\
 `accept`単独は受理を期待し、値の記載がある行はその型・値まで照合する。\
-`implementation AST/MIR`は外部の受理・値期待と区分した実装回帰検査である。\
+構文解釈は表のParse phaseで照合し、内部AST/MIRの構造検査は外部適合判定へ含めない。\
 診断の原文は照合対象を示し、規範上の失敗結果はcompile errorとして読む。
 
-| Case ID | 要件ID | 入力 | 仕様由来の期待結果と内部検査 |
-| --- | --- | --- | --- |
-| <code>DIAG-02.multifile-unicode-hir</code> | `DIAG-01`, `DIAG-02` | <code>main.ond:<br>package main<br>func main() {}<br><br>00.ond:<br>package main&#13;<br>// 日本語😀 true&#13;<br>func check(値: bool) { var 数: i32 = 値 }&#13;<br></code> | <code>compile error; declaration type mismatch: expected `i32`, found `bool`</code> |
-| <code>DIAG-02.imported-package-body</code> | `DIAG-01`, `DIAG-02` | <code>main.ond:<br>package main<br>import &quot;test/shared&quot;<br>func main() {}<br><br>shared/値.ond:<br>package shared<br>// 𐐀😀<br>func Value() -&gt; i32 { return 未定義 }<br></code> | <code>compile error; unknown identifier `未定義`</code> |
-| <code>DIAG-01.multiple-independent-errors</code> | `DIAG-01`, `DIAG-02` | <code>main.ond:<br>package main<br>func main() {}<br>func valid() -&gt; i32 { return 42 }<br><br>a.ond:<br>package main<br>// 😀<br>func first() { var x: i32 = true }<br><br>z.ond:<br>package main<br>// 日本語<br>func last() { var x = missing }<br></code> | <code>compile error; boolean literal requires bool type; unknown identifier `missing`</code> |
-| <code>DIAG-01.invalid-global-no-partial-success</code> | `DIAG-01`, `DIAG-02` | <code>main.ond:<br>package main<br>func main() {}<br>func valid() -&gt; i32 { return 1 }<br><br>global.ond:<br>package main<br>// 😀<br>var 値: bool = 1<br></code> | <code>compile error; integer literal requires an integer type</code> |
-| <code>DIAG-02.unicode-lexical-byte-range</code> | `DIAG-01`, `DIAG-02` | <code>main.ond:<br>package main&#13;<br>// 日本語&#13;<br>func main() { 😀 }&#13;<br></code> | <code>compile error; unexpected character `😀`</code> |
-| <code>DIAG-02.unicode-parser-byte-range</code> | `DIAG-01`, `DIAG-02` | <code>main.ond:<br>package main&#13;<br>// 日本語😀&#13;<br>func main() { var 値 = 1 var 次 = 2 }&#13;<br></code> | <code>compile error; expected `;` or newline</code> |
+| Case ID | 要件ID | 入力 | 仕様由来の期待結果 | Phase・診断比較 |
+| --- | --- | --- | --- | --- |
+| <code>DIAG-02.multifile-unicode-hir</code> | `DIAG-01`, `DIAG-02` | <code>main.ond:<br>package main<br>func main() {}<br><br>00.ond:<br>package main&#13;<br>// 日本語😀 true&#13;<br>func check(値: bool) { var 数: i32 = 値 }&#13;<br></code> | <code>compile error</code> | <code>Core; reject; diagnostics=1; Error@00.ond:[76,79) exact=declaration type mismatch: expected `i32`, found `bool`</code> |
+| <code>DIAG-02.imported-package-body</code> | `DIAG-01`, `DIAG-02` | <code>main.ond:<br>package main<br>import &quot;test/shared&quot;<br>func main() {}<br><br>shared/値.ond:<br>package shared<br>// 𐐀😀<br>func Value() -&gt; i32 { return 未定義 }<br></code> | <code>compile error</code> | <code>Core; reject; diagnostics=1; Error@shared/値.ond:[56,65) exact=unknown identifier `未定義`</code> |
+| <code>DIAG-01.multiple-independent-errors</code> | `DIAG-01`, `DIAG-02` | <code>main.ond:<br>package main<br>func main() {}<br>func valid() -&gt; i32 { return 42 }<br><br>a.ond:<br>package main<br>// 😀<br>func first() { var x: i32 = true }<br><br>z.ond:<br>package main<br>// 日本語<br>func last() { var x = missing }<br></code> | <code>compile error</code> | <code>Core; reject; diagnostics=2; Error@a.ond:[49,53) exact=boolean literal requires bool type; Error@z.ond:[48,55) exact=unknown identifier `missing`</code> |
+| <code>DIAG-01.invalid-global-no-partial-success</code> | `DIAG-01`, `DIAG-02` | <code>main.ond:<br>package main<br>func main() {}<br>func valid() -&gt; i32 { return 1 }<br><br>global.ond:<br>package main<br>// 😀<br>var 値: bool = 1<br></code> | <code>compile error</code> | <code>Core; reject; diagnostics=1; Error@global.ond:[37,38) exact=integer literal requires an integer type</code> |
+| <code>DIAG-02.unicode-lexical-byte-range</code> | `DIAG-01`, `DIAG-02` | <code>main.ond:<br>package main&#13;<br>// 日本語&#13;<br>func main() { 😀 }&#13;<br></code> | <code>parse error</code> | <code>Parse; reject; diagnostics=1; Error@main.ond:[42,46) exact=unexpected character `😀`</code> |
+| <code>DIAG-02.unicode-parser-byte-range</code> | `DIAG-01`, `DIAG-02` | <code>main.ond:<br>package main&#13;<br>// 日本語😀&#13;<br>func main() { var 値 = 1 var 次 = 2 }&#13;<br></code> | <code>parse error</code> | <code>Parse; reject; diagnostics=1; Error@main.ond:[58,61) exact=expected `;` or newline</code> |

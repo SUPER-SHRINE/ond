@@ -27,8 +27,7 @@ project manifestとsource探索は[package build](../../build/packages.md)、通
 
 各 file は先頭に 1 個の package clause を持つ。
 
-- `ond.toml` がある directory を project root とし、source package の探索起点とする
-- 全projectの`ond.toml`は、有効なOndの識別子を`[project].name`に宣言する
+- project root、manifestの名前、source探索は[Manifestとsource探索](../../build/packages.md#manifestとsource探索)に従う
 - 実行projectのrootは`main` packageであり、`main.ond`と`func main`を含む
 root直下の全`.ond` fileは`package main`を宣言する。\
 library projectはrootの`main.ond`と`func main`がなくても編集・依存として利用できる。\
@@ -43,6 +42,7 @@ import pathの先頭にproject名がない入力はcompile errorとなる\
 - `import alias "path"`はidentifierのimport aliasを宣言する
   - 構文は本章のImportDeclに従う
 - alias を省略した import は、その package の宣言名で参照する
+- package間のimportが循環する入力はcompile errorとなる
 
 `test.ond`と`_test.ond`のsource収集と通常/test文脈の分離は、[テストビルド仕様](../../build/test-build.md)で扱う。
 

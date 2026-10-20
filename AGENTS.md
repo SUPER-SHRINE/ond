@@ -66,4 +66,48 @@ case固有の入力・期待値と一般規則の再掲を区別し、各caseを
 - 1回のループで扱う課題は最大1件とする。
 - 自動修正は、再現可能な失敗または回帰テストがある、高確信・低リスクの課題に限定する。
 - 自動でmergeやpushを行わない。成功した修正は、専用の`codex/quality-loop` worktreeブランチに、1課題1コミットで保存してユーザーのレビューを待つ。
-- 運用状態は`.ond-quality/`に保存する。将来の実装判断に影響する恒久的な理由だけを、導入後の`docs/decisions/`配下へ昇格する。
+- 運用状態は`.ond-quality/`に保存する
+- 規格に必要な契約は`specs/ond/`の定義元へ統合し、別の説明・履歴文書へ複製しない
+
+## 仕様文書の管理方針
+<!-- ond-spec-id: decisions/specification-migration -->
+
+規範契約の定義元は`specs/ond/`とし、編集と管理の規則は本書に置く。
+
+### 編集原則
+<!-- ond-spec-id: decisions/specification-editorial-principles -->
+
+- 機能集合は明示した構文、型、演算、動作、適合条件とその導出で定める
+- 規範節は適用範囲、入力形式、成立条件、意味と観測結果、失敗条件、委譲を必要に応じて記す
+- 外部規範は名称・版・参照箇所を固定し、target固有の契約は対象profileを明記する
+
+### 論点IDと定義元
+<!-- ond-spec-id: decisions/specification-approved-questions -->
+
+| 論点ID | 同じ主題の規範定義元 |
+| --- | --- |
+| SPEC-Q01 | [整数演算のoperand・result型](specs/ond/language/v1/expressions.md#integer-arithmetic) |
+| SPEC-Q02 | [整数定数の正確値と範囲検査](specs/ond/language/v1/expressions.md#integer-constant-arithmetic) |
+| SPEC-Q03 | [Unicode分類と字句](specs/ond/language/v1/lexical.md#source形式) |
+| SPEC-Q04 | [heapの外部保証](specs/ond/language/v1/execution.md#メモリ管理)と[Kagura配置](specs/ond/targets/kagura-v1/machine.md#31-heap-allocator) |
+| SPEC-Q05 | [言語](specs/ond/language/v1/README.md)、[machine](specs/ond/targets/kagura-v1/machine.md)、[ABI](specs/ond/targets/kagura-v1/abi.md)、[成果物](specs/ond/artifacts.md)、[linking](specs/ond/linking.md)の利用境界 |
+| SPEC-Q06 | [Object・LinkedImage](specs/ond/artifacts.md)と[linking](specs/ond/linking.md) |
+| SPEC-Q07 | [版と互換条件](specs/ond/artifacts.md#版識別と互換条件) |
+| SPEC-Q08 | [cacheの再利用と失効](specs/ond/build/cache.md) |
+| SPEC-Q09 | [適合要件](specs/ond/conformance/requirements.md)と[入力・期待値](specs/ond/conformance/cases/README.md) |
+| NOTE-INIT-01 | [global初期化とentry](specs/ond/language/v1/execution.md#初期化とエントリ) |
+
+### Sourceとの管理境界
+<!-- ond-spec-id: decisions/specification-source-boundaries -->
+
+- 外部言語、target、ABI、成果物、linking、CLI、cache、debug、test buildの契約は`specs/ond/`へ置く
+- Rust型、内部AST/HIR/MIR、phase、helper、validator構造、命令選択・探索方式はsourceで管理する
+- 内部検査IDは追跡用に保持し、別実装に同じ内部形式を要求しない
+
+## Semantic ID
+<!-- ond-spec-id: language/semantic-id-policy -->
+
+`specs/ond` 配下の各見出しには、探索処理から安定して参照できる `ond-spec-id` を HTML コメントとして直後に置く。\
+見出し名やファイル配置を変更しても既存 ID は維持し、別の意味へ再利用しない。\
+新しい見出しには一意な小文字 kebab-case のパスを割り当てる。\
+`tools/test-spec-ids.ps1` と共通品質チェックが、欠落、形式違反、重複を検出する。

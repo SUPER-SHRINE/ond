@@ -57,8 +57,7 @@ source読込、構文解析、依存graph収集はcompileごとに行う。\
 ## process内意味解析キャッシュ
 <!-- ond-spec-id: build/process-semantic-cache -->
 
-同一process内の解析結果再利用に関する既存IDを保持する。\
-再利用・失効・保持の規則を次の節にまとめる。
+同一process内の解析結果再利用は、以下の再利用・失効・保持の規則に従う。
 
 ### 意味解析cache
 <!-- ond-spec-id: build/semantic-cache -->
@@ -96,8 +95,7 @@ test sourceだけが変わった場合、対象packageのtest解析結果を失�
 importの追加・削除、fileの追加・削除・renameでも、変更後の参照環境に基づいて再利用を判定する。
 
 source列挙順や解析snapshotが変化した後も、再利用した診断のprimary labelと関連labelを現在のsourceへ対応づける。\
-失敗した解析結果も同じ失効規則を適用し、修正後は現在のsourceに基づく結果と診断を返す。\
-snapshot内の内部IDとdata structureの管理方式はRust sourceで管理する。
+失敗した解析結果も同じ失効規則を適用し、修正後は現在のsourceに基づく結果と診断を返す。
 
 ### 保持期間
 <!-- ond-spec-id: build/semantic-cache-lifetime -->

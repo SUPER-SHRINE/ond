@@ -26,10 +26,10 @@ sourceのpackage/import/公開名は[言語規則](../language/v1/names-and-scop
 
 `ond.toml`があるdirectoryをproject rootとし、全projectが`[project].name`へOndの有効なidentifierを宣言する。\
 実行projectのroot packageとentryは[言語規則](../language/v1/execution.md#初期化とエントリ)に従う。\
-library rootにsourceがある場合はproject名をpackage名とし、libraryの編集・依存利用とtest compileはこのpackageを扱う。
+library rootのpackage構成は[package規則](../language/v1/names-and-scopes.md#packageとimport)に従い、libraryの編集・依存利用とtest compileはこのpackageを扱う。
 
 `[dependencies]`のkeyはmanifest内の登録名であり、import pathの先頭には依存先`[project].name`を使う。\
-root packageの論理pathはproject名、子packageは`project名/相対directory`である。\
+import pathは[packageとimport](../language/v1/names-and-scopes.md#packageとimport)に従う。\
 依存先を異なる登録名で参照した場合も、解決先directoryが同じなら同じ依存とする。\
 同じproject名が異なるdirectoryを指す入力とsymlink依存はerrorとなる。
 
@@ -62,7 +62,7 @@ project内の追加library directoryは独立したlibrary探索範囲として�
 1 packageにつき1個のUTF-8 JSON `.ondpkg`を生成し、CompilationManifestが各fileを参照する。\
 section dataはBase64文字列、他のfieldは通常のJSONである。\
 依存sourceを含むproject全体で型と名前を検査し、具体化したgeneric宣言も通常の型・関数成果物に含める。\
-公開interfaceは成果物local型番号とnominal名を使い、[interface schema](../artifacts.md#公開interface旧revision-3の主題)に従う。\
+公開interfaceは成果物local型番号とnominal名を使い、[interface schema](../artifacts.md#公開interface)に従う。\
 通常/test compileでsource集合とcache entryを区別する。
 
 cache再利用と`frontend_ran`の意味は[cache契約](./cache.md)、実行入口とtest metadataは[test build](./test-build.md)に従う。

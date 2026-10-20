@@ -27,8 +27,9 @@ Selector      = "." identifier .
 Index         = "[" Expression "]" .
 Arguments     = "(" [ ExpressionList [ "," ] ] ")" .
 Conversion    = "as" Type .
-Operand       = Literal | NewExpr | identifier | QualifiedIdent | "(" Expression ")" .
+Operand       = Literal | NewExpr | LayoutExpr | identifier | QualifiedIdent | "(" Expression ")" .
 NewExpr       = "new" "(" Type ")" .
+LayoutExpr    = ( "sizeof" | "alignof" ) "(" Type ")" .
 Literal       = BasicLit | CompositeLit .
 BasicLit      = int_lit | float_lit | string_lit | "true" | "false" | "nil" .
 CompositeLit  = LiteralType "{" [ ElementList [ "," ] ] "}" .
@@ -76,8 +77,8 @@ callはcalleeを先に評価し、次にargumentを左から右へ評価する�
 | --- | --- | --- | --- |
 | `&&` | `false` | 左辺 | `false` |
 | `&&` | `true` | 左辺、右辺 | 右辺値 |
-| `||` | `true` | 左辺 | `true` |
-| `||` | `false` | 左辺、右辺 | 右辺値 |
+| <code>&#124;&#124;</code> | `true` | 左辺 | `true` |
+| <code>&#124;&#124;</code> | `false` | 左辺、右辺 | 右辺値 |
 
 名前解決と型検査は両辺に行い、値評価および定数cast範囲検査は表の値評価経路で行う。\
 const適格性は式全体を検査し、通常callを含むconst initializerは短絡経路によらずcompile errorとなる。
@@ -92,10 +93,10 @@ const適格性は式全体を検査し、通常callを含むconst initializerは
 | 7 | primary postfix: selector, index, call, `as` |
 | 6 | unary: `+`, `-`, `!`, `^`, `*`, `&` |
 | 5 | `*`, `/`, `%`, `<<`, `>>`, `&`, `&^` |
-| 4 | `+`, `-`, `|`, `^` |
+| 4 | `+`, `-`, <code>&#124;</code>, `^` |
 | 3 | `==`, `!=`, `<`, `<=`, `>`, `>=` |
 | 2 | `&&` |
-| 1 | `||` |
+| 1 | <code>&#124;&#124;</code> |
 
 - 同じ precedence level の binary operator は左結合とする
 - `as` は postfix conversion で、`x + y as u32` は `x + (y as u32)` と解釈する

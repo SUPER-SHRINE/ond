@@ -1,8 +1,7 @@
 # Object linking 契約
 <!-- ond-spec-id: linking/v1 -->
 
-この章はObject列とcaller指定LinkPlanからLinkedImageを生成する外部契約を定義する。\
-実装内部のvalidator構造やpatch algorithmはRust/Ond sourceで管理する。
+この章はObject列とcaller指定LinkPlanからLinkedImageを生成する外部契約を定義する。
 
 ## Symbol解決と配置
 <!-- ond-spec-id: linking/symbol-resolution -->

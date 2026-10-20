@@ -1,7 +1,7 @@
 # Ond
 
 Ondは、Kagura v1向けのbackendとlinkerを備えたプログラミング言語です。\
-独立コンパイラCLI、Language Server、言語仕様、利用者向けマニュアルを収録しています。
+独立コンパイラCLI、Language Server、言語仕様、サンプルを収録しています。
 
 ## 対応環境
 
@@ -10,11 +10,9 @@ macOS、ARM64、Alpine/muslはtarget契約の対象外です。
 
 ## はじめに
 
-[Ond言語マニュアル](docs/manual/README.md)では、最小プロジェクトの作成から言語機能、package構成まで順に説明しています。\
-[最初のプロジェクト](docs/manual/getting-started.md)から始めてください。\
-同じ内容のサンプルは[`examples/hello`](examples/hello)にあります。
+最小プロジェクトは[`examples/hello`](examples/hello)にあります。\
+言語機能とpackage構成は[規範仕様](specs/README.md)を参照してください。
 
-CLIをソースからbuildする手順は「はじめに」を参照してください。\
 Language Serverを直接起動する場合は`ond-lsp stdio`を実行します。\
 VS Codeでは[Ond拡張の案内](https://github.com/SUPER-SHRINE/ond-vscode-extension/blob/main/README.md)を参照してください。\
 ソースからCLIをbuildするには、repository rootで次を実行します。
@@ -44,7 +42,6 @@ CLIのcompile、link、依存解決、成果物、cacheの規則は[パッケー
 
 ## 仕様と制約
 
-- [Ond言語マニュアル](docs/manual/README.md) — 学習順と実用例
 - [規範仕様](specs/README.md) — 構文、意味論、target契約
 - [Kagura v1 backend仕様](specs/ond/targets/kagura-v1/README.md) — ABI、memory layout、実行形式
 

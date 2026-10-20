@@ -8,7 +8,6 @@ target固有の挙動はtarget profileを参照する。
 <!-- ond-spec-id: runtime/memory-management -->
 
 - address を取得した local variable の storage はその関数 invocation の stack frame、package-level variable の storage は startup segment に置く
-  - compiler は escaping local variable を暗黙に heap へ移さない
 - heap allocation は組み込みの `new(T)` または `alloc[T](count)` でだけ明示的に行う
 - `new(T)` は `T` 1 個分を `alignof(T)` に揃えて確保し、zero value で初期化した `*T` を返す
 - `alloc[T](count)` は `T` を `count: u32` 個格納できる連続領域を `alignof(T)` に揃えて確保し、`*T` を返す
@@ -16,8 +15,9 @@ target固有の挙動はtarget profileを参照する。
 - `new` と `alloc` は allocation failure 時に `nil` を返す
   - `alloc[T](0)` は `nil` を返す
   - zero-size 型を正の個数確保した成功結果は non-nil とする
+- 存続中のallocationの領域は互いに重ならず、pointerは解放まで同じ連続領域の先頭を示す
 - `free(pointer)` は `new` または `alloc` が返した未解放の先頭 pointer、または `nil` を受け取る
-  - `free(nil)`はallocation状態を保持して正常に完了する
+  - 未解放のallocationを解放し、`free(nil)`はallocation状態を保持して正常に完了する
 - heap allocation の所有権は pointer を保持するプログラム側にあり、不要になった領域を `free` する
 - raw pointer accessの有効領域、生存期間、freeへ渡す未解放先頭pointerは利用側の成立前提である
 

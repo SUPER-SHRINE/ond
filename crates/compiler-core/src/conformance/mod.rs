@@ -7,6 +7,7 @@ mod diagnostics;
 mod evaluation;
 mod fixture;
 mod flow;
+mod layout_operators;
 mod name_duplicates;
 mod names;
 mod numeric;

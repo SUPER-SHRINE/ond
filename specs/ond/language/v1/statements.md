@@ -76,6 +76,8 @@ ForClauseBlock= [ SimpleStmt ] ";" [ Expression ] ";" [ SimpleStmt ] Block .
 - `if` と条件付き `for` の条件は `bool` でなければならない
 - `for`は本章のEBNFで示す無条件、条件付き、3 clauseの形を持つ
 - `break` と `continue` は最内の `for` を対象とする
+  - `continue`はloop bodyの残りを飛ばし、3 clause形式ではpostを実行してからconditionを再評価する
+  - 条件付き形式はconditionの再評価、無条件形式は次のbody実行へ進む
 - `return` は現在の関数を終了する
 - `trap "reason"`は回復不能なCPU trapで現在の実行を終了する
   - 理由をdebug metadataに記録し、その場で停止する

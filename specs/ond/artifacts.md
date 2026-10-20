@@ -1,11 +1,10 @@
 # Ond成果物と公開interface
 <!-- ond-spec-id: artifacts/v1 -->
 
-## 公開interface（旧revision 3の主題）
+## 公開interface
 <!-- ond-spec-id: build/public-metadata-revision-3 -->
 
-この節の歴史IDはrevision 3で導入した公開情報の主題を追跡する。\
-現行成果物の外層contractはrevision 5であり、下表の互換条件を適用する。
+成果物の外層contractはrevision 5とし、[版識別と互換条件](#版識別と互換条件)を適用する。
 
 `interface`はpackage、types（型定義の配列）、exports（公開名→宣言）からなる。\
 target-neutralな型・公開宣言情報であり、型参照はこの成果物localのtypes配列indexで表す。
@@ -38,22 +37,22 @@ IntegerとFloat32の値はそれぞれu64/u32のbit表現として運ぶ。
 この読出検査は成果物内の参照整合性を確認する。\
 sourceの型と名前検査は[compile単位](./build/packages.md#コンパイル単位と成果物)に従う。
 
-成果物の受理は現行Contract tupleとの一致を条件とする。\
+成果物の受理は[版識別表](#版識別と互換条件)のContract tupleとの一致を条件とする。\
 cache再利用は[cache契約](./build/cache.md)に従う。
 
 ## 版識別と互換条件
 <!-- ond-spec-id: artifacts/version-compatibility -->
 
-| 識別軸 | 適用対象 | 現行値 | 依存と互換条件 |
+| 識別軸 | 適用対象 | 値 | 依存と互換条件 |
 | --- | --- | --- | --- |
 | language | sourceの構文・型・意味 | Ond v1 | [language v1](./language/v1/README.md)の入力と規則に適用 |
 | target profile | machine/layout/runtime | `kagura-v1` | languageのtarget委譲を具体化 |
 | ABI | call/register/引数・戻り値 | `ond-kagura-v1` | `kagura-v1`に適用 |
-| artifact Contract | PackageArtifactとCompilationManifestの外層 | revision `5`, target `kagura-v1`, abi `ond-kagura-v1` | tuple全要素が現行値に一致すると受理。Contractの未知fieldはerror |
+| artifact Contract | PackageArtifactとCompilationManifestの外層 | revision `5`, target `kagura-v1`, abi `ond-kagura-v1` | tuple全要素が表の値に一致すると受理。Contractの未知fieldはerror |
 | compiler_id | artifact生成元とcache再利用の識別 | 実行executable全体のSHA-256 | CLI linkはmanifest、全artifact、実行linkerの同一値を要求 |
 
 language版、target版、ABI版は対応する規範文書の適用対象を識別する。\
-成果物に記録する版識別は上表の既存Contract tupleである。\
+成果物に記録する版識別は上表のContract tupleである。\
 `compiler_id`は同じ生成元を識別する値であり、一致によって生成元と再利用の条件を判定する。\
 in-memory Object、LinkPlan、LinkedImageは後掲の各field集合で表す。
 
@@ -61,11 +60,11 @@ in-memory Object、LinkPlan、LinkedImageは後掲の各field集合で表す。
 <!-- ond-spec-id: artifacts/package-and-manifest -->
 
 `.ondpkg`と`.ondbuild`はUTF-8 JSONであり、byte列であるsection dataはBase64文字列で表す。\
-以下は既存fieldの名前と意味を記す。
+fieldの名前と意味を次の表で定義する。
 
 | 型 | Field | 意味 |
 | --- | --- | --- |
-| Contract | `revision: u32`, `target: string`, `abi: string` | 前節の現行tuple |
+| Contract | `revision: u32`, `target: string`, `abi: string` | 前節のtuple |
 | PackageArtifact | `contract`, `compiler_id`, `package`, `build_id` | 外層契約、生成元、論理package path、package内容識別 |
 | PackageArtifact | `dependencies: map<string,string>` | 直接依存package pathからbuild_idへの対応 |
 | PackageArtifact | `imports: string[]`, `initializer: string or null` | source順のimport path、global初期化関数symbol |

@@ -226,3 +226,6 @@ func (box: *Box[Element]) Set(value: Element) { box.value = value }
 - method名の先頭がASCII大文字なら他packageから呼べる
   - 非公開named typeの値でも、公開APIから型推論で得られた値に対する公開method呼出しは許可する
 - `receiver.Method(arguments...)` はreceiverを1回評価した後、argumentsを左から右へ1回ずつ評価する
+- method selectorは上記のmethod callのcalleeとして使う
+  - callを伴わないmethod値と`Type.Method`による関数値参照はcompile errorとなる
+  - function pointer値として渡す関数は[トップレベル関数](./declarations.md#関数)の規則に従う

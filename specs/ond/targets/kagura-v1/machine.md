@@ -26,7 +26,7 @@ OndのKagura profileはLinkPlanの配置値と実行環境のmemory map・終了
 ## 3. RAM Layout
 <!-- ond-spec-id: targets/kagura-v1/ram-layout -->
 
-RAM 内は低 address から次の順に配置する。
+[LinkPlan](../../linking.md)の`read_only = null`の場合、RAM内は低addressから次の順に配置する。
 
 ```text
 .text | .rodata | .data | .bss | heap ... free ... stack
@@ -49,20 +49,12 @@ sectionの保存形式は配布形式が定め、loaderはsectionをloadしてin
 <!-- ond-spec-id: targets/kagura-v1/heap-allocator -->
 
 heapは`heap_base`から`STACK_BOTTOM`までの領域をallocationへ提供する。\
-成功したallocationは要求されたsizeを格納できる連続領域と`alignof(T)` alignmentを持ち、存続中のallocation同士は重ならない。\
-returned pointerは利用可能な領域の先頭を指す。\
-領域移動を伴わないため、allocationが存続する間pointerは同じ領域を示す。
+allocationの共通保証は[言語のメモリ管理](../../language/v1/execution.md#メモリ管理)に従う。
 
-`alloc[T](count)`は`count`個の`T`を格納する領域を確保し、payloadの初期byte値は実装裁量とする。\
-`new(T)`は`T`一個分を確保し、成功時にzero valueで初期化する。\
 allocation failure、size計算overflow、確保領域が`[heap_base, STACK_BOTTOM)`に収まらない要求は`nil`を返す。\
-`alloc[T](0)`は`nil`を返す。\
-zero-sizeの`T`に対する`new(T)`とpositive countの`alloc[T](count)`は物理領域を確保し、成功時はnon-nilを返し、言語上の型sizeはzeroを維持する。
+zero-sizeの`T`を正の個数確保するときも物理領域を予約し、言語上の型sizeはzeroを維持する。
 
-`free`は`new`または`alloc`から得た未解放のallocation先頭pointerと`nil`を受け取る。\
-allocationを解放し、`free(nil)`はallocation状態を保持して正常に完了する。\
-allocationの生存期間、alignment、size、分離、初期化値が外部契約となる。\
-allocatorの探索順、header、block分割・結合、heap cursorの更新方式は実装sourceの責務とする。
+allocationに用いるaddressの選択、探索順、header、block分割・結合、heap cursorの更新方式は実装裁量とする。
 
 ### ゼロサイズとaccessの境界
 <!-- ond-spec-id: targets/kagura-v1/mir-boundary-decisions -->
@@ -74,7 +66,7 @@ allocatorの探索順、header、block分割・結合、heap cursorの更新方�
 
 空structはsize 0、alignment 1、`[0]T`はsize 0、alignment `alignof(T)`とする。\
 物理storageを要する場所ではnilと区別するため最低1 byteを予約し、型sizeは0を維持する。\
-newによるzero-size allocationは成功時non-nil、`alloc(0)`はnilとなる。
+allocationの結果は[heap契約](#31-heap-allocator)に従う。
 
 ### 3.3 Ordered aggregate access
 <!-- ond-spec-id: targets/kagura-v1/mir-ordered-aggregate -->
@@ -147,14 +139,4 @@ test buildでもloaderによるload・zero初期化・SP設定の境界を保ち
 ## 7. Project Configuration
 <!-- ond-spec-id: targets/kagura-v1/project-configuration -->
 
-`ond.toml`があるdirectoryをproject rootとし、実行projectのrootがmain packageとなる。\
-manifestは依存関係と\
-source探索境界を定義する。\
-RAM配置とstack予約量は呼出側が`ond link`の`LinkPlan`で決定し、\
-project manifestは依存関係とsource探索の入力として用いる。
-
-`[project].name`はproject自身と依存先projectのimport名前空間として使用する。\
-すべてのprojectでOndの\
-identifierとして有効な名前を必須とする。\
-project name以外のproject metadataおよび一覧表示は\
-sourceのコンパイル結果はこの名前規則と依存/source入力により定まる。
+project、manifestとsource探索は[package build](../../build/packages.md#manifestとsource探索)、RAM配置とstack予約量は[linking](../../linking.md)を定義元とする。

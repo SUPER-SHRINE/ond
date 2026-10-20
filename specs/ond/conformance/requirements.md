@@ -1,7 +1,6 @@
 # 適合要件と規範定義元の索引
 <!-- ond-spec-id: conformance/requirements-index -->
 
-各要件IDは既存識別子を維持する。\
 規範定義元とcase対応を各表に記し、入力条件と仕様由来期待値は[case索引](./cases/README.md)を参照する。\
 Rust runner、HIR/MIR内部検査、テスト実行器は実装sourceが管理する。
 
@@ -59,8 +58,8 @@ Rust runner、HIR/MIR内部検査、テスト実行器は実装sourceが管理�
 | TYPE-03 | 配列長・参照先・関数parameter/result列の一致 | [TYPE-03の定義元](../language/v1/types.md#型同一性) | [nested_arrays_pointers_and_function_parameter_names_are_structuralの入力・期待](./implementation-index.md#既存回帰と要件) |
 | TYPE-04 | 直接再帰拒否、pointer経由再帰受理 | [TYPE-04の定義元](../language/v1/types.md#型) | [recursive_pointer_elements_are_checked_after_resolutionの入力・期待](./implementation-index.md#既存回帰と要件) |
 | CAST-01 | 型不一致の暗黙変換拒否 | [CAST-01の定義元](../language/v1/types.md#型同一性) | [boundaries-conversions](./cases/boundaries-conversions.md) |
-| CAST-02 | 定数整数変換・実行時wrap変換 | [CAST-02の定義元](../language/v1/types.md#型同一性) | [numeric-casts](./cases/numeric-casts.md)、[numeric-runtime](./cases/numeric-runtime.md) |
-| CAST-03 | int↔f32、ties-even/trunc、NaN/Inf/範囲外 | [CAST-03の定義元](../language/v1/types.md#型同一性) | [numeric-casts](./cases/numeric-casts.md)、[numeric-runtime](./cases/numeric-runtime.md) |
+| CAST-02 | 定数整数変換・実行時wrap変換 | [CAST-02の定義元](../language/v1/types.md#型同一性) | [numeric-casts](./cases/numeric-casts.md) |
+| CAST-03 | int↔f32、ties-even/trunc、NaN/Inf/範囲外 | [CAST-03の定義元](../language/v1/types.md#型同一性) | [numeric-casts](./cases/numeric-casts.md) |
 | NIL-01 | pointer/function型nil、既定型なし、0とは別 | [NIL-01の定義元](../language/v1/types.md#nilとpointer) | [boundaries-conversions](./cases/boundaries-conversions.md)、[static-seed](./cases/static-seed.md) |
 | NIL-02 | nil function pointer call | [NIL-02の定義元](../language/v1/declarations.md#関数) | [faults_do_not_execute_following_effects_or_overwrite_destinationの入力・期待](./implementation-index.md#既存回帰と要件) |
 
@@ -73,12 +72,12 @@ Rust runner、HIR/MIR内部検査、テスト実行器は実装sourceが管理�
 | --- | --- | --- | --- |
 | NUM-01 | literal既定型/型文脈と整数6型の範囲 | [NUM-01の定義元](../language/v1/types.md#型) | [numeric-integers](./cases/numeric-integers.md) |
 | NUM-02 | arbitrary precision定数、数学的正確値による定数部分式と値要求境界のrange check | [NUM-02の定義元](../language/v1/expressions.md#integer-constant-arithmetic) | [numeric-integers](./cases/numeric-integers.md)、[static-seed](./cases/static-seed.md) |
-| NUM-03 | 定数shiftのu32 count、k mod N、左shift非wrap | [NUM-03の定義元](../language/v1/expressions.md#integer-constant-arithmetic) | [numeric-integers](./cases/numeric-integers.md)、[numeric-runtime](./cases/numeric-runtime.md) |
-| NUM-04 | 定数/動的div・rem、符号、0、min/-1 | [NUM-04の定義元](../language/v1/expressions.md#integer-arithmetic) | [numeric-integers](./cases/numeric-integers.md)、[numeric-runtime](./cases/numeric-runtime.md) |
-| NUM-05 | runtime wrap・bitwise・signed/unsigned比較 | [NUM-05の定義元](../language/v1/expressions.md#integer-arithmetic) | [numeric-integers](./cases/numeric-integers.md)、[numeric-runtime](./cases/numeric-runtime.md) |
+| NUM-03 | 定数shiftのu32 count、k mod N、左shift非wrap | [NUM-03の定義元](../language/v1/expressions.md#integer-constant-arithmetic) | [numeric-integers](./cases/numeric-integers.md) |
+| NUM-04 | 定数/動的div・rem、符号、0、min/-1 | [NUM-04の定義元](../language/v1/expressions.md#integer-arithmetic) | [numeric-integers](./cases/numeric-integers.md) |
+| NUM-05 | runtime wrap・bitwise・signed/unsigned比較 | [NUM-05の定義元](../language/v1/expressions.md#integer-arithmetic) | [numeric-integers](./cases/numeric-integers.md) |
 | FP-01 | constant binary32各演算、signed zero/Inf/NaN | [FP-01の定義元](../language/v1/expressions.md#floating-point-arithmetic) | [numeric-float-vectors](./cases/numeric-float-vectors.md)、[numeric-floats](./cases/numeric-floats.md)、[static-seed](./cases/static-seed.md) |
-| FP-02 | constant/runtimeのf32 bit一致 | [FP-02の定義元](../language/v1/expressions.md#floating-point-arithmetic) | [numeric-float-vectors](./cases/numeric-float-vectors.md)、[numeric-runtime](./cases/numeric-runtime.md) |
-| OP-01 | operatorごとのoperand型・result型と型不一致error | [OP-01の定義元](../language/v1/expressions.md#式と評価順) | [boundaries-conversions](./cases/boundaries-conversions.md)、[boundaries-operators](./cases/boundaries-operators.md) |
+| FP-02 | constant/runtimeのf32 bit一致 | [FP-02の定義元](../language/v1/expressions.md#floating-point-arithmetic) | [numeric-float-vectors](./cases/numeric-float-vectors.md) |
+| OP-01 | operatorごとのoperand型・result型と型不一致error | [OP-01の定義元](../language/v1/expressions.md#式と評価順) | [boundaries-conversions](./cases/boundaries-conversions.md)、[boundaries-operators](./cases/boundaries-operators.md)、[layout-operators](./cases/layout-operators.md) |
 | EVAL-01 | &&/\|\|短絡、callee→引数の左から右 | [EVAL-01の定義元](../language/v1/expressions.md#式と評価順) | [static-constant-contexts](./cases/static-constant-contexts.md) |
 | EVAL-02 | 一般operand、代入LHSのindex/pointer→RHS→書込順 | [EVAL-02の定義元](../language/v1/statements.md#静的成立条件) | [static-evaluation](./cases/static-evaluation.md) |
 
@@ -98,8 +97,9 @@ Rust runner、HIR/MIR内部検査、テスト実行器は実装sourceが管理�
 | STR-02 | `[N]u8`型、完全長一致、copy/mutation/addressability、pointer非変換 | [STR-02の定義元](../language/v1/expressions.md#文字列リテラル) | [string_literals_are_mutable_byte_array_values_and_copy_independentlyの入力・期待](./implementation-index.md#既存回帰と要件) |
 | LEN-01 | len(array)は定数u32を返しoperandを1回評価 | [LEN-01の定義元](../language/v1/builtins.md#41-配列に対する-len) | [array_len_preserves_one_operand_side_effect_and_runtime_faultsの入力・期待](./implementation-index.md#既存回帰と要件) |
 | BI-01 | alloc/free/newの型・arity・戻り値 | [BI-01の定義元](../language/v1/builtins.md#1-一覧) | [boundaries-builtins](./cases/boundaries-builtins.md) |
-| BI-02 | lenの型・arity、builtin名のbinding禁止、`str`は通常identifier | [BI-02の定義元](../language/v1/builtins.md#4-len) | [boundaries-builtins](./cases/boundaries-builtins.md) |
+| BI-02 | lenの型・arity、builtin名のbinding禁止、`str`は通常identifier | [BI-02の定義元](../language/v1/builtins.md#4-len) | [boundaries-builtins](./cases/boundaries-builtins.md)、[layout-operators](./cases/layout-operators.md) |
 | BI-03 | thisFile/thisLineの型・arity・論理位置 | [BI-03の定義元](../language/v1/builtins.md#6-thisfile) | [boundaries-builtins](./cases/boundaries-builtins.md) |
+| BI-04 | sizeof/alignofの型operandとlayout値 | [BI-04の定義元](../language/v1/builtins.md#組み込み構文) | [layout-operators](./cases/layout-operators.md) |
 | MEM-01 | new zero/alignment、alloc failure/0、free nil等 | [MEM-01の定義元](../language/v1/execution.md#メモリ管理) | [failed_allocation_and_overflow_preserve_existing_memoryの入力・期待](./implementation-index.md#既存回帰と要件) |
 | MEM-02 | stack/startup配置、escapeしても暗黙heap化なし | [MEM-02の定義元](../language/v1/execution.md#メモリ管理) | [layout_and_abi_have_independent_fixed_expectationsの入力・期待](./implementation-index.md#既存回帰と要件) |
 | MEM-03 | bounds check失敗のnon-return/fault契約 | [MEM-03の定義元](../language/v1/execution.md#メモリ管理) | [bounds_fault_precedes_destination_writeの入力・期待](./implementation-index.md#既存回帰と要件) |
@@ -123,13 +123,13 @@ Rust runner、HIR/MIR内部検査、テスト実行器は実装sourceが管理�
 | OUT-01 | caller指定のmain終了経路、ABI/rodata/layout/static link | [OUT-01の定義元](../language/v1/execution.md#build-output) | [global_objects_use_checked_natural_bss_layout_and_abs32_relocationsの入力・期待](./implementation-index.md#既存回帰と要件) |
 | OUT-02 | build toolのasset管理とsource入力の境界 | [OUT-02の定義元](../language/v1/execution.md#build-output) | [compile_project_does_not_predeclare_assetの入力・期待](./implementation-index.md#既存回帰と要件) |
 
-## 診断・MIR検証
+## 診断と実装検証の追跡
 <!-- ond-spec-id: conformance/requirements-diagnostics-ir -->
 
-詳細: [Language v1](../language/v1/README.md)、[Kagura target契約](../targets/kagura-v1/README.md)、[MIR内部契約](./implementation-index.md)
+詳細: [Language v1](../language/v1/README.md)、[Kagura target契約](../targets/kagura-v1/README.md)、[実装追跡](./implementation-index.md)
 
 | ID | 要件の要約 | 規範定義元 | 対応するcase入力・期待 |
 | --- | --- | --- | --- |
 | DIAG-01 | source errorを位置付き診断で返し、全検査成功時に成功結果を得る | [DIAG-01の定義元](../language/v1/declarations.md#診断と成功結果) | [static-diagnostics](./cases/static-diagnostics.md) |
 | DIAG-02 | Unicode/複数fileの診断位置 | [DIAG-02の定義元](../language/v1/declarations.md#診断と成功結果) | [static-diagnostics](./cases/static-diagnostics.md)、[static-seed](./cases/static-seed.md) |
-| MIR-01 | 実装内部IRのID/type/op/dominance/guard/global/init検証 | [内部IR検証](./implementation-index.md) | [validator_rejects_use_before_definitionの入力・期待](./implementation-index.md#既存回帰と要件) |
+| MIR-01 | 外部適合から除外する実装内部IRのID/type/op/dominance/guard/global/init検証の追跡 | [内部IR検証](./implementation-index.md) | [validator_rejects_use_before_definitionの入力・期待](./implementation-index.md#既存回帰と要件) |

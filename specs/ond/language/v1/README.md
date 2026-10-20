@@ -2,7 +2,7 @@
 <!-- ond-spec-id: language/v1-index -->
 
 本書群はOnd source language v1の規範定義元である。\
-各章は概念別に定義し、既存ond-spec-idを保持する。
+各章は以下の言語規則を定義する。
 
 ## 適用範囲
 <!-- ond-spec-id: language/v1 -->
@@ -24,11 +24,3 @@ Kagura 上の具体的な実行契約は [Ond for Kagura v1](../../targets/kagur
 - [memory、初期化、entry](./execution.md)
 
 適合要件と入力・期待値の対応は[適合索引](../../conformance/requirements.md)、target、ABI、成果物の版依存は[互換表](../../artifacts.md#版識別と互換条件)を参照する。
-
-## Semantic ID
-<!-- ond-spec-id: language/semantic-id-policy -->
-
-`specs/ond` 配下の各見出しには、探索処理から安定して参照できる `ond-spec-id` を HTML コメントとして直後に置く。\
-見出し名やファイル配置を変更しても既存 ID は維持し、別の意味へ再利用しない。\
-新しい見出しには一意な小文字 kebab-case のパスを割り当てる。\
-`tools/test-spec-ids.ps1` と共通品質チェックが、欠落、形式違反、重複を検出する。

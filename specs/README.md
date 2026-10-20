@@ -11,6 +11,3 @@
 - [Debug metadata v1](./ond/debug-metadata/v1.md)
 - [Conformance requirements](./ond/conformance/requirements.md)
 - [Conformance case index](./ond/conformance/cases/README.md)
-- [Approved design decisions](../docs/decisions/specification-migration.md)
-
-- [仕様書再編の検討資料（非規範）](../docs/specification-revision/editorial-policy.md)

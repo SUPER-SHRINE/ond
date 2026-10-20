@@ -4,7 +4,6 @@
 ## コマンド
 <!-- ond-spec-id: build/commands -->
 
-`cargo build -p ond-cli --bin ond` で `target/debug/ond.exe` を生成する。\
 操作はcommand引数、入力はfileとし、linkではstdinもmanifest fileの代替に使える。\
 成果物形式は[JSON/Base64 schema](../artifacts.md)に従う。
 

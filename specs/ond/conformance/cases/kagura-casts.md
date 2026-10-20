@@ -1,7 +1,7 @@
 # Kagura上の数値変換vector
 <!-- ond-spec-id: conformance/cases/kagura-casts -->
 
-[既存fixtureの固定bit表](../../../../crates/compiler/src/mir_backend/conformance/numeric.rs)に基づくCAST-03の93件である。\
+本書の各行はCAST-03の入力と固定期待bitsを定める。\
 共通manifestとINPUT/OUTPUT/SENTINELは[整数実行vector](./kagura-integers.md)と同じとする。\
 sourceはmain.ondで、INPUTのwordをsource型として読み、`value as 変換先型`をOUTPUTへ格納する。\
 f32はbit再解釈helperでwordとの間を運び、整数→f32は結果の32bit全体を、f32→整数は変換先型幅で書く。\
@@ -10,7 +10,25 @@ f32はbit再解釈helperでwordとの間を運び、整数→f32は結果の32bi
 int→f32の期待はroundTiesToEven、f32→intは0方向丸め後の型範囲検査から導く。\
 NaN/Infと範囲違反はfault、fault時は出力全体を保持する。\
 定義元は[型変換](../../language/v1/types.md#型同一性)、[binary32](../../language/v1/expressions.md#floating-point-arithmetic)である。\
-表の入力・期待bitは既存の固定期待データを転記し、compilerの評価結果を根拠にしていない。
+比較は表の入力と固定期待bitで行う。
+
+sourceのTYPEは表のsource整数型または変換先整数型とし、[bit転送fixture関数](./numeric-float-vectors.md#kagura-runtimeの共有入力)の`bits`と`frombits`の宣言をpackage clause直後に置く。\
+整数からf32の`main.ond`は次のtemplateを使う。
+
+```ond
+package main
+BITS_FUNCTIONS
+func main(){var address:u32=536870912;var input=address as *u32;var a=(*input) as TYPE;*(536871168 as u32 as *u32)=bits(a as f32)}
+```
+
+f32から整数は次のtemplateを使う。\
+BITS_FUNCTIONSは上記2関数の宣言で置換し、命令上限は両方向とも2,000,000とする。
+
+```ond
+package main
+BITS_FUNCTIONS
+func main(){var address:u32=536870912;var input=address as *u32;var a=frombits(*input);var p=536871168 as *TYPE;*p=a as TYPE}
+```
 
 | Case ID | source型 | 変換先型 | INPUT word | 期待OUTPUT word | 期待停止 |
 | --- | --- | --- | --- | --- | --- |
