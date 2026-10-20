@@ -154,7 +154,7 @@ func main() { var a: [2]*struct { x: [3]u8; }; var b: [2]*struct { x: [3]u8; }; 
 <!-- ond-spec-id: conformance/regression/defined-structs-stay-distinct-but-matching-underlying-casts-work -->
 
 要件: `TYPE-02`。\
-操作・期待: 入力1: MemoryVm main.result([]) -> [7]。入力2: Core compile error、Error1件、contains type mismatch、main.ondの最後のaのUTF-8範囲
+操作・期待: 入力1: MemoryVm main.result([]) -> [7]。入力2: Core compile error、main.ondの代入型不一致に対応する原因位置
 
 入力1・`main.ond`:
 ```ond
@@ -443,7 +443,7 @@ func Function() {}
 <!-- ond-spec-id: conformance/regression/recursive-pointer-elements-are-checked-after-resolution -->
 
 要件: `TYPE-04`。\
-操作・期待: 入力1: Core受理。入力2: Error1件、contains array layout overflow、最後の[1073741824]Node。入力3: Error1件、contains direct recursive type、最後のCycle [1]Cycle
+操作・期待: 入力1: Core受理。入力2: 配列size上限違反のcompile errorと当該型に対応する原因位置。入力3: 直接再帰型のcompile errorと当該型宣言に対応する原因位置
 
 入力1・`main.ond`:
 ```ond
@@ -471,8 +471,7 @@ func main() {}
 
 要件: `DECL-04`。\
 操作はCore検査であり、表の各行を別projectとして拒否する。\
-診断messageはcontainsで比較し、位置の記載がある行は主位置を表の断片の最後の出現範囲と照合する。\
-位置と個数の記載がない行は、対応するsourceのError診断が1件以上あることを照合する。
+診断は[共通case契約](./README.md#入力と期待結果の読み方)に従い、入力の不成立箇所に対応する原因位置を比較する。
 
 入力template1（波括弧内のparameterだけ表の文字列へ置換し、それ以外はliteralとして読む）:
 ```ond
@@ -480,22 +479,22 @@ package main
 func main() { {body} }
 ```
 
-| Parameter列 | message比較・位置 |
+| Parameter列 | 成立条件と原因位置 |
 | --- | --- |
-| <code>_ := 1</code> | <code>Error1件; contains short declaration requires at least one new name; span=_ := 1</code> |
-| <code>_, _ := 1, 2</code> | <code>Error1件; contains short declaration requires at least one new name; span=_, _ := 1, 2</code> |
-| <code>a := 1; a, _ := 2, 3</code> | <code>Error1件; contains short declaration requires at least one new name; span=a, _ := 2, 3</code> |
-| <code>a := 1; a, a, b := 2, 3, 4</code> | <code>Error1件; contains duplicate name in short declaration; span=a</code> |
-| <code>a, a := 1, 2</code> | <code>Error1件; contains duplicate name in short declaration; span=a</code> |
-| <code>var _ = 1; var a = _</code> | <code>Error1件; contains blank identifier `_` cannot be used as a value; span=_</code> |
-| <code>const _ = 1; var a = _</code> | <code>Error1件; contains blank identifier `_` cannot be used as a value; span=_</code> |
-| <code>var _: u8 = 256</code> | <code>Error1件; contains integer literal out of range; span=256</code> |
-| <code>const _: i32 = missing()</code> | <code>Error1件; contains constant initializer requires a compile-time value; span=missing()</code> |
-| <code>_ = nil</code> | <code>Error1件; contains requires an explicit pointer or function type context; span=nil</code> |
-| <code>_, _ = 1</code> | <code>Error1件; contains assignment value count mismatch; span=_, _ = 1</code> |
-| <code>var _, _ = 1</code> | <code>Error1件; contains declaration value count mismatch; span=_, _ = 1</code> |
-| <code>const _, _ = 1</code> | <code>Error1件; contains constant declaration value count mismatch; span=_, _ = 1</code> |
-| <code>const a = 1; a, b := 2, 3</code> | <code>Error1件; contains cannot assign to a constant; span=a, b := 2, 3</code> |
+| <code>_ := 1</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>_, _ := 1, 2</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>a := 1; a, _ := 2, 3</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>a := 1; a, a, b := 2, 3, 4</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>a, a := 1, 2</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var _ = 1; var a = _</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>const _ = 1; var a = _</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var _: u8 = 256</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>const _: i32 = missing()</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>_ = nil</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>_, _ = 1</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var _, _ = 1</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>const _, _ = 1</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>const a = 1; a, b := 2, 3</code> | compile error。原因位置は入力の不成立箇所 |
 
 入力template2（波括弧内のparameterだけ表の文字列へ置換し、それ以外はliteralとして読む）:
 ```ond
@@ -504,22 +503,21 @@ package main
 func main() {}
 ```
 
-| Parameter列 | message比較・位置 |
+| Parameter列 | 成立条件と原因位置 |
 | --- | --- |
-| <code>var _: u8 = 256</code> | <code>Error1件; contains integer literal out of range; span=256</code> |
-| <code>const _ = missing()</code> | <code>Error1件; contains constant initializer requires a compile-time value; span=missing()</code> |
-| <code>const _, _ = 1</code> | <code>Error1件; contains constant declaration value count mismatch; span=_, _ = 1</code> |
-| <code>var _, _ = 1</code> | <code>Error1件; contains declaration value count mismatch; span=_, _ = 1</code> |
+| <code>var _: u8 = 256</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>const _ = missing()</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>const _, _ = 1</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var _, _ = 1</code> | compile error。原因位置は入力の不成立箇所 |
 
-追加入力`main.ond`は`package main\nfunc f(_: i32) -> i32 { return _ }\nfunc main() {}\n`（`\n`はLF）とし、Error1件、contains `blank identifier`、主位置は最後の`_`とする。
+追加入力`main.ond`は`package main\nfunc f(_: i32) -> i32 { return _ }\nfunc main() {}\n`（`\n`はLF）とし、blank identifierの値参照によるcompile errorと、その参照に対応する原因位置を比較する。
 
 ## non_call_expression_statements_and_missing_separators_are_rejected
 <!-- ond-spec-id: conformance/regression/non-call-expression-statements-and-missing-separators-are-rejected -->
 
 要件: `SYN-09, SYN-10`。\
 操作はCore検査であり、表の各行を別projectとして拒否する。\
-診断messageはcontainsで比較し、位置の記載がある行は主位置を表の断片の最後の出現範囲と照合する。\
-位置と個数の記載がない行は、対応するsourceのError診断が1件以上あることを照合する。
+診断は[共通case契約](./README.md#入力と期待結果の読み方)に従い、入力の不成立箇所に対応する原因位置を比較する。
 
 入力template1（波括弧内のparameterだけ表の文字列へ置換し、それ以外はliteralとして読む）:
 ```ond
@@ -528,29 +526,28 @@ func f() -> i32 { return 1 }
 func main() { {body} }
 ```
 
-| Parameter列 | message比較・位置 |
+| Parameter列 | 成立条件と原因位置 |
 | --- | --- |
-| <code>1 + 2</code> | <code>Error1件; contains expression statement must be a function call; span=1 + 2</code> |
-| <code>true</code> | <code>Error1件; contains expression statement must be a function call; span=true</code> |
-| <code>new(i32)</code> | <code>Error1件; contains expression statement must be a function call; span=new(i32)</code> |
-| <code>f() + 1</code> | <code>Error1件; contains expression statement must be a function call; span=f() + 1</code> |
-| <code>f() as i32</code> | <code>Error1件; contains expression statement must be a function call; span=f() as i32</code> |
-| <code>if 1; true {}</code> | <code>Error1件; contains expected simple statement; span=1</code> |
-| <code>for 1; true; f() {}</code> | <code>Error1件; contains expected simple statement; span=1</code> |
-| <code>for ; true; 1 {}</code> | <code>Error1件; contains expression statement must be a function call; span=1</code> |
-| <code>var a = 1 var b = 2</code> | <code>Error1件; contains expected `;` or newline; span=var</code> |
-| <code>f() f()</code> | <code>Error1件; contains expected `;` or newline; span=f</code> |
-| <code>for var a = 1; true; f() {}</code> | <code>Error1件; contains expected expression; span=var</code> |
-| <code>f(,)</code> | <code>Error1件; contains expected expression; span=,</code> |
-| <code>f(1,,)</code> | <code>Error1件; contains expected expression; span=,</code> |
+| <code>1 + 2</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>true</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>new(i32)</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>f() + 1</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>f() as i32</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>if 1; true {}</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>for 1; true; f() {}</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>for ; true; 1 {}</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var a = 1 var b = 2</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>f() f()</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>for var a = 1; true; f() {}</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>f(,)</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>f(1,,)</code> | compile error。原因位置は入力の不成立箇所 |
 
 ## field_order_names_and_nominal_element_types_remain_significant
 <!-- ond-spec-id: conformance/regression/field-order-names-and-nominal-element-types-remain-significant -->
 
 要件: `TYPE-03`。\
 操作はCore検査であり、表の各行を別projectとして拒否する。\
-診断messageはcontainsで比較し、位置の記載がある行は主位置を表の断片の最後の出現範囲と照合する。\
-位置と個数の記載がない行は、対応するsourceのError診断が1件以上あることを照合する。
+診断は[共通case契約](./README.md#入力と期待結果の読み方)に従い、入力の不成立箇所に対応する原因位置を比較する。
 
 入力template1（波括弧内のparameterだけ表の文字列へ置換し、それ以外はliteralとして読む）:
 ```ond
@@ -560,24 +557,23 @@ type B i32
 func main() { var a: {left}; var b: {right} = a; }
 ```
 
-| Parameter列 | message比較・位置 |
+| Parameter列 | 成立条件と原因位置 |
 | --- | --- |
-| <code>left=struct { x: i32; y: u8; }; right=struct { y: u8; x: i32; }</code> | <code>Error1件; contains type mismatch; span=最後のa</code> |
-| <code>left=struct { x: i32; }; right=struct { y: i32; }</code> | <code>Error1件; contains type mismatch; span=最後のa</code> |
-| <code>left=struct { x: i32; }; right=struct { x: u32; }</code> | <code>Error1件; contains type mismatch; span=最後のa</code> |
-| <code>left=[2]u8; right=[3]u8</code> | <code>Error1件; contains type mismatch; span=最後のa</code> |
-| <code>left=*A; right=*B</code> | <code>Error1件; contains type mismatch; span=最後のa</code> |
-| <code>left=[2]A; right=[2]B</code> | <code>Error1件; contains type mismatch; span=最後のa</code> |
-| <code>left=struct { x: A; }; right=struct { x: B; }</code> | <code>Error1件; contains type mismatch; span=最後のa</code> |
-| <code>left=func(x: A); right=func(x: B)</code> | <code>Error1件; contains type mismatch; span=最後のa</code> |
+| <code>left=struct { x: i32; y: u8; }; right=struct { y: u8; x: i32; }</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>left=struct { x: i32; }; right=struct { y: i32; }</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>left=struct { x: i32; }; right=struct { x: u32; }</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>left=[2]u8; right=[3]u8</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>left=*A; right=*B</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>left=[2]A; right=[2]B</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>left=struct { x: A; }; right=struct { x: B; }</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>left=func(x: A); right=func(x: B)</code> | compile error。原因位置は入力の不成立箇所 |
 
 ## public_fields_match_across_packages_and_private_fields_do_not
 <!-- ond-spec-id: conformance/regression/public-fields-match-across-packages-and-private-fields-do-not -->
 
 要件: `TYPE-01`。\
 操作はCore検査であり、表の各行を別projectとして拒否する。\
-診断messageはcontainsで比較し、位置の記載がある行は主位置を表の断片の最後の出現範囲と照合する。\
-位置と個数の記載がない行は、対応するsourceのError診断が1件以上あることを照合する。
+診断は[共通case契約](./README.md#入力と期待結果の読み方)に従い、入力の不成立箇所に対応する原因位置を比較する。
 
 入力template1（波括弧内のparameterだけ表の文字列へ置換し、それ以外はliteralとして読む）:
 ```ond
@@ -586,11 +582,11 @@ import "test/shared"
 func main() { {body}; }
 ```
 
-| Parameter列 | message比較・位置 |
+| Parameter列 | 成立条件と原因位置 |
 | --- | --- |
-| <code>var v: struct { x: i32; } = shared.Private()</code> | <code>Error1件; contains declaration value 1 type mismatch; span=v: struct { x: i32; } = shared.Private()</code> |
-| <code>var v = shared.Private(); var x = v.x</code> | <code>Error1件; contains field `x` is not exported; span=v.x</code> |
-| <code>var v = shared.Private(); var x = v as struct { x: i32; }</code> | <code>Error1件; contains invalid explicit type conversion; span=v</code> |
+| <code>var v: struct { x: i32; } = shared.Private()</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var v = shared.Private(); var x = v.x</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var v = shared.Private(); var x = v as struct { x: i32; }</code> | compile error。原因位置は入力の不成立箇所 |
 
 全行で`shared/shared.ond`:
 ```ond
@@ -612,8 +608,7 @@ func result() -> i32 { var v: struct { X: i32; } = shared.Public(); return v.X; 
 
 要件: `AGG-01`。\
 操作はCore検査であり、表の各行を別projectとして拒否する。\
-診断messageはcontainsで比較し、位置の記載がある行は主位置を表の断片の最後の出現範囲と照合する。\
-位置と個数の記載がない行は、対応するsourceのError診断が1件以上あることを照合する。
+診断は[共通case契約](./README.md#入力と期待結果の読み方)に従い、入力の不成立箇所に対応する原因位置を比較する。
 
 入力template1（波括弧内のparameterだけ表の文字列へ置換し、それ以外はliteralとして読む）:
 ```ond
@@ -621,24 +616,24 @@ package main
 func main() { {source}; }
 ```
 
-| Parameter列 | message比較・位置 |
+| Parameter列 | 成立条件と原因位置 |
 | --- | --- |
-| <code>var x = [...]u8{}</code> | <code>Error1件; contains cannot infer array length from an empty literal; span=[...]u8{}</code> |
-| <code>var x = [...]u8{-1: 0}</code> | <code>Error1件; contains array literal index out of bounds; span=-1: 0</code> |
-| <code>var x = [...]u8{4294967295 as u32: 0}</code> | <code>Error1件; contains array literal index out of bounds; span=4294967295 as u32: 0</code> |
-| <code>var x = [...]u8{4294967294 as u32: 0, 1}</code> | <code>Error1件; contains array literal index out of bounds; span=1</code> |
-| <code>var x = [...]u8{2: 0, 2: 1}</code> | <code>Error1件; contains duplicate field or index; span=2: 1</code> |
-| <code>var i = 2; var x = [...]u8{i: 0}</code> | <code>Error1件; contains array literal key must be a compile-time integer; span=i: 0</code> |
-| <code>var x = [...]u8{true: 0}</code> | <code>Error1件; contains index must be an integer constant; span=true</code> |
-| <code>var x = [...]u8{256}</code> | <code>Error1件; contains integer literal out of range; span=256</code> |
-| <code>var x: [2]u8 = [...]u8{1}</code> | <code>Error1件; contains type mismatch; span=[...]u8{1}</code> |
-| <code>var x: [...]u8</code> | <code>Error1件; contains inferred array length requires a composite literal; span=[...]u8</code> |
-| <code>var x = new([...]u8)</code> | <code>Error1件; contains inferred array length requires a composite literal; span=[...]u8</code> |
-| <code>var x = [...][...]u8{[...]u8{1}}</code> | <code>Error1件; contains inferred array length requires a composite literal; span=最初の[...]u8</code> |
-| <code>var x = [. . .]u8{1}</code> | <code>Error1件; contains expected expression; span=最初の.</code> |
-| <code>var x = [....]u8{1}</code> | <code>Error1件; contains expected `]`; span=.</code> |
+| <code>var x = [...]u8{}</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var x = [...]u8{-1: 0}</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var x = [...]u8{4294967295 as u32: 0}</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var x = [...]u8{4294967294 as u32: 0, 1}</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var x = [...]u8{2: 0, 2: 1}</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var i = 2; var x = [...]u8{i: 0}</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var x = [...]u8{true: 0}</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var x = [...]u8{256}</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var x: [2]u8 = [...]u8{1}</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var x: [...]u8</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var x = new([...]u8)</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var x = [...][...]u8{[...]u8{1}}</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var x = [. . .]u8{1}</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var x = [....]u8{1}</code> | compile error。原因位置は入力の不成立箇所 |
 
-追加の2入力は次の`main.ond`全文とし、各々Error1件、contains `inferred`、最後の`[...]u8`範囲を期待する。
+追加の2入力は次の`main.ond`全文とし、各々推論長型の使用位置によるcompile errorと、当該型に対応する原因位置を比較する。
 ```ond
 package main
 type T [...]u8
@@ -655,8 +650,7 @@ func main() {}
 
 要件: `STR-02`。\
 操作はCore検査であり、表の各行を別projectとして拒否する。\
-診断messageはcontainsで比較し、位置の記載がある行は主位置を表の断片の最後の出現範囲と照合する。\
-位置と個数の記載がない行は、対応するsourceのError診断が1件以上あることを照合する。
+診断は[共通case契約](./README.md#入力と期待結果の読み方)に従い、入力の不成立箇所に対応する原因位置を比較する。
 
 入力template1（波括弧内のparameterだけ表の文字列へ置換し、それ以外はliteralとして読む）:
 ```ond
@@ -667,13 +661,13 @@ func main() {
 }
 ```
 
-| Parameter列 | message比較・位置 |
+| Parameter列 | 成立条件と原因位置 |
 | --- | --- |
-| <code>var x: [4]u8 = &quot;abc&quot;</code> | <code>contains exactly match</code> |
-| <code>var x: [2]u8 = &quot;abc&quot;</code> | <code>contains exactly match</code> |
-| <code>var x: [3]i8 = &quot;abc&quot;</code> | <code>contains exactly match</code> |
-| <code>var x = &quot;abc&quot;<br>var p: *u8 = x</code> | <code>contains type mismatch</code> |
-| <code>var values: [1]S<br>var p: *u8 = &amp;values[0]</code> | <code>contains type mismatch</code> |
+| <code>var x: [4]u8 = &quot;abc&quot;</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var x: [2]u8 = &quot;abc&quot;</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var x: [3]i8 = &quot;abc&quot;</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var x = &quot;abc&quot;<br>var p: *u8 = x</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var values: [1]S<br>var p: *u8 = &amp;values[0]</code> | compile error。原因位置は入力の不成立箇所 |
 
 受理側の追加入力は次の`main.ond`であり、Core検査の成功を期待する。
 
@@ -688,8 +682,7 @@ func main() { var text = "abc"; var head: *u8 = &text[0]; var values: [1]S; var 
 
 要件: `AGG-02`。\
 操作はCore検査であり、表の各行を別projectとして拒否する。\
-診断messageはcontainsで比較し、位置の記載がある行は主位置を表の断片の最後の出現範囲と照合する。\
-位置と個数の記載がない行は、対応するsourceのError診断が1件以上あることを照合する。\
+診断は[共通case契約](./README.md#入力と期待結果の読み方)に従い、入力の不成立箇所に対応する原因位置を比較する。\
 各行の主位置はmain.ondのsourceに対応するUTF-8 byte範囲とし、file範囲内で両端が文字境界にあることを比較する。
 
 入力template1（波括弧内のparameterだけ表の文字列へ置換し、それ以外はliteralとして読む）:
@@ -701,21 +694,21 @@ func main() {
 }
 ```
 
-| Parameter列 | message比較・位置 |
+| Parameter列 | 成立条件と原因位置 |
 | --- | --- |
-| <code>var a: [2]u8<br>var x = a[-1]</code> | <code>contains out of bounds</code> |
-| <code>var x = &quot;ab&quot;[2]</code> | <code>contains out of bounds</code> |
-| <code>var a = [2]u8{2: 1}</code> | <code>contains out of bounds</code> |
-| <code>var a = [2]u8{0: 1, 0: 2}</code> | <code>contains duplicate</code> |
-| <code>var p = Point{x: 1, x: 2}</code> | <code>contains duplicate</code> |
-| <code>var p = Point{1}</code> | <code>contains struct literal requires named fields</code> |
-| <code>var p = Point{missing: 1}</code> | <code>contains unknown struct field</code> |
-| <code>var p: Point<br>p.missing = 1</code> | <code>contains unknown struct field</code> |
-| <code>var p = &amp;Point{x: 1}</code> | <code>contains not supported</code> |
-| <code>var x = *1</code> | <code>contains requires a pointer</code> |
-| <code>var p: *u8<br>var i: i32<br>var x = p[i]</code> | <code>contains type mismatch</code> |
-| <code>var x = len(1)</code> | <code>contains requires an array</code> |
-| <code>var x = &quot;\q&quot;</code> | <code>contains invalid string escape</code> |
+| <code>var a: [2]u8<br>var x = a[-1]</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var x = &quot;ab&quot;[2]</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var a = [2]u8{2: 1}</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var a = [2]u8{0: 1, 0: 2}</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var p = Point{x: 1, x: 2}</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var p = Point{1}</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var p = Point{missing: 1}</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var p: Point<br>p.missing = 1</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var p = &amp;Point{x: 1}</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var x = *1</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var p: *u8<br>var i: i32<br>var x = p[i]</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var x = len(1)</code> | compile error。原因位置は入力の不成立箇所 |
+| <code>var x = &quot;\q&quot;</code> | compile error。原因位置は入力の不成立箇所 |
 
 ## executes_cfg_scopes_loops_and_short_circuit
 <!-- ond-spec-id: conformance/regression/executes-cfg-scopes-loops-and-short-circuit -->
@@ -799,7 +792,7 @@ func swap(x: i32) -> i32 {
 
 要件は`INIT-02`である。\
 次のtemplateの`DECLARATION`を各行で置換してCore検査を行い、compile errorを期待する。\
-Error診断の少なくとも1件が`compile-time value`または`value count mismatch`を含むことを照合する。
+各入力のruntime initializerに対応する原因位置を比較する。
 ```ond
 package main
 DECLARATION
@@ -820,13 +813,13 @@ func main() {}
 
 要件は`PKG-04`である。\
 次の各入力は独立projectのCore検査でcompile errorを期待する。\
-少なくとも1件のError診断が表のmessageを含むことを比較する。
+各入力の不成立箇所に対応する原因位置を比較する。
 
-| main.ond全文 | shared/shared.ond全文 | message contains |
+| main.ond全文 | shared/shared.ond全文 | compile error。原因位置は入力の不成立箇所 |
 | --- | --- | --- |
-| <code>package main<br>const N = -1<br>type Buffer [N]u8<br>func main() {}<br></code> | fileなし | array length |
-| <code>package main<br>const A = B<br>const B = A<br>func main() {}<br></code> | fileなし | cycle |
-| <code>package main<br>import &quot;test/shared&quot;<br>const X = shared.private<br>func main() {}<br></code> | <code>package shared<br>const private = 1<br></code> | not exported |
+| <code>package main<br>const N = -1<br>type Buffer [N]u8<br>func main() {}<br></code> | fileなし | 配列長が負 |
+| <code>package main<br>const A = B<br>const B = A<br>func main() {}<br></code> | fileなし | 定数依存が循環 |
+| <code>package main<br>import &quot;test/shared&quot;<br>const X = shared.private<br>func main() {}<br></code> | <code>package shared<br>const private = 1<br></code> | 非公開名の参照 |
 
 ## length_is_maximum_index_plus_one_not_last_index
 <!-- ond-spec-id: conformance/regression/length-is-maximum-index-plus-one-not-last-index -->

@@ -15,7 +15,7 @@
 | numeric-casts | 264 | [numeric-casts](./numeric-casts.md) |
 | numeric-float-vectors | 25 | [numeric-float-vectors](./numeric-float-vectors.md) |
 | numeric-floats | 69 | [numeric-floats](./numeric-floats.md) |
-| numeric-integers | 392 | [numeric-integers](./numeric-integers.md) |
+| numeric-integers | 397 | [numeric-integers](./numeric-integers.md) |
 | numeric-runtime（内部追跡） | 1 | [numeric-runtime](./numeric-runtime.md) |
 | static-constant-contexts | 25 | [static-constant-contexts](./static-constant-contexts.md) |
 | static-control-headers | 26 | [static-control-headers](./static-control-headers.md) |
@@ -50,11 +50,12 @@ Phase列は観測操作を次のように指定する。
 | Core | project全体の名前・型・定数・静的条件を検査する。成功時は記載された宣言の型と値を照合する |
 | MemoryVm | Coreの検査後、freshなglobal zero/constant初期化状態で記載された関数を指定argument列により1回呼ぶ。返値列、fault、実行済みeffectを照合する。実装固有のIRやVM命令を要求しない |
 
-`accept`は当該phaseの成功と診断0件を表す。\
-`reject; diagnostics=N`はError/Warningのseverityと個数を含め、各診断が同じ行の位置とmessage比較を満たすことを1対1で照合する。\
-診断順序は比較せず、`exact`は全文一致、`contains`は部分文字列一致とする。\
-診断文と件数はcase固有の観測であり、一般の言語error規則へ追加する条件ではない。\
-`file:[start,end)`はfile先頭からのUTF-8 byte範囲、`file:EOF`はEOFのzero幅位置、`project`はproject全体に対する診断位置を表す。
+`accept`は当該phaseの成功を表す。\
+`reject`は当該phaseで入力の不成立を診断して失敗することを表し、[診断と成功結果](../../language/v1/declarations.md#診断と成功結果)の原因位置と独立したエラーの収集を比較する。\
+原因位置にfileを記した行は、そのfileの不成立な名前・式・宣言等に対応するUTF-8 byte範囲を持つことを照合する。\
+`project`はmanifest欠落・entry欠落・import graphなどproject入力全体の不成立に対応する。\
+主位置と関連位置を区別するgeneric診断は[型parameterの診断規則](../../language/v1/types.md#型parameter)に従う。\
+比較対象は成功・失敗、原因との対応、独立した原因の収集、および各章が明示した診断の集約と関連位置とする。
 
 argument列と返値列の整数bitsはu64で表し、signed値は符号拡張したtwo's-complement表現、f32値は[Ond binary32](../../language/v1/expressions.md#floating-point-arithmetic)のu32 bitsとして比較する。\
 argumentの整数はparameter宣言型の幅と符号で解釈し、`18446744073709551615`は`i32`parameterでは`-1`を表す。\
@@ -72,6 +73,9 @@ boolのargumentと返値は0/1、f32はu32 bit patternとし、bytesは要素ご
 <!-- ond-spec-id: conformance/cases/additional-observations -->
 
 - [成果物・build・link](./artifact-contracts.md)
+- [公開interfaceと型付きwire値](./interface-values.md)
+- [Package build_idの完全入力](./package-hash.md)
+- [診断の原因とgeneric関連位置](./diagnostic-causes.md)
 - [debugとfault](./debug-fault-contracts.md)
 - [operator解決と代入](./operator-contracts.md)
 - [字句](./lexical-observations.md)

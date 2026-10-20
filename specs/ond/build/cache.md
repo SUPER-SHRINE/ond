@@ -84,28 +84,42 @@ Pは論理package path、N/M/receiverはsource宣言名とする。
 | Global、Constant | `package: string`, `name: string` |
 
 operator tokenとreceiverを含むoperand_countは[operator宣言](../language/v1/expressions.md#user-defined-operator)に従う。\
-NominalId.argumentsとInstanceIdの各argument列は宣言の型parameter順、nongenericの列は空arrayとする。\
-functionのreceiver_argumentsは空、method/operatorのreceiver_argumentsはreceiver基底型の具体的な型argument列とする。\
+NominalId.argumentsは型宣言の型parameter順とし、nongeneric型では空arrayとする。\
+Functionのreceiver_argumentsは空、type_argumentsはtop-level generic関数の型適用で明示した型argumentを宣言順に並べた列とする。\
+Method/Operatorのreceiver_argumentsはreceiver基底型の具体的な型argumentを宣言順に並べ、type_argumentsは空arrayとする。\
+Global/Constantとnongeneric Functionは両argument列を空arrayとする。\
 signature.parametersはreceiverを除くsource-visible列である。
 
-Generation.instancesは、当該owner packageに要求されるgeneric function/method/operatorの具体化の推移閉包を各InstanceIdにつき1個収録する。\
-Generation.typesの母集団は当該packageの全nongeneric宣言とinstancesの全具体化とし、そのsignatureとsource本体で使う具体的なsource意味型を集合として収録する。\
+Generation.instancesは今回compileに含まれる全source packageの、静的検査対象となる全nongeneric宣言内のsource使用を根とする。\
+generic function/method/operatorの使用から具体化し、その本体内の使用へ推移閉包を取り、宣言owner packageごとに各InstanceIdを1個収録する。\
+Generation.typesの母集団は当該packageの全nongeneric宣言とinstancesの全具体化とし、その宣言型、function signature自体のFunction型、parameter/result、receiver、field、local宣言、各source式に確定した型を集合として収録する。\
+この集合をPointerの参照先、Arrayの要素、Functionのparameter/result、Structのfield、Definedの型argumentとunderlyingの構成型へ再帰的に閉じる。\
+言語の明示変換とreceiver調整後の型も含める。型構文内の配列長式は確定したArray.lengthにだけ反映し、その式のoperand/演算結果型は独立したtypes要素へ加えない。\
 NominalIdを参照する位置ではunderlyingを展開せず、Generation.nominalsへsignature、本体型、公開interfaceから到達するnominalの閉包を各identityにつき1個収録する。\
 すべての名前付き型はDefined参照で表し、underlyingはNominal表だけで展開する。\
 nongeneric宣言型それ自体とそこで使う構成型もtypes/nominalsへ収録し、type宣言内の配列長等は型構造に含めてconstantsへ重複収録しない。\
 これによりpointer経由の再帰も有限な参照で表す。\
 nominalのmethodsは、その型の公開nongeneric methodと公開generic methodの収録済み具体化をname順、同名ならidentityのcanonical JSON bytes辞書順に並べ、物理symbol名をNormalizedMethod.identityへ置換する。
 
-Generation.constantsは全nongeneric function/method/operator/global/const宣言とinstancesの具体化を母集団とし、sourceの値要求境界へ渡す最大のcompile-time定数式と静的aggregate/文字列実体の確定値を、ownerと型付き値の組として収録する。\
-大きい定数式に含まれる定数部分式は、その最大式と重複して収録しない。\
+Generation.constantsは全nongeneric function/method/operator/global/const宣言とinstancesの具体化を母集団とし、次のsource値抽出で得る最大の定数部分式と静的aggregate/文字列実体を、ownerと型付き確定値の組として収録する。\
+型構文内の配列長式を除くsource値式の親子関係を用い、他の値式を親に持たない各式を根とする。\
+callのcallee/argumentはcall式の子、各operandは演算式の子として再帰し、未使用nongeneric宣言の本体とruntime conditionの両branchも含める。\
+ここで定数部分式とは、元の型文脈を保ってconst initializerへ用いたときに言語のconst適格性を満たすsource式である。\
+式全体が定数ならその型付き値を1個収録し、定数でない式はsourceのoperandへ再帰して同じ処理を行う。\
+したがって`x+1`の`1`は収録し、`(1+2)*3`は結果`9`だけを収録する。\
+短絡の値評価経路は[短絡規則](../language/v1/expressions.md#式と評価順)に従い、定数falseの&&右辺と定数trueの||右辺の値抽出を行う経路は左辺で終了する。\
+同じ値評価経路にあるnestedの定数aggregateと文字列literalは静的実体として追加し、途中のscalar定数部分式は最大式へまとめる。\
+静的実体もこの経路で到達したsourceだけから収録し、hashのための追加の値評価を行わない。\
+型専用の配列長は型構造へ含め、型抽出は名前・型検査の対象全体に適用する。\
 package-level global/constのownerはGlobal/Constant DeclarationIdを持ち両argument列が空のInstanceIdとし、instances列への所属を要求しない。\
 function/method/operator本体の値と静的実体はそのInstanceIdをownerとする。
 
-NormalizedExportは[公開Export](../artifacts.md#公開interface)と同じ外部tagを使い、TypeRefをTypeExpr、ValueをNormalizedValueへ置換する。\
+NormalizedInterface.exportsのbinding集合は[公開interface](../artifacts.md#公開interface)と同じ非generic公開宣言集合とする。\
+NormalizedExportは同節のExportと同じ外部tagを使い、TypeRefをTypeExpr、ValueをNormalizedValueへ置換する。\
 NormalizedValueKindはwire ValueKindと同じunit/scalar variantを持ち、Compositeだけ`{"Composite":[[u32,NormalizedValue],...]}`として再帰する。\
 Compositeの対はindex昇順、zero valueの要素は省略し、全要素がzeroならkindを`"Zero"`に統一する。\
 整数0、false、typed nil、f32の+0も指定型のzero表現ならZeroへ統一し、f32の-0はFloat32 payload `2147483648`で保持する。\
-Integerのsigned値は64bitへ符号拡張したtwo's-complement bits、Float32はbinary32のu32 bitsである。
+scalar payloadと型の整合は[型付きwire Value](../artifacts.md#公開interface)と同じ成立条件に従う。
 
 Generationの各集合列はelementのcanonical JSON bytesのbyte辞書順に並べ、同一elementを重複収録しない。\
 nominalsはidentityのcanonical bytes順とする。\

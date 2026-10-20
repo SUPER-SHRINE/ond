@@ -120,7 +120,7 @@ N-bit表現Bのunsigned値はB、signed値はB<2^(N-1)ならB、それ以外はB
 - `b == 0` の `/` と `%` は compile-time なら compile error、実行時なら fault とする
 - signed division の `minInt / -1` は compile-time なら compile error、実行時なら fault とする
   - 対応する remainder `minInt % -1` は `0` とする
-- bitwise演算はoperandの`N` bit表現に対して、bit位置i（0<=i<N）ごとに次の関数を適用する
+- bitwise演算はoperandの数学的整数値nをn mod 2^N（0以上2^N未満）の`N` bit表現へ射影し、bit位置i（0<=i<N）ごとに次の関数を適用する
   - operand表現A/Bのbitをa_i=floor(A/2^i) mod 2、b_i=floor(B/2^i) mod 2とする
   - `A & B`はa_i × b_i、`A | B`はmax(a_i,b_i)、`A ^ B`は(a_i+b_i) mod 2を結果bitとする
   - `A &^ B`はa_i × (1-b_i)、単項`^A`は1-a_iを結果bitとする
@@ -138,9 +138,11 @@ N-bit表現Bのunsigned値はB、signed値はB<2^(N-1)ならB、それ以外はB
 ### Integer Constant Arithmetic
 <!-- ond-spec-id: expressions/integer-constant-arithmetic -->
 
-整数定数部分式は数学的な正確値で計算する。\
+整数定数部分式の算術は数学的な正確値で計算する。\
 中間値はsource整数型の幅とcompilerの固定幅から独立して保持する。\
 literal既定型、型文脈とoperand型一致は[型規則](./types.md#型同一性)に従う。
+
+定数のbitwise演算も[整数演算の射影とbit関数](#integer-arithmetic)を適用し、その演算結果を後続の定数算術の正確値として用いる。
 
 宣言・代入・argument・return・明示cast等の値要求境界で、正確値が要求整数型の範囲に入ることを検査し、範囲外ならcompile errorを返す。\
 配列lengthとindexは[配列規則](./types.md#配列とstruct)、shift countは`u32`の成立条件で検査する。\
@@ -270,6 +272,10 @@ receiverは同じpackageで宣言した名前付き型またはそのpointerと�
 演算構文は、operandの静的型に適合するcustom operatorを先に選び、適合するcustom宣言がない場合にunderlying型が継承するbuiltin演算を適用する。\
 この順序は算術、index読取り、index書込み、lenの各kindに適用する。\
 receiverの調整は下記method同等の1段規則、残りのoperandは型の完全一致を成立条件とする。\
+custom候補のoperandへ対応するparameter型の文脈を与え、未注釈literalは括弧の有無によらず、その文脈下で通常の型検査とliteral範囲検査を行う。\
+文脈に対する型不適合と範囲外はcompile errorとなる。\
+注釈または明示変換で型が確定したoperandはその型で一致を検査する。\
+receiver、kind、operand数と他の型で定まるcustom候補のliteral型・範囲または結果型が不成立なら、その候補のerrorとして扱い、builtinへ再試行しない。\
 要求result型は候補選択に用いず、選んだcustom宣言のresult型を通常の要求型と照合し、不一致ならcompile errorとなる。
 
 `[]`が返すpointerへの後続selectorは、通常のpointer field access規則に従う。\

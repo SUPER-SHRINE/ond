@@ -57,13 +57,14 @@ schema違反は公開入力のerrorとなり、compile/link CLIでは[失敗契�
 `interface`はpackage、types（型定義の配列）、exports（公開名→宣言）からなる。\
 target-neutralな型・公開宣言情報であり、型参照はこの成果物localのtypes配列indexで表す。
 
-generic型・関数・method・operatorを利用するpackageはsource宣言から具体化する。\
-具体化済みの型と関数は、通常の非generic成果物と同じ形式で扱う。
+exportsは非genericのsource公開bindingを名前ごとに収録する。\
+generic型・関数・method・operatorの使用はsource宣言から具体化し、具体化したcodeを収録するObjectは宣言を所有するpackageのObjectとする。\
+packageを跨ぐ具体化codeへの参照に必要なObject symbolはExportedとして公開でき、interface.exportsのsource bindingとは別の集合を形成する。
 
 | 型 | Fieldまたはvariant | 意味 |
 | --- | --- | --- |
 | Interface | `package: string`, `types: Type[]`, `exports: map<string,Export>` | 論理package path、型配列、ASCII大文字で始まる公開名からExportへのmap |
-| Type | `name: string or null`, `kind: Kind`, `methods: ConcreteMethod[]` | 任意の完全修飾nominal名、型構造、公開concrete method |
+| Type | `name: string or null`, `kind: Kind`, `methods: ConcreteMethod[]` | 下記のnominal名または無名型のnull、型構造、公開concrete method |
 | Kind | `Bool`, `U8`, `I8`, `U16`, `I16`, `U32`, `I32`, `F32` | primitive型 |
 | Kind | `Pointer(TypeRef)`, `Array {length: u32, element: TypeRef}` | 参照先型、配列長と要素型 |
 | Kind | `Function(Signature)`, `Struct(Field[])`, `Defined(TypeRef)` | 関数型、宣言順field列、underlying型 |
@@ -75,10 +76,33 @@ generic型・関数・method・operatorを利用するpackageはsource宣言か�
 | ValueKind | `Zero`, `Integer(u64)`, `Float32(u32)`, `Bool(bool)`, `Nil`, `Composite((u32, Value)[])` | zero、整数bits、binary32 bits、bool、型付きnil、疎なindex/field値列 |
 
 TypeRefはこのinterfaceのtypes配列indexをu32で表す。\
-公開宣言から到達する型を再帰的に保存し、非公開のnamed typeも公開戻り値などから到達すればtypesへ含める。\
-exportsは公開bindingの集合であり、pointerによる循環型参照も成立する。\
+非genericの公開宣言から到達する型を再帰的に保存し、非公開のnamed typeと具体化したgeneric型も公開戻り値などから到達すればtypesへ含める。\
+pointerによる循環型参照も成立する。
+
+型graphには[直接再帰とpointer経由再帰の成立条件](./language/v1/types.md#型)を適用する。\
+Definedだけの循環で構造型へ解決できない入力はerrorとなり、Pointerへ到達した値の構造型はPointerとして、その参照先の循環を扱う。
+
+名前付き型のidentityは[NominalId](./build/cache.md#意味型具体化定数の正規化)のpackage、source宣言名、宣言順の型argument列で定める。\
+対応するTypeはkind=Definedであり、nameは非generic型では`package.name`、generic型ではこれに型argumentのTypeExpr列の[canonical JSON](./build/cache.md#canonical-json)を続けたstringとする。\
+例えば`p.Box[u8]`のnameは`p.Box["U8"]`であり、入れ子の名前付き型argumentはTypeExprのDefined/NominalIdで表す。\
+無名型のnameはnullとし、型番号によらずこのidentityを[NormalizedInterface](./build/cache.md#意味型具体化定数の正規化)でも維持する。
+
+Value.tyがDefinedならunderlyingを辿って値の構造型を解決し、次のValueKind成立条件を適用する。\
+子Valueのtyの一致は[型同一性](./language/v1/types.md#型同一性)によって判定する。
+
+| ValueKind | tyとpayloadの成立条件 |
+| --- | --- |
+| Zero | 全型のzero value |
+| Integer | 整数型。unsignedは型の値範囲内の非負値。signedは型幅のtwo's-complement値を64bitへ符号拡張したu64 bitsと完全一致 |
+| Float32 | f32。payloadはbinary32のu32 bits |
+| Bool | bool。payloadはbool |
+| Nil | PointerまたはFunction型のnil |
+| Composite | arrayまたはstruct。indexは配列では0以上length未満、structでは宣言順の0始まりfield index。各子tyは対応する要素/field型と同一で、indexは一意 |
+
 Compositeの省略要素は指定型のzero valueとする。\
-IntegerとFloat32の値はそれぞれu64/u32のbit表現として運ぶ。
+ValueKind単体のwire構造検査と、所属Interfaceのtypesを使うこの型・値の整合検査はそれぞれ適用する。\
+読出しは明示したscalar zeroとzeroのComposite要素も受理する。\
+writerは[正規化値](./build/cache.md#意味型具体化定数の正規化)と同じく、型のzero表現をZeroへ、Compositeをindex昇順とzero要素省略へ統一し、f32の-0 bitsを保持する。
 
 読出時には型参照の範囲、公開binding名、nominal名の重複、aggregate indexの重複、\
 成果物とinterfaceのpackage一致を検証する。\

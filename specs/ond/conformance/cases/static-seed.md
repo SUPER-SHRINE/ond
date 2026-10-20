@@ -12,12 +12,12 @@ generated numeric/型境界のsourceはすべて`main.ond`の内容として読�
 
 `accept`単独は受理を期待し、値の記載がある行はその型・値まで照合する。\
 構文解釈は表のParse phaseで照合し、内部AST/MIRの構造検査は外部適合判定へ含めない。\
-診断の原文は照合対象を示し、規範上の失敗結果はcompile errorとして読む。
+診断と原因位置の比較は[共通case契約](./README.md#入力と期待結果の読み方)に従う。
 
-| Case ID | 要件ID | 入力 | 仕様由来の期待結果 | Phase・診断比較 |
+| Case ID | 要件ID | 入力 | 仕様由来の期待結果 | Phase・原因位置 |
 | --- | --- | --- | --- | --- |
-| <code>SYN-11.unnamed-parameter.ast</code> | `SYN-11` | <code>main.ond:<br>package main<br>type F func(i32) -&gt; i32<br></code> | <code>accept; 構文解釈: one unnamed parameter, not a blank binding</code> | <code>Parse; accept; diagnostics=0</code> |
-| <code>SYN-12.empty-results.reject</code> | `SYN-12` | <code>main.ond:<br>package main<br>func main() -&gt; () {}<br></code> | <code>parse error</code> | <code>Parse; reject; diagnostics=1; Error@main.ond:[29,30) exact=empty result list is not allowed; omit `-&gt;` for zero return values</code> |
-| <code>NUM-02.imported-constant.core</code> | `NUM-02`, `PKG-03`, `FP-01`, `NIL-01`, `STR-01` | <code>main.ond:<br>package main<br>import &quot;test/shared&quot;<br>const Answer = shared.Base * 2<br>const Flag = true<br>const Text = &quot;音&quot;<br>const Pointer: *u8 = nil<br>const F = -0.0<br>func main() {}<br>func result() -&gt; i32 { return Answer; }<br><br>shared/shared.ond:<br>package shared<br>const Base = 21<br></code> | <code>accept; Answer: i32 = integer bits 0x000000000000002a; Flag: bool = true; Text: [3]u8 = bytes [233, 159, 179]; Pointer: *u8 = typed nil; F: f32 = f32 bits 0x80000000</code> | <code>Core; accept; diagnostics=0</code> |
-| <code>NAME-03.unicode-multifile.reject</code> | `NAME-03`, `DIAG-02` | <code>main.ond:<br>package main<br>// i32<br>func main() {}<br><br>other.ond:<br>package main<br>// 音のコメント<br>func f() { var i32 = 1; }<br></code> | <code>compile error</code> | <code>Core; reject; diagnostics=1; Error@other.ond:[50,53) contains=builtin type name `i32`</code> |
-| <code>PKG-01.missing-main-file.reject</code> | `PKG-01` | <code>other.ond:<br>package main<br>func main() {}<br></code> | <code>compile error</code> | <code>Core; reject; diagnostics=1; Error@project exact=project root must contain `main.ond`</code> |
+| <code>SYN-11.unnamed-parameter.ast</code> | `SYN-11` | <code>main.ond:<br>package main<br>type F func(i32) -&gt; i32<br></code> | <code>accept; 構文解釈: one unnamed parameter, not a blank binding</code> | <code>Parse; accept</code> |
+| <code>SYN-12.empty-results.reject</code> | `SYN-12` | <code>main.ond:<br>package main<br>func main() -&gt; () {}<br></code> | <code>parse error</code> | <code>Parse; reject; 原因位置: main.ond</code> |
+| <code>NUM-02.imported-constant.core</code> | `NUM-02`, `PKG-03`, `FP-01`, `NIL-01`, `STR-01` | <code>main.ond:<br>package main<br>import &quot;test/shared&quot;<br>const Answer = shared.Base * 2<br>const Flag = true<br>const Text = &quot;音&quot;<br>const Pointer: *u8 = nil<br>const F = -0.0<br>func main() {}<br>func result() -&gt; i32 { return Answer; }<br><br>shared/shared.ond:<br>package shared<br>const Base = 21<br></code> | <code>accept; Answer: i32 = integer bits 0x000000000000002a; Flag: bool = true; Text: [3]u8 = bytes [233, 159, 179]; Pointer: *u8 = typed nil; F: f32 = f32 bits 0x80000000</code> | <code>Core; accept</code> |
+| <code>NAME-03.unicode-multifile.reject</code> | `NAME-03`, `DIAG-02` | <code>main.ond:<br>package main<br>// i32<br>func main() {}<br><br>other.ond:<br>package main<br>// 音のコメント<br>func f() { var i32 = 1; }<br></code> | <code>compile error</code> | <code>Core; reject; 原因位置: other.ond</code> |
+| <code>PKG-01.missing-main-file.reject</code> | `PKG-01` | <code>other.ond:<br>package main<br>func main() {}<br></code> | <code>compile error</code> | <code>Core; reject; 原因位置: project</code> |

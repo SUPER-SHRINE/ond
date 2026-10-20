@@ -64,13 +64,21 @@ ForClauseBlock= [ SimpleStmt ] ";" [ Expression ] ";" [ SimpleStmt ] Block .
 - 後続の格納先で bounds check が失敗しても、それ以前の書き込みは保持する
 - 左辺の operand 内で行う配列読み取り（`*P[i]` の `P[i]` など）、`&A[i]` のアドレス取得、および右辺の配列読み取りは、その評価時に bounds check を行う
 
-getterは[operator解決](./expressions.md#user-defined-operator)で選んだindex読取り、setterは同じ規則で選んだindex書込みを表す。
+getterは[operator解決](./expressions.md#user-defined-operator)で選んだindex読取り、setterは同じ規則で選んだindex書込みを表す。\
+両者は独立に解決し、それぞれcustom宣言またはbuiltin操作を選ぶ。
 
 - compound assignmentの左辺は`_`以外の代入先1個、右辺は式1個とする
-  - 通常storageの代入先はbase、index、pointer operandと必要なbounds checkを1回行い、現在値を1回読んだ後に右辺を1回評価する
+  - 変数・参照外し・struct fieldの代入先はbaseとpointer operandを1回評価し、現在値を1回読んだ後に右辺を1回評価する
   - 対応二項演算を1回行い、結果型が通常storageの型と完全一致することを検査して書き込む
-  - custom indexはbaseとindexを各1回評価し、getter/setter用にreceiver調整後の値とindexを保持して、getter1回、右辺1回、対応二項演算1回、setter1回の順で実行する
-  - getter、二項演算、setterがすべて静的に成立し、二項演算結果型がsetterのvalue parameter型と完全一致することを要求する
+  - index代入先はgetterとsetterを独立に解決し、baseとindexを各1回評価して、それぞれのreceiver調整後の値とindexを保持する
+  - getter1回、右辺1回、対応二項演算1回、setter1回の順で実行し、custom/builtinの各組合せに同じ順序を適用する
+  - getter、二項演算、setterがすべて静的に成立し、二項演算結果型がsetterの要求するvalue型と完全一致することを要求する
+  - builtin setterのvalue型は配列/raw pointerの要素型とする
+  - builtin配列getterのbounds checkは読取り時、builtin配列setterのbounds checkは書込み時に行う
+- 未注釈literalを含むindexの文脈型付けは単純代入ではsetter、compoundではgetterとsetterのcustom parameterから同じindexへ課される文脈を照合する
+  - 文脈が同じ型を要求する場合、その型で1回型付けし、異なる型を要求する場合はcompile errorとなる
+  - customの文脈がない場合は通常の式の型付けを行い、確定した1個のindex値を選択済みの各操作に照合する
+  - 変数や明示変換で型が確定したindexは、その型でgetter/setterを独立に解決する
 - 各代入段階でfaultした場合は後続段階を実行せず、完了済みwriteと他のeffectを保持して停止する
 - `++`と`--`は後置statementの構文である
 - 戻り値を持つ関数で本体末尾へ構文上到達できる入力はcompile errorとなる

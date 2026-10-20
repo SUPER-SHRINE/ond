@@ -71,7 +71,7 @@ Rust runner、HIR/MIR内部検査、テスト実行器は実装sourceが管理�
 | ID | 要件の要約 | 規範定義元 | 対応するcase入力・期待 |
 | --- | --- | --- | --- |
 | NUM-01 | literal既定型/型文脈と整数6型の範囲 | [NUM-01の定義元](../language/v1/types.md#型) | [numeric-integers](./cases/numeric-integers.md) |
-| NUM-02 | arbitrary precision定数、数学的正確値による定数部分式と値要求境界のrange check | [NUM-02の定義元](../language/v1/expressions.md#integer-constant-arithmetic) | [numeric-integers](./cases/numeric-integers.md)、[static-seed](./cases/static-seed.md) |
+| NUM-02 | 定数算術の正確値、bitwiseのN-bit射影、値要求境界のrange check | [NUM-02の定義元](../language/v1/expressions.md#integer-constant-arithmetic) | [numeric-integers](./cases/numeric-integers.md)、[static-seed](./cases/static-seed.md) |
 | NUM-03 | 定数shiftのu32 count、k mod N、左shift非wrap | [NUM-03の定義元](../language/v1/expressions.md#integer-constant-arithmetic) | [numeric-integers](./cases/numeric-integers.md) |
 | NUM-04 | 定数/動的div・rem、符号、0、min/-1 | [NUM-04の定義元](../language/v1/expressions.md#integer-arithmetic) | [numeric-integers](./cases/numeric-integers.md) |
 | NUM-05 | runtime wrap・bitwise・signed/unsigned比較 | [NUM-05の定義元](../language/v1/expressions.md#integer-arithmetic) | [numeric-integers](./cases/numeric-integers.md) |
@@ -130,8 +130,8 @@ Rust runner、HIR/MIR内部検査、テスト実行器は実装sourceが管理�
 
 | ID | 要件の要約 | 規範定義元 | 対応するcase入力・期待 |
 | --- | --- | --- | --- |
-| DIAG-01 | source errorを位置付き診断で返し、全検査成功時に成功結果を得る | [DIAG-01の定義元](../language/v1/declarations.md#診断と成功結果) | [static-diagnostics](./cases/static-diagnostics.md) |
-| DIAG-02 | Unicode/複数fileの診断位置 | [DIAG-02の定義元](../language/v1/declarations.md#診断と成功結果) | [static-diagnostics](./cases/static-diagnostics.md)、[static-seed](./cases/static-seed.md) |
+| DIAG-01 | source errorを位置付き診断で返し、全検査成功時に成功結果を得る | [DIAG-01の定義元](../language/v1/declarations.md#診断と成功結果) | [static-diagnostics](./cases/static-diagnostics.md)、[diagnostic-causes](./cases/diagnostic-causes.md) |
+| DIAG-02 | Unicode/複数fileの診断位置 | [DIAG-02の定義元](../language/v1/declarations.md#診断と成功結果) | [static-diagnostics](./cases/static-diagnostics.md)、[static-seed](./cases/static-seed.md)、[diagnostic-causes](./cases/diagnostic-causes.md) |
 | MIR-01 | 外部適合から除外する実装内部IRのID/type/op/dominance/guard/global/init検証の追跡 | [内部IR検証](./implementation-index.md) | [validator_rejects_use_before_definitionの入力・期待](./implementation-index.md#既存回帰と要件) |
 
 ## 成果物・build・target
@@ -139,9 +139,9 @@ Rust runner、HIR/MIR内部検査、テスト実行器は実装sourceが管理�
 
 | ID | 要件の要約 | 規範定義元 | 対応するcase入力・期待 |
 | --- | --- | --- | --- |
-| ART-01 | JSON wire schemaとmanifest参照の整合 | [成果物](../artifacts.md) | [artifact-contracts](./cases/artifact-contracts.md) |
+| ART-01 | JSON wire schemaとmanifest参照の整合 | [成果物](../artifacts.md) | [artifact-contracts](./cases/artifact-contracts.md)、[interface-values](./cases/interface-values.md) |
 | DBG-01 | link前後debug schema、区間、unwindと不適合時の扱い | [debug](../debug-metadata/v1.md) | [debug-fault-contracts](./cases/debug-fault-contracts.md) |
-| HASH-01 | canonical JSONと公開SHA-256識別子 | [canonical/hash](../build/cache.md#canonical-json) | [artifact-contracts](./cases/artifact-contracts.md) |
+| HASH-01 | canonical JSONと公開SHA-256識別子 | [canonical/hash](../build/cache.md#canonical-json) | [artifact-contracts](./cases/artifact-contracts.md)、[package-hash](./cases/package-hash.md)、[interface-values](./cases/interface-values.md) |
 | DEP-01 | Git edgeとlock v2の固定・照合 | [lock](../build/packages.md#git依存lock-v2) | [artifact-contracts](./cases/artifact-contracts.md) |
 | LINK-01 | 配置、symbol集合、Call16/Jump16の形とpatch | [linking](../linking.md) | [artifact-contracts](./cases/artifact-contracts.md) |
 | FAULT-01 | KaguraのCPU faultとOndの意味分類 | [fault対応](../targets/kagura-v1/machine.md#faultと観測結果) | [debug-fault-contracts](./cases/debug-fault-contracts.md) |
