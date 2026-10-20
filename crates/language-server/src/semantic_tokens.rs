@@ -309,17 +309,6 @@ fn collect_indexed_type(ty: &ast::Type, styles: &mut HashMap<String, Option<Sema
                 collect_indexed_type(&field.ty, styles);
             }
         }
-        ast::Type::Interface { methods, .. } => {
-            for method in methods {
-                insert_indexed_style(styles, &method.name.name, SemanticStyle::Function);
-                for parameter in &method.signature.params {
-                    collect_indexed_type(&parameter.ty, styles);
-                }
-                for result in &method.signature.results {
-                    collect_indexed_type(result, styles);
-                }
-            }
-        }
         ast::Type::Func { signature, .. } => {
             for param in &signature.params {
                 collect_indexed_type(&param.ty, styles);
@@ -555,20 +544,6 @@ fn collect_type(
             for field in fields {
                 declarations.insert(field.name.span, SemanticStyle::Field);
                 collect_type(&field.ty, declarations, type_parameters);
-            }
-        }
-        ast::Type::Interface { methods, .. } => {
-            for method in methods {
-                declarations.insert(method.name.span, SemanticStyle::Method);
-                for parameter in &method.signature.params {
-                    if let Some(name) = &parameter.name {
-                        declarations.insert(name.span, SemanticStyle::Parameter);
-                    }
-                    collect_type(&parameter.ty, declarations, type_parameters);
-                }
-                for result in &method.signature.results {
-                    collect_type(result, declarations, type_parameters);
-                }
             }
         }
         ast::Type::Func { signature, .. } => {

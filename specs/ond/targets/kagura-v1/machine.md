@@ -72,13 +72,11 @@ test buildでもSDKによるload・zero初期化・SP設定の境界を保ち、
 | `u8`, `i8`, `bool` | 1 | 1 |
 | `u16`, `i16` | 2 | 2 |
 | `u32`, `i32`, `f32`, `*T` | 4 | 4 |
-| interface | 8 | 4 |
 
 - guest type の最大 alignment は 4 byte とする。
 - `bool` は memory 上の `0` を false、非 `0` を true とする。compiler は `0` または `1` を store する。
 - `f32` は IEEE 754 binary32 の bit pattern を little-endian で配置する。
 - `*T` は 32-bit bus address で、`nil` は `0x00000000` とする。
-- interfaceはoffset 0にdata pointer、offset 4にvtable pointerを持つ。zero valueは両方が`0x00000000`である。
 - `[N]T` は header のない連続した `N` 要素とし、alignment は `alignof(T)`、size は `N * sizeof(T)` とする。
 - 固定長配列の `N * sizeof(T)` が `2^32-1` byte を超える場合は compile error とする
   - 積は数学的な整数として判定し、32 bit への切り詰めや折り返しを行わない

@@ -2,6 +2,12 @@
 
 このファイルには、Ondの利用者に影響する主な変更を記録する。
 
+## Unreleased
+
+### Removed
+
+- 組込みinterface型、変換、dispatchを削除し、動的dispatchは通常のstructとfunction pointerで明示する方式へ整理
+
 ## 0.2.0
 
 ### Added

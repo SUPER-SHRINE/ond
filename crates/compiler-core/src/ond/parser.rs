@@ -378,27 +378,6 @@ impl Parser {
                     span: join_spans(start, end),
                 })
             }
-            TokenKind::Interface => {
-                let start = self.bump().span;
-                self.expect(TokenKind::LBrace, "`{`")?;
-                let mut methods = Vec::new();
-                while !self.at(TokenKind::RBrace) {
-                    let name = self.expect_ident()?;
-                    let signature = self.parse_type_signature(false)?;
-                    let span = join_spans(name.span, signature.span);
-                    methods.push(ast::InterfaceMethod {
-                        name,
-                        signature,
-                        span,
-                    });
-                    self.expect_semi()?;
-                }
-                let end = self.expect(TokenKind::RBrace, "`}`")?;
-                Ok(ast::Type::Interface {
-                    methods,
-                    span: join_spans(start, end),
-                })
-            }
             TokenKind::Func => {
                 let start = self.bump().span;
                 let signature = self.parse_type_signature(false)?;
@@ -1231,7 +1210,6 @@ fn type_span(ty: &ast::Type) -> Span {
         ast::Type::Pointer(_, span)
         | ast::Type::Array { span, .. }
         | ast::Type::Struct { span, .. }
-        | ast::Type::Interface { span, .. }
         | ast::Type::Func { span, .. } => *span,
     }
 }

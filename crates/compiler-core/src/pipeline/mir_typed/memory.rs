@@ -39,7 +39,7 @@ impl FunctionBuilder<'_> {
         let access = Self::access(&destination);
         if matches!(
             self.types.underlying_kind(destination.ty),
-            Some(TypeKind::Array { .. } | TypeKind::Struct(_) | TypeKind::Interface(_))
+            Some(TypeKind::Array { .. } | TypeKind::Struct(_))
         ) {
             let source = self.temporary(destination.ty, span);
             self.emit_effect(
@@ -212,7 +212,7 @@ impl FunctionBuilder<'_> {
                                 ),
                                 element: value.ty,
                             },
-                            TypeKind::Struct(_) | TypeKind::Interface(_) => Projection::Field {
+                            TypeKind::Struct(_) => Projection::Field {
                                 index: *index,
                                 ty: value.ty,
                             },

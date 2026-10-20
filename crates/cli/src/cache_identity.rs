@@ -263,30 +263,6 @@ fn encode_kind(
         TypeKind::Struct(structure) => {
             encode_struct(output, structure, table, packages, references)
         }
-        TypeKind::Interface(interface) => {
-            output.push('I');
-            write!(output, "{}:", interface.methods.len()).unwrap();
-            for method in &interface.methods {
-                text(output, &method.name);
-                owner(output, method.private_owner, packages);
-                sequence(
-                    output,
-                    &method.signature.parameters,
-                    table,
-                    packages,
-                    references,
-                );
-                sequence(
-                    output,
-                    &method.signature.returns,
-                    table,
-                    packages,
-                    references,
-                );
-            }
-            encode_type(output, interface.data_pointer, table, packages, references);
-            encode_type(output, interface.vtable, table, packages, references);
-        }
         TypeKind::Defined { underlying } => {
             output.push('D');
             encode_type(output, *underlying, table, packages, references);

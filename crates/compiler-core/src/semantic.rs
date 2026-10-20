@@ -231,22 +231,6 @@ impl TypeTable {
                         structure_alignment,
                     ))
                 }
-                Some(TypeKind::Interface(interface)) => {
-                    let mut size = 0u32;
-                    let mut interface_alignment = 1u32;
-                    for field in [interface.data_pointer, interface.vtable] {
-                        let (field_size, field_alignment) = visit(table, field, depth + 1)?;
-                        size = align(size, field_alignment).ok_or("interface layout overflow")?;
-                        size = size
-                            .checked_add(field_size)
-                            .ok_or("interface layout overflow")?;
-                        interface_alignment = interface_alignment.max(field_alignment);
-                    }
-                    Ok((
-                        align(size, interface_alignment).ok_or("interface layout overflow")?,
-                        interface_alignment,
-                    ))
-                }
                 Some(TypeKind::Pending | TypeKind::Defined { .. }) | None => {
                     Err("type layout is unavailable")
                 }
@@ -290,7 +274,6 @@ pub enum TypeKind {
     Function(FunctionType),
     Array { length: u32, element: TypeId },
     Struct(StructType),
-    Interface(InterfaceType),
     Defined { underlying: TypeId },
 }
 
@@ -303,21 +286,6 @@ pub struct FunctionType {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StructType {
     pub fields: Vec<StructField>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct InterfaceType {
-    pub methods: Vec<InterfaceMethod>,
-    pub data_pointer: TypeId,
-    pub vtable: TypeId,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct InterfaceMethod {
-    pub name: String,
-    /// Erased dispatch signature. The first parameter is always `*u8` data.
-    pub signature: FunctionType,
-    pub private_owner: Option<PackageId>,
 }
 
 #[derive(Debug, Clone)]
@@ -402,7 +370,6 @@ impl fmt::Display for TypeDisplay<'_> {
                 write!(f, "[{length}]{}", self.table.display(*element))
             }
             TypeKind::Struct(_) => write!(f, "struct#{}", self.id.0),
-            TypeKind::Interface(_) => write!(f, "interface#{}", self.id.0),
             TypeKind::Defined { underlying } => self.table.display(*underlying).fmt(f),
         }
     }

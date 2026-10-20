@@ -33,12 +33,12 @@ pub(super) fn instantiate_generic_functions(
         let mut requested = BTreeMap::<String, Vec<Span>>::new();
         for package in packages.iter() {
             for item in &package.statics {
-                collect_generic_symbols_expr(&item.value, &mut requested, false);
+                collect_generic_symbols_expr(&item.value, &mut requested);
             }
             for item in &package.items {
                 if let hir::Item::Func(function) = item {
                     let hir::Body::Typed(body) = &function.body;
-                    collect_generic_symbols_block(&body.block, &mut requested, false);
+                    collect_generic_symbols_block(&body.block, &mut requested);
                 }
             }
         }
@@ -424,18 +424,13 @@ fn collect_generic_uses(
     for package in packages {
         for item in &package.statics {
             let mut requested = BTreeMap::new();
-            collect_generic_symbols_expr(&item.value, &mut requested, true);
+            collect_generic_symbols_expr(&item.value, &mut requested);
             for (symbol, spans) in requested {
-                let caller = item
-                    .symbol
-                    .contains(".\u{1f}vtable.")
-                    .then(|| item.symbol.clone());
-                uses.entry(symbol)
-                    .or_default()
-                    .extend(spans.into_iter().map(|span| GenericUse {
-                        caller: caller.clone(),
-                        span,
-                    }));
+                uses.entry(symbol).or_default().extend(
+                    spans
+                        .into_iter()
+                        .map(|span| GenericUse { caller: None, span }),
+                );
             }
         }
         for item in &package.items {
@@ -444,7 +439,7 @@ fn collect_generic_uses(
             };
             let hir::Body::Typed(body) = &function.body;
             let mut requested = BTreeMap::new();
-            collect_generic_symbols_block(&body.block, &mut requested, true);
+            collect_generic_symbols_block(&body.block, &mut requested);
             let caller = (!initial_functions.contains(&function.canonical_name))
                 .then(|| function.canonical_name.clone());
             for (symbol, spans) in requested {
@@ -539,15 +534,11 @@ fn report_generic_diagnostic(
     output.push(diagnostic);
 }
 
-fn collect_generic_symbols_block(
-    block: &hir::Block,
-    output: &mut BTreeMap<String, Vec<Span>>,
-    include_vtables: bool,
-) {
+fn collect_generic_symbols_block(block: &hir::Block, output: &mut BTreeMap<String, Vec<Span>>) {
     for statement in &block.statements {
         match statement {
             hir::Stmt::LocalDecl { values, .. } | hir::Stmt::Return { values, .. } => {
-                collect_generic_symbols_values(values, output, include_vtables)
+                collect_generic_symbols_values(values, output)
             }
             hir::Stmt::Assign {
                 targets,
@@ -556,27 +547,27 @@ fn collect_generic_symbols_block(
                 ..
             } => {
                 for target in targets.iter().flatten() {
-                    collect_generic_symbols_expr(target, output, include_vtables);
+                    collect_generic_symbols_expr(target, output);
                 }
-                collect_generic_symbols_values(values, output, include_vtables);
+                collect_generic_symbols_values(values, output);
                 if let Some(call) = overloaded {
-                    collect_generic_symbols_call(call, output, include_vtables);
+                    collect_generic_symbols_call(call, output);
                 }
             }
             hir::Stmt::IndexAssign(statement) => {
-                collect_generic_symbols_expr(&statement.base, output, include_vtables);
-                collect_generic_symbols_expr(&statement.index, output, include_vtables);
-                collect_generic_symbols_call(&statement.getter, output, include_vtables);
-                collect_generic_symbols_values(&statement.values, output, include_vtables);
+                collect_generic_symbols_expr(&statement.base, output);
+                collect_generic_symbols_expr(&statement.index, output);
+                collect_generic_symbols_call(&statement.getter, output);
+                collect_generic_symbols_values(&statement.values, output);
                 if let Some(call) = &statement.overloaded {
-                    collect_generic_symbols_call(call, output, include_vtables);
+                    collect_generic_symbols_call(call, output);
                 }
-                collect_generic_symbols_call(&statement.setter, output, include_vtables);
+                collect_generic_symbols_call(&statement.setter, output);
             }
-            hir::Stmt::Expr(expr) => collect_generic_symbols_expr(expr, output, include_vtables),
-            hir::Stmt::Call(call) => collect_generic_symbols_call(call, output, include_vtables),
+            hir::Stmt::Expr(expr) => collect_generic_symbols_expr(expr, output),
+            hir::Stmt::Call(call) => collect_generic_symbols_call(call, output),
             hir::Stmt::Defer { block, .. } | hir::Stmt::Block(block) => {
-                collect_generic_symbols_block(block, output, include_vtables)
+                collect_generic_symbols_block(block, output)
             }
             hir::Stmt::If {
                 condition,
@@ -584,9 +575,9 @@ fn collect_generic_symbols_block(
                 else_block,
                 ..
             } => {
-                collect_generic_symbols_expr(condition, output, include_vtables);
-                collect_generic_symbols_block(then_block, output, include_vtables);
-                collect_generic_symbols_block(else_block, output, include_vtables);
+                collect_generic_symbols_expr(condition, output);
+                collect_generic_symbols_block(then_block, output);
+                collect_generic_symbols_block(else_block, output);
             }
             hir::Stmt::For {
                 condition,
@@ -595,10 +586,10 @@ fn collect_generic_symbols_block(
                 ..
             } => {
                 if let Some(condition) = condition {
-                    collect_generic_symbols_expr(condition, output, include_vtables);
+                    collect_generic_symbols_expr(condition, output);
                 }
-                collect_generic_symbols_block(body, output, include_vtables);
-                collect_generic_symbols_block(post, output, include_vtables);
+                collect_generic_symbols_block(body, output);
+                collect_generic_symbols_block(post, output);
             }
             hir::Stmt::Break(_) | hir::Stmt::Continue(_) | hir::Stmt::Trap { .. } => {}
         }
@@ -608,34 +599,25 @@ fn collect_generic_symbols_block(
 fn collect_generic_symbols_values(
     values: &hir::ValueList,
     output: &mut BTreeMap<String, Vec<Span>>,
-    include_vtables: bool,
 ) {
     match values {
         hir::ValueList::Expressions(values) => {
             for value in values {
-                collect_generic_symbols_expr(value, output, include_vtables);
+                collect_generic_symbols_expr(value, output);
             }
         }
-        hir::ValueList::Call(call) => collect_generic_symbols_call(call, output, include_vtables),
+        hir::ValueList::Call(call) => collect_generic_symbols_call(call, output),
     }
 }
 
-fn collect_generic_symbols_call(
-    call: &hir::Call,
-    output: &mut BTreeMap<String, Vec<Span>>,
-    include_vtables: bool,
-) {
-    collect_generic_symbols_expr(&call.callee, output, include_vtables);
+fn collect_generic_symbols_call(call: &hir::Call, output: &mut BTreeMap<String, Vec<Span>>) {
+    collect_generic_symbols_expr(&call.callee, output);
     for argument in &call.arguments {
-        collect_generic_symbols_expr(argument, output, include_vtables);
+        collect_generic_symbols_expr(argument, output);
     }
 }
 
-fn collect_generic_symbols_expr(
-    expr: &hir::Expr,
-    output: &mut BTreeMap<String, Vec<Span>>,
-    include_vtables: bool,
-) {
+fn collect_generic_symbols_expr(expr: &hir::Expr, output: &mut BTreeMap<String, Vec<Span>>) {
     match &expr.kind {
         hir::ExprKind::Function(symbol) => {
             if symbol.contains(".\u{1f}generic.")
@@ -648,45 +630,27 @@ fn collect_generic_symbols_expr(
                 }
             }
         }
-        hir::ExprKind::Global(symbol) if include_vtables && symbol.contains(".\u{1f}vtable.") => {
-            let spans = output.entry(symbol.clone()).or_default();
-            if !spans.contains(&expr.span) {
-                spans.push(expr.span);
-            }
-        }
         hir::ExprKind::Dereference(value)
         | hir::ExprKind::AddressOf(value)
-        | hir::ExprKind::InterfaceMethod {
-            receiver: value, ..
-        }
         | hir::ExprKind::EvaluatedLength { value, .. }
         | hir::ExprKind::Unary { operand: value, .. }
-        | hir::ExprKind::Cast { value } => {
-            collect_generic_symbols_expr(value, output, include_vtables)
-        }
-        hir::ExprKind::Field { base, .. } => {
-            collect_generic_symbols_expr(base, output, include_vtables)
-        }
+        | hir::ExprKind::Cast { value } => collect_generic_symbols_expr(value, output),
+        hir::ExprKind::Field { base, .. } => collect_generic_symbols_expr(base, output),
         hir::ExprKind::Index { base, index }
-        | hir::ExprKind::InterfaceEqual {
-            lhs: base,
-            rhs: index,
-            ..
-        }
         | hir::ExprKind::Binary {
             lhs: base,
             rhs: index,
             ..
         } => {
-            collect_generic_symbols_expr(base, output, include_vtables);
-            collect_generic_symbols_expr(index, output, include_vtables);
+            collect_generic_symbols_expr(base, output);
+            collect_generic_symbols_expr(index, output);
         }
         hir::ExprKind::Composite(values) => {
             for (_, value) in values {
-                collect_generic_symbols_expr(value, output, include_vtables);
+                collect_generic_symbols_expr(value, output);
             }
         }
-        hir::ExprKind::Call(call) => collect_generic_symbols_call(call, output, include_vtables),
+        hir::ExprKind::Call(call) => collect_generic_symbols_call(call, output),
         hir::ExprKind::Zero
         | hir::ExprKind::Integer(_)
         | hir::ExprKind::Float32(_)

@@ -11,7 +11,6 @@ mod composites;
 mod constants;
 mod expressions;
 mod globals;
-mod interfaces;
 mod intrinsics;
 mod memory;
 mod statements;
@@ -216,19 +215,8 @@ impl<'a> BodyLowerer<'a> {
         let expected_name = self.types.display(expected).to_string();
         let actual_name = self.types.display(actual).to_string();
         let context = self.value_context.as_deref().unwrap_or("value");
-        let mut message =
+        let message =
             format!("{context} type mismatch: expected `{expected_name}`, found `{actual_name}`");
-        if matches!(
-            self.types.underlying_kind(expected),
-            Some(crate::semantic::TypeKind::Interface(_))
-        ) && matches!(
-            self.types.underlying_kind(actual),
-            Some(crate::semantic::TypeKind::Pointer(_))
-        ) {
-            message.push_str(&format!(
-                "; pointer-to-interface conversion must be explicit with `as {expected_name}`"
-            ));
-        }
         self.fail(span, message)
     }
 

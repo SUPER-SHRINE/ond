@@ -62,13 +62,6 @@ impl BodyLowerer<'_> {
                         "`nil` requires an explicit pointer or function type context",
                     );
                 };
-                if matches!(self.types.underlying_kind(ty), Some(TypeKind::Interface(_))) {
-                    return Some(hir::Expr {
-                        kind: hir::ExprKind::Zero,
-                        ty,
-                        span: expr.span(),
-                    });
-                }
                 if !matches!(
                     self.types.underlying_kind(ty),
                     Some(TypeKind::Pointer(_) | TypeKind::Function(_))
@@ -346,26 +339,6 @@ impl BodyLowerer<'_> {
                     };
                     (lhs, rhs)
                 };
-                if matches!(op, ast::BinaryOp::Eq | ast::BinaryOp::Ne)
-                    && matches!(
-                        self.types.underlying_kind(lhs.ty),
-                        Some(TypeKind::Interface(_))
-                    )
-                {
-                    if lhs.ty != rhs.ty {
-                        return self
-                            .fail(expr.span(), "interface comparison requires identical types");
-                    }
-                    return Some(hir::Expr {
-                        kind: hir::ExprKind::InterfaceEqual {
-                            lhs: Box::new(lhs),
-                            rhs: Box::new(rhs),
-                            negate: *op == ast::BinaryOp::Ne,
-                        },
-                        ty: TypeId::BOOL,
-                        span: expr.span(),
-                    });
-                }
                 let operand_kind = self.types.underlying_kind(lhs.ty);
                 let valid = if self.types.is_integer(lhs.ty) {
                     true
@@ -426,21 +399,8 @@ impl BodyLowerer<'_> {
                     ty,
                 )
             }
-            ast::Expr::Cast {
-                expr,
-                ty,
-                span: cast_span,
-            } => {
+            ast::Expr::Cast { expr, ty, span: _ } => {
                 let ty = self.resolve_type(ty)?;
-                if matches!(self.types.underlying_kind(ty), Some(TypeKind::Interface(_))) {
-                    let value = self.lower_interface_conversion(expr, ty, *cast_span)?;
-                    if let Some(expected) = expected
-                        && expected != ty
-                    {
-                        return self.type_mismatch(expr.span(), expected, ty);
-                    }
-                    return Some(value);
-                }
                 let literal_context = (self.types.is_integer(ty)
                     && matches!(expr.as_ref(), ast::Expr::Literal(ast::Literal::Int(_, _))))
                 .then_some(ty);

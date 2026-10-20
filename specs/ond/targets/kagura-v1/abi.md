@@ -38,13 +38,12 @@ Objectの`CallSlot`/`JumpSlot`によるlinker thunkは`r12`だけを変更し、
 | Class | Values | ABI words |
 | --- | --- | ---: |
 | Direct-1 | integer, `f32`, `bool`, raw pointer, function pointer | 1 |
-| Indirect | array, struct, interface | pointer 1 |
+| Indirect | array, struct | pointer 1 |
 
 Direct-1 のうち integer、`bool`、pointer は値を下位 bit に置き、未使用の上位 bit を `0` にする。`f32` は IEEE 754 binary32 の 32-bit pattern をそのまま置く。
 
 Indirect argument では caller が値を caller-owned temporary へコピーし、その先頭 pointer を渡す。callee は call 中に temporary を変更できるが、return 後に pointer を保持してはならない。caller の元の値は変更されない。
 
-interfaceのmemory valueはdata pointer、vtable pointerの順の2 word aggregateである。interface methodのvtable entryは4-byte function pointerで、呼出し時はdata pointerを消去型`*u8`の第1引数として渡し、残りをsource methodの引数順に続ける。concrete pointer型との違いはABI上はいずれもDirect-1 pointerであり、entry function内では元のreceiver型として扱う。
 
 ## 4. Arguments
 <!-- ond-spec-id: targets/kagura-v1/abi-arguments -->

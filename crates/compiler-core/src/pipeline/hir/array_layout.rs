@@ -43,7 +43,6 @@ fn bounded_layout(
         | TypeKind::F32
         | TypeKind::Pointer(_)
         | TypeKind::Function(_) => Some((4, 4)),
-        TypeKind::Interface(_) => Some((8, 4)),
         TypeKind::Array { length, element } => {
             let (size, alignment) = bounded_layout(types, *element, layouts)?;
             Some(((size * u64::from(*length)).min(TOO_LARGE), alignment))

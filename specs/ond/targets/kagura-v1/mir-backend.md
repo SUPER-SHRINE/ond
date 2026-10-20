@@ -2,7 +2,6 @@
 <!-- ond-spec-id: targets/kagura-v1/mir-backend -->
 
 本書はMIRをKagura Objectへ変換するbackendの契約を定義する。
-実装検証の証拠は[Compiler適合記録](../../../../docs/compiler/kagura-v1-conformance-record.md)を参照。
 [Machine Profile](./machine.md) と [ABI](./abi.md) を規範とし、本書はそのMIRへの適用を整理する。
 本書の対象はMIR loweringとKagura backendの契約であり、新しい言語機能とEnbuカートリッジ規格は含めない。
 
@@ -62,7 +61,7 @@ scalarのlocal slotはABIに従い4 byteを予約してよいが、addressable�
 
 - r1..r6: 引数、r1..r4: register戻り値。r7..r11: callee-save、r12..r13/r15: caller-save、r14: SP。
 - call境界はSPを8-byte alignmentへ揃える。ABI wordは4 byte。
-- integer/bool/f32/pointer/functionはDirect-1。array/struct/interfaceはsizeに関係なくIndirect。
+- integer/bool/f32/pointer/functionはDirect-1。array/structはsizeに関係なくIndirect。
 - Indirect引数はcaller-owned copyのpointerを1 wordとして渡す。calleeは元のaggregateをaliasしない。
 - 全戻り値がDirectかつ4 word以下ならregister。aggregateを1つでも含むか5 word以上なら全戻り値をreturn areaへ置く。
 - memory returnのhidden pointerを先頭wordに追加し、その後にuser引数を並べる。先頭6 wordがregister、残りがCFA+0,+4,...。
@@ -147,7 +146,6 @@ helperの生成が同じhelperを要求する循環を避け、整数primitive�
 
 Backendの入口はcoreで生成・検証したMIRを受け取る。AST/HIRから型・literalの意味を再解釈せず、Kaguraのlayout・ABI・命令制約をbackendで適用する。
 
-Backend適合の根拠となる実行証拠は[Compiler適合記録](../../../../docs/compiler/kagura-v1-conformance-record.md)に記録する。
 
 ## 7. Backendの追加契約
 <!-- ond-spec-id: targets/kagura-v1/mir-boundary-decisions -->

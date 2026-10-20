@@ -3,7 +3,8 @@
 
 本書は `ond` v1 の字句規則、scope、構文、operator precedence を定義する。型、メモリ管理、組み込み関数、初期化順序などの意味規則は [Ond Language v1](./language.md) に従う。
 
-記載していない構文は v1 ではサポートしない。
+記載していない構文は v1 ではサポートしない。\
+`interface`は予約語として残すが、interface宣言やinterface型は提供しない。
 
 ## 1. Source Form
 <!-- ond-spec-id: syntax/source-form -->
@@ -137,7 +138,7 @@ Result        = "->" Type | "->" "(" TypeList [ "," ] ")" .
 ParameterList = ParameterDecl { "," ParameterDecl } [ "," ] .
 ParameterDecl = identifier ":" Type .
 
-Type          = AppliedType | NamedType | PointerType | ArrayType | StructType | InterfaceType | FuncType .
+Type          = AppliedType | NamedType | PointerType | ArrayType | StructType | FuncType .
 NamedType     = identifier | QualifiedIdent .
 AppliedType   = NamedType TypeArguments .
 QualifiedIdent= identifier "." identifier .
@@ -145,8 +146,6 @@ PointerType   = "*" Type .
 ArrayType     = "[" ConstExpression "]" Type .
 StructType    = "struct" "{" { FieldDecl ";" } "}" .
 FieldDecl     = identifier ":" Type .
-InterfaceType = "interface" "{" { InterfaceMethod ";" } "}" .
-InterfaceMethod = identifier TypeSignature .
 FuncType      = "func" TypeSignature .
 TypeSignature = "(" [ TypeParameterList ] ")" [ Result ] .
 TypeParameterList = TypeParameter { "," TypeParameter } [ "," ] .
@@ -221,7 +220,6 @@ CallExpr      = PrimaryExpr Arguments .
 ```
 
 - `Receiver` を持つ `FuncDecl` はmethod宣言であり、receiverのnamed typeを宣言したpackage内だけに置ける。
-- `InterfaceType` は `TypeSpec` の直下で名前付き型としてだけ宣言できる。無名interface型は構文上parseできても意味検査で拒否する。
 
 ## 7. Grammar Notes
 <!-- ond-spec-id: syntax/grammar-notes -->
@@ -238,7 +236,7 @@ CallExpr      = PrimaryExpr Arguments .
 - 左辺の定数値により短絡で未評価と決まる右辺では、明示castの値の評価と範囲検査も省略する。`false && ((250 + 6) as u8 == 0)` と `true || ((250 + 6) as u8 == 0)` は受理する。未定義名・不正な型変換・constでの通常call禁止は未評価側にも適用する。この非評価規則はconst宣言だけでなく、通常の値を求める式にも共通とする。
 - `ArrayType` の長さは compile-time constant でなければならない。
 - 型・関数の型parameter listは宣言名へ空白を挟まず `Box[T]`、`Identity[T]` と書く。これは既存の配列型宣言 `type Buffer [N]u8` と区別するための規則である。
-- `TypeSpec`の型parameter listはstructだけでなくinterfaceにも使える。generic型のmethod receiverは`func (box: *Box[T]) Set(value: T)`のように適用型として書き、method名の後ろに追加の型parameter listは書かない。
+- `TypeSpec`の型parameter listはunderlying typeの具体化に使える。generic型のmethod receiverは`func (box: *Box[T]) Set(value: T)`のように適用型として書き、method名の後ろに追加の型parameter listは書かない。
 - generic operatorは `operator (values: *Vec[T]) [](index: u32) -> *T` のように、receiver型へ型parameterを記す。operator固有の型parameter listは持たない。
 - generic関数callはnamed functionに明示的な型argumentを付けて `Identity[u32](value)` と書く。型argument推論は行わない。同じtoken列になり得る `callbacks[index]()` は、`callbacks` がgeneric関数名でなければ通常のindex accessとcallとして解釈する。
 - 関数宣言の `Signature` では parameter 名を必須とする。関数型の `TypeSignature` では各 parameter 名を省略しても記載してもよい。関数型に記載した名前は binding を作らず、型の同一性に影響しない。

@@ -76,7 +76,6 @@ v1 は次の型を持つ。
 - `func(T1, T2) -> R`
 - `[N]T`
 - `struct`
-- 名前付き `interface`
 
 関数が値を返さない場合はarrowと戻り値型を書かない。空の戻り値リスト `-> ()` は文法エラーとする（関数宣言・関数型の両方）。
 
@@ -110,12 +109,11 @@ box := Box[u32]{value: Identity[u32](7)}
 - 型parameterは型だけを表し、constraint、既定値、可変長parameter listを持たない。同じ宣言内で名前を重複できない。
 - generic型とtop-level関数の使用時は、すべての型argumentを明示する。generic methodだけは具体的なreceiver型から型argumentを推論する。部分適用は行わない。
 - generic型は型argument列ごとに具体化する。同じ宣言と同じ型argument列は同じdefined typeを表し、異なる型argument列は異なるdefined typeを表す。
-- generic型のunderlying typeにはstructだけでなくinterfaceも指定できる。`type List[T] interface { Get(index: u32) -> T }`のmethod signatureは、`List[u32]`の具体化時に`T`を`u32`へ置換する。
 - generic関数も型argument列ごとに具体化し、通常の静的関数callとして実行する。具体化前のgeneric関数自体をfunction pointer値として取得できない。
 - 宣言名と型parameter listの間には空白を入れない。`type Box[T] ...` はgeneric型宣言、`type Buffer [N]u8` は長さ`N`の配列をunderlying typeとする通常の型宣言である。
 - packageを跨ぐ参照には通常の公開規則を適用する。宣言名と、外部から直接参照するfieldなどはASCII大文字で始める。
 - generic methodのreceiverは、generic型の各型argument位置へfreshで重複しない識別子を1個ずつ書く。`Box[u32]`のような特定instanceだけへのmethod、receiver以外で宣言する追加のmethod型parameter、型argumentの省略は許可しない。receiver側の型parameter名は元の型宣言と同じでなくてよい。
-- interface methodは型parameterを持たない。`operator`宣言は9.1節の規則で型parameterを持てる。
+- `operator`宣言は9.1節の規則で型parameterを持てる。
 - generic関数、generic method、generic operatorの本体は、型argumentに依存しない値名と字句scopeを宣言時に検査する。一度も具体化されない宣言でも未定義名はcompile errorとする。
 - generic関数、generic method、generic operatorの型argumentに依存する本体エラーは、失敗した定義内の式を主位置、具体化を要求した使用箇所と入れ子の具体化箇所を関連位置として報告する。同じ具体化の同じ定義エラーを複数箇所が要求した場合は、1個の診断に各使用箇所を関連位置として付ける。独立した別の具体化失敗は続けて検査する。
 - generic型のunderlying typeを具体化して初めて判明するエラーは、その適用型を要求した箇所を主位置、失敗したgeneric型定義を関連位置として報告する。
@@ -151,7 +149,7 @@ Kagura target における型のサイズ、alignment、zero value は [Ond for 
 ## 4. `nil` とポインタ
 <!-- ond-spec-id: type-system/nil-and-pointers -->
 
-- `nil` は任意の `*T`、function pointer、interface に代入できる。
+- `nil` は任意の `*T`、function pointer に代入できる。
 - `nil` は整数、配列、structには代入できない。
 - 数値 `0` と `nil` は暗黙に変換しない。
 - `nil` は既定型を持たないため、`value := nil` はコンパイルエラーとする。
@@ -221,40 +219,12 @@ func (box: *Box[Element]) Set(value: Element) { box.value = value }
 
 - receiverは `T`、`*T`、generic型の `T[P1, ...]`、または `*T[P1, ...]` で、`T`を宣言したpackage内でだけ宣言できる。`T`のunderlying typeはstructに限らない。
 - generic methodの型parameterはreceiverの具体型から位置ごとに推論し、その型argument列ごとに静的関数へ具体化する。method本体の値名と字句scopeは宣言時に検査し、型argumentに依存する型検査は具体化時に行う。
-- value receiverは値をcopyし、pointer receiverはpointer値を渡す。method呼出しでは完全一致、addressableなreceiverの1段のaddress取得、pointer receiverの1段の参照外しの順で候補を選ぶ。通常のfieldアクセス、interface変換、その他の型変換にはこの規則を適用しない。
+- value receiverは値をcopyし、pointer receiverはpointer値を渡す。method呼出しでは完全一致、addressableなreceiverの1段のaddress取得、pointer receiverの1段の参照外しの順で候補を選ぶ。通常のfieldアクセス、その他の型変換にはこの規則を適用しない。
 - `nil`のpointer receiverも呼び出せる。呼出し自体はfaultせず、method内でそのpointerを参照外しした時点で通常のraw pointer規則を適用する。
 - 同じbase named typeではvalue/pointer receiverを通してmethod名を一意とする。fieldと同名のmethodは宣言できない。top-level関数とは別namespaceとする。
 - method名の先頭がASCII大文字なら他packageから呼べる。非公開named typeの値でも、公開APIから型推論で得られた値に対する公開method呼出しは許可する。
 - `T.Method`のstatic参照、method expression、receiverをcaptureするmethod valueは提供しない。
 - `receiver.Method(arguments...)` はreceiverを1回評価した後、argumentsを左から右へ1回ずつ評価する。実装はreceiverを第1引数とする一意な内部関数へloweringする。
-
-### 5.2 Interface
-<!-- ond-spec-id: type-system/interfaces -->
-
-interfaceはmethod集合を表す名前付きnominal typeである。
-
-```ond
-type Reader interface {
-    Read(buffer: *u8, length: u32) -> i32
-}
-
-type List[T] interface {
-    Get(index: u32) -> T
-    Set(index: u32, value: T)
-}
-```
-
-- interface同士の型同一性は宣言identityで決まり、method集合が同じでも別型である。空interfaceも `type Any interface {}` のように名前付きで宣言できるが、組み込みの `any` / `interface{}` はない。
-- interfaceの型parameterは通常のgeneric型と同じ規則で明示し、型argument列ごとに異なるnamed interface型へ具体化する。interface method自身は追加の型parameterを持てない。
-- interface methodはinterface名の公開・非公開にかかわらずASCII大文字で始める。private methodによるsealed interfaceは提供しない。interfaceへのmethod宣言、default実装、interface embedding、interface合成、abstract class相当の実装保持は提供しない。
-- concrete typeがinterfaceを満たすには、要求された各methodと同名・同parameter型列・同return型列のpointer receiver methodが必要である。余分なmethodは許可する。`impl`宣言はない。
-- generic型の具体化instanceについては、その具体型で単相化したgeneric methodを通常のmethodと同じ規則でmethod集合へ含める。
-- interface値の生成は `pointer as InterfaceType` という明示変換だけで行う。sourceはnamed typeへのpointerでなければならず、valueからの暗黙address取得、value receiverの利用、interface間変換、boxingは行わない。
-- interface値はdata pointerとvtable pointerからなる非所有の値である。代入・引数・returnはこの2-word値をcopyし、参照先の寿命を延長しない。
-- zero valueは両pointerがnilである。typed nil pointerをinterfaceへ変換するとmethod tableは保持するが、`value == nil`はdata pointerがnilならtrueになる。tableがあるtyped nilへのmethod callはnil pointer receiverをdispatchする。tableのないnil interfaceへのmethod callはfaultする。
-- 同じinterface型の `==` / `!=` だけを提供する。両data pointerがnilなら等しく、それ以外はdata pointerとvtable pointerがともに一致するとき等しい。参照先の内容は比較しない。
-- interface method callはvtableから直接間接callする。vtableはconcrete pointer/interface型pairごとの静的値で、entryはinterface宣言順とする。type assertion、dynamic downcast、reflection、runtime type descriptor、interface method valueは提供しない。
-- method signatureはinterface型（自分自身を含む）をparameter・returnに使用できる。interfaceをstruct field、配列要素、global、local、parameter、returnとして使用できる。
 
 ## 6. 式
 <!-- ond-spec-id: expressions/overview -->
@@ -262,13 +232,13 @@ type List[T] interface {
 v1 は次の式を持つ。operand の型が適合しない式はコンパイルエラーとする。
 
 - integer、`f32`、`true`、`false`、`nil`、文字列、array、struct の literal
-- 関数 call、method call、interface method call、配列 index、raw pointer index、struct field access
+- 関数 call、method call、配列 index、raw pointer index、struct field access
 - addressable な変数、配列要素、struct field に対する `&value` と、`*pointer` による参照外し
 - integer の単項 `+`, `-`, `^`
 - `f32` の単項 `+`, `-`
 - integer の `+`, `-`, `*`, `/`, `%`, `&`, `|`, `^`, `&^`, `<<`, `>>`
 - `f32` の `+`, `-`, `*`, `/`
-- 同じ integer 型、`bool`、同じ raw pointer 型、同じ function pointer 型、同じinterface型に対する `==`, `!=`
+- 同じ integer 型、`bool`、同じ raw pointer 型、同じ function pointer 型に対する `==`, `!=`
 - `f32` に対する `==`, `!=`, `<`, `<=`, `>`, `>=`
 - integer に対する `<`, `<=`, `>`, `>=`
 - `bool` に対する `!`, `&&`, `||`
@@ -436,11 +406,11 @@ Kagura target の関数呼び出し規約は [Ond ABI for Kagura v1](../targets/
 ### 9.1 User-defined operators
 <!-- ond-spec-id: functions/user-defined-operators -->
 
-- top-level の `operator` 宣言だけが overload を持ち、receiver型に属する特殊名methodとして扱う。通常の関数、method、interface method は overload しない。
+- top-level の `operator` 宣言だけが overload を持ち、receiver型に属する特殊名methodとして扱う。通常の関数、method は overload しない。
 - 対象は unary `+` / `-`、binary `+` / `-` / `*` / `/` / `%`、`[]`、`[]=`、`len` とする。比較・論理・bit operator は対象外とする。
 - 解決はreceiver型と残りのoperand型で行い、戻り値型は候補選択に使わない。operator 自体を function pointer 値として取得できない。
-- receiverは同じpackageで宣言された名前付き型またはそのpointerに限る。名前付きinterface型もreceiverとして使用できる。
-- operator候補はoperandの静的な型だけで選ぶ。具象型がinterfaceを満たしていてもinterface型へ暗黙変換してoperator候補を追加しない。
+- receiverは同じpackageで宣言された名前付き型またはそのpointerに限る。
+- operator候補はoperandの静的な型だけで選ぶ。operandの型を暗黙変換して候補を追加しない。
 - `[]` は値を 1 個返す。pointer を返すこともでき、その後の `.field` は通常の pointer field access と同様に暗黙 dereference する。`&collection[index]` は getter の戻り値が addressable とは限らないため禁止する。
 - `[]=` はreceiver、index、valueを受け取り、値を返さない。
 - `len` は戻り値型に `u32` を1個明示し、`len(value)` は単一の `u32` を返す
@@ -450,7 +420,6 @@ Kagura target の関数呼び出し規約は [Ond ABI for Kagura v1](../targets/
 - operator候補はreceiver基底の名前付き型を宣言したpackageだけから選ぶ
   - 呼出し元fileがそのpackageを直接importしているか、別package経由で値を得たか、import aliasを使うかには依存しない
 - generic operatorは `operator (self: List[T]) [](index: u32) -> T` のように宣言する。receiver型引数は宣言型の型引数に個数が一致するfreshかつ相異なる名前とし、`List[u32]` のような具体化receiverを宣言できない。operator固有の型parameterは持たず、型引数はreceiverから決まる。
-- generic interface向けoperatorも本体を持ち、`operator (values: List[T]) [](index: u32) -> T { return values.Get(index) }`のように公開interface methodへ委譲できる。
 - 呼出し時のreceiverだけはmethodと同様に1段の暗黙参照化または参照外しを許す。pointer receiverへ値を渡すにはaddressableな値が必要であり、残りのoperandは型の完全一致を要する。型引数ごとに静的関数へ具体化する。
 
 ## 10. メモリ管理

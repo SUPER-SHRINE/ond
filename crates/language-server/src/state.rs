@@ -1671,7 +1671,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"methods\"\n").unwrap();
         let path = root.join("main.ond");
-        let source = "package main\ntype S struct {}\ntype Reader interface { Read() -> i32; }\nfunc (value: S) Value() -> i32 { return 1; }\nfunc (value: S) privateValue() -> i32 { return 1; }\nfunc (value: *S) Pointer() -> i32 { return 2; }\nfunc (value: *S) privatePointer() -> i32 { return 2; }\nfunc use(value: S) { _ = value.Value(); }\nfunc usePointer(value: *S) { _ = value.Pointer(); }\nfunc useInterface(value: Reader) { _ = value.Read(); }\nfunc main() {}\n";
+        let source = "package main\ntype S struct {}\ntype Reader struct {}; func (value: Reader) Read() -> i32 { return 1 }\nfunc (value: S) Value() -> i32 { return 1; }\nfunc (value: S) privateValue() -> i32 { return 1; }\nfunc (value: *S) Pointer() -> i32 { return 2; }\nfunc (value: *S) privatePointer() -> i32 { return 2; }\nfunc use(value: S) { _ = value.Value(); }\nfunc usePointer(value: *S) { _ = value.Pointer(); }\nfunc useReader(value: Reader) { _ = value.Read(); }\nfunc main() {}\n";
         std::fs::write(&path, source).unwrap();
         let uri = uri_from_path(&path).unwrap();
         let mut state = ServerState::default();
@@ -1998,9 +1998,9 @@ mod tests {
     }
 
     #[test]
-    fn generic_interface_completion_uses_applied_type_arguments() {
+    fn generic_struct_completion_uses_applied_type_arguments() {
         let root = normalize_path(std::env::temp_dir().join(format!(
-            "ond-lsp-generic-interface-members-{}-{}",
+            "ond-lsp-generic-struct-members-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -2008,9 +2008,9 @@ mod tests {
                 .as_nanos()
         )));
         std::fs::create_dir_all(&root).unwrap();
-        std::fs::write(root.join("ond.toml"), "[project]\nname=\"interfaces\"\n").unwrap();
+        std::fs::write(root.join("ond.toml"), "[project]\nname=\"methods\"\n").unwrap();
         let path = root.join("main.ond");
-        let source = "package main\ntype List[T] interface { Get(index: u32) -> T; Set(index: u32, value: T); }\nfunc use(values: List[u16]) { values. }\n";
+        let source = "package main\ntype List[T] struct { item:T }\nfunc (value: List[T]) Get(index: u32) -> T { var result:T; return result }\nfunc (value: List[T]) Set(index: u32, item:T) {}\nfunc use(values: List[u16]) { values. }\n";
         std::fs::write(&path, source).unwrap();
         let uri = uri_from_path(&path).unwrap();
         let mut state = ServerState::default();
@@ -2019,17 +2019,18 @@ mod tests {
             .open_document(uri.clone(), source.to_string(), &mut output)
             .unwrap();
 
-        let character = source.lines().nth(2).unwrap().find(" }").unwrap() as u32;
-        let completions = state.completions(&uri, 2, character).unwrap();
+        let character = source.lines().nth(4).unwrap().find(" }").unwrap() as u32;
+        let completions = state.completions(&uri, 4, character).unwrap();
         assert_eq!(
             completions
                 .iter()
                 .filter_map(|item| item["label"].as_str())
                 .collect::<Vec<_>>(),
-            vec!["Get", "Set"]
+            vec!["item", "Get", "Set"]
         );
-        assert_eq!(completions[0]["detail"], "Get(u32) -> u16");
-        assert_eq!(completions[1]["detail"], "Set(u32, u16)");
+        assert_eq!(completions[0]["detail"], "item: u16");
+        assert_eq!(completions[1]["detail"], "Get(index: u32) -> T");
+        assert_eq!(completions[2]["detail"], "Set(index: u32, item: T)");
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -3089,7 +3090,7 @@ mod tests {
         .unwrap();
         std::fs::write(
             root.join("managed/string/string.ond"),
-            "package string\ntype String interface { Length() -> u32 }\noperator (value: String) [] (index: u32) -> u32 { return value.Length() }\nfunc Broken(\n",
+            "package string\ntype String struct {}\nfunc (value: String) Length() -> u32 { return 0 }\noperator (value: String) [] (index: u32) -> u32 { return value.Length() }\nfunc Broken(\n",
         )
         .unwrap();
 

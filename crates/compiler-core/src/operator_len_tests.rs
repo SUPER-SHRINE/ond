@@ -91,16 +91,17 @@ func main() {}
 }
 
 #[test]
-fn generic_interface_len_result_is_u32() {
+fn generic_struct_len_result_is_u32() {
     test_support::compile(
         r#"package main
-type List[T] interface { Len() -> u32 }
+type List[T] struct { size: u32 }
+func (self: List[T]) Len() -> u32 { return self.size }
 type Value struct { size: u32 }
 func (self: *Value) Len() -> u32 { return self.size }
 operator (self: List[T]) len() -> u32 { return self.Len() }
 func observe() -> u32 {
     value := Value{size: 11}
-    var list: List[bool] = (&value) as List[bool]
+    var list = List[bool]{size:value.size}
     var size: u32 = len(list)
     return size
 }
@@ -108,7 +109,7 @@ func main() {}
 "#,
         None,
     )
-    .expect("a generic interface len should produce one u32");
+    .expect("a generic struct len should produce one u32");
 }
 
 #[test]

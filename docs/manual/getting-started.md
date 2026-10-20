@@ -79,7 +79,9 @@ func main() {
 }
 ```
 
-`_`は値を明示的に捨てるblank identifierである。現在のOndには標準出力用の組み込み関数や標準文字列型はない。画面表示、入力、asset、device APIはtarget向けのlibraryまたはSDKから提供される。
+`_`は値を明示的に捨てるblank identifierである。\
+Ondは標準出力の組み込み関数や標準文字列型を定義しない。\
+画面表示、入力、asset、device APIはtarget向けのlibraryまたはSDKから提供される。
 
 変更したpackageを確認したい場合は`-v`を付ける。
 
@@ -91,7 +93,7 @@ ond compile . -v
 
 `ond link`はコンパイルmanifestを`LinkedImage`へ変換する。RAM範囲、stack size、正常終了後の戻り先などは機種SDKが決める値であり、Ond共通の既定値はない。通常はEnbuなどのSDKを通してlink・ROM生成・起動を行う。
 
-次の例は、リリース検証で使用する仮のmemory layoutでLinkedImageを生成する。実機向けの値ではない。
+次の例は、指定したmemory layoutでLinkedImageを生成する。実機では対象機種のSDKが定める値を使用する。
 
 ```console
 ond link target/build.ondbuild --ram 4096:65536 --stack 8192 --return-to 0 -o hello.ondimage

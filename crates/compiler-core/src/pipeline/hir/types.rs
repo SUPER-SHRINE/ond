@@ -376,26 +376,15 @@ pub(super) fn resolve_defined_type(
         return None;
     }
     visiting.insert(type_id);
-    let underlying = match &declaration.ty {
-        ast::Type::Interface { methods, span } => resolve_interface_type(
-            package_id,
-            methods,
-            *span,
-            universe,
-            types,
-            visiting,
-            diagnostics,
-        ),
-        ty => resolve_type(
-            package_id,
-            ty,
-            universe,
-            types,
-            false,
-            visiting,
-            diagnostics,
-        ),
-    };
+    let underlying = resolve_type(
+        package_id,
+        &declaration.ty,
+        universe,
+        types,
+        false,
+        visiting,
+        diagnostics,
+    );
     visiting.remove(&type_id);
     if let Some(underlying) = underlying {
         types.define(type_id, TypeKind::Defined { underlying });
@@ -403,97 +392,6 @@ pub(super) fn resolve_defined_type(
     } else {
         None
     }
-}
-
-fn resolve_interface_type(
-    package_id: PackageId,
-    methods: &[ast::InterfaceMethod],
-    span: Span,
-    universe: &[TypePackage],
-    types: &mut crate::semantic::TypeTable,
-    visiting: &mut BTreeSet<crate::semantic::TypeId>,
-    diagnostics: &mut Diagnostics,
-) -> Option<crate::semantic::TypeId> {
-    use crate::semantic::{
-        FunctionType, InterfaceMethod, InterfaceType, StructField, StructType, TypeKind,
-    };
-
-    let data_pointer = types.pointer(crate::semantic::TypeId::U8, span);
-    let mut names = BTreeSet::new();
-    let mut resolved = Vec::new();
-    let mut fields = Vec::new();
-    let mut valid = true;
-    for method in methods {
-        if !names.insert(method.name.name.clone()) {
-            diagnostics.push(Diagnostic::error(
-                method.name.span,
-                format!("duplicate interface method `{}`", method.name.name),
-            ));
-            valid = false;
-            continue;
-        }
-        let mut parameters = vec![data_pointer];
-        for parameter in &method.signature.params {
-            let ty = resolve_type(
-                package_id,
-                &parameter.ty,
-                universe,
-                types,
-                true,
-                visiting,
-                diagnostics,
-            );
-            valid &= ty.is_some();
-            if let Some(ty) = ty {
-                parameters.push(ty);
-            }
-        }
-        let mut returns = Vec::new();
-        for result in &method.signature.results {
-            let ty = resolve_type(
-                package_id,
-                result,
-                universe,
-                types,
-                true,
-                visiting,
-                diagnostics,
-            );
-            valid &= ty.is_some();
-            if let Some(ty) = ty {
-                returns.push(ty);
-            }
-        }
-        let signature = FunctionType {
-            parameters,
-            returns,
-        };
-        let function = types.function(signature.clone(), method.span);
-        fields.push(StructField {
-            name: method.name.name.clone(),
-            ty: function,
-            private_owner: None,
-            span: method.span,
-        });
-        resolved.push(InterfaceMethod {
-            name: method.name.name.clone(),
-            signature,
-            private_owner: None,
-        });
-    }
-    if !valid {
-        return None;
-    }
-    let vtable = types.intern(TypeKind::Struct(StructType { fields }), span);
-    let vtable = types.pointer(vtable, span);
-    Some(types.intern(
-        TypeKind::Interface(InterfaceType {
-            methods: resolved,
-            data_pointer,
-            vtable,
-        }),
-        span,
-    ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -620,26 +518,15 @@ fn resolve_applied_type(
         .collect::<BTreeMap<_, _>>();
     let concrete = substitute_type(&declaration.ty, &substitutions);
     let mut instance_diagnostics = Diagnostics::new();
-    let underlying = match &concrete {
-        ast::Type::Interface { methods, span } => resolve_interface_type(
-            owner.id,
-            methods,
-            *span,
-            universe,
-            types,
-            visiting,
-            &mut instance_diagnostics,
-        ),
-        ty => resolve_type(
-            owner.id,
-            ty,
-            universe,
-            types,
-            false,
-            visiting,
-            &mut instance_diagnostics,
-        ),
-    };
+    let underlying = resolve_type(
+        owner.id,
+        &concrete,
+        universe,
+        types,
+        false,
+        visiting,
+        &mut instance_diagnostics,
+    );
     visiting.remove(&type_id);
     for diagnostic in instance_diagnostics {
         diagnostics.push(diagnostic.reanchor(
@@ -691,17 +578,6 @@ pub(super) fn substitute_type(
                     name: field.name.clone(),
                     ty: substitute_type(&field.ty, substitutions),
                     span: field.span,
-                })
-                .collect(),
-            span: *span,
-        },
-        ast::Type::Interface { methods, span } => ast::Type::Interface {
-            methods: methods
-                .iter()
-                .map(|method| ast::InterfaceMethod {
-                    name: method.name.clone(),
-                    signature: substitute_type_signature(&method.signature, substitutions),
-                    span: method.span,
                 })
                 .collect(),
             span: *span,
@@ -1012,13 +888,6 @@ pub(super) fn resolve_type(
                 });
             }
             Some(types.intern(TypeKind::Struct(StructType { fields: resolved }), *span))
-        }
-        ast::Type::Interface { span, .. } => {
-            diagnostics.push(Diagnostic::error(
-                *span,
-                "interface types must be declared with `type Name interface { ... }`",
-            ));
-            None
         }
         ast::Type::Func { signature, span } => {
             let mut parameters = Vec::new();

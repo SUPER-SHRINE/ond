@@ -501,18 +501,6 @@ fn collect_type_declarations(ty: &ast::Type, records: &mut Vec<DeclarationRecord
                 collect_type_declarations(&field.ty, records);
             }
         }
-        ast::Type::Interface { methods, span } => {
-            let scope = DeclarationScope::Fields(*span);
-            for method in methods {
-                push_declaration(&method.name, &scope, false, records);
-                for parameter in &method.signature.params {
-                    collect_type_declarations(&parameter.ty, records);
-                }
-                for result in &method.signature.results {
-                    collect_type_declarations(result, records);
-                }
-            }
-        }
         ast::Type::Func { signature, .. } => {
             for param in &signature.params {
                 collect_type_declarations(&param.ty, records);
@@ -705,20 +693,6 @@ fn collect_type_identifier_spans(ty: &ast::Type, spans: &mut Vec<Span>) {
             for field in fields {
                 spans.push(field.name.span);
                 collect_type_identifier_spans(&field.ty, spans);
-            }
-        }
-        ast::Type::Interface { methods, .. } => {
-            for method in methods {
-                spans.push(method.name.span);
-                for parameter in &method.signature.params {
-                    if let Some(name) = &parameter.name {
-                        spans.push(name.span);
-                    }
-                    collect_type_identifier_spans(&parameter.ty, spans);
-                }
-                for result in &method.signature.results {
-                    collect_type_identifier_spans(result, spans);
-                }
             }
         }
         ast::Type::Func { signature, .. } => {

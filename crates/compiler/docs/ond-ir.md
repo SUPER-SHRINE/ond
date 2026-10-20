@@ -1,8 +1,6 @@
 # Ond Compiler IR
 
-本書は `ond` compiler の内部表現と phase 境界を定義する。compiler pipeline は `AST -> HIR -> MIR -> SSA IR -> Target Machine IR -> Object -> link -> package` とする。
-
-本書に書かれていない内部表現、最適化段階、公開 object format は v1 では持たない。
+本書は `ond` compiler の内部表現と phase 境界を定義する。
 
 ## 1. Scope
 
@@ -111,16 +109,6 @@
 - `if`、`for`、`&&`、`||`、composite literal、多値返却は高水準のまま保持してよい。
 - 配列index、field access、`*pointer`はまだtarget命令列へ分解しない。文字列literalはbyte配列として扱う。
 
-### 4.6 Recommended HIR Shape
-
-- item level: `Const`, `Var`, `Type`, `Func`
-- statement level: `Block`, `VarDecl`, `Assign`, `ExprStmt`, `If`, `For`, `Break`, `Continue`, `Return`
-- expression level: `Literal`, `Name`, `Call`, `Methodless Selector`, `Index`, `Deref`, `AddrOf`, `Unary`, `Binary`, `Cast`, `Composite`
-
-v1 では method を持たないため receiver 付き declaration node は存在しない。
-
-移行期間中、まだ型付き HIR node が実装されていない構文を含む function body は明示的に `Pending` とする。`Pending` body を意味解析済みとして扱ってはならず、対応構文の追加とともに段階的に解消する。
-
 ## 5. MIR
 
 ### 5.1 Role
@@ -177,48 +165,7 @@ package-level `var` 初期化関数も通常の `MirFunction` として表す。
 - integer `/` と `%` は明示 check と semantic operation として保持する。runtime helper の選択は target backend が行う。
 - integer 比較は signed/unsigned と operand type を保持し、target instruction を仮定しない。
 
-### 5.6 Recommended MIR Shape
-
-`MirFunction` は少なくとも次の論理情報を持つ。
-
-| Field | Meaning |
-| --- | --- |
-| `name` | canonical symbol name または local runtime name |
-| `parameters` | parameter local ID 列 |
-| `returns` | logical return type 列 |
-| `locals` | mutable local storage 列 |
-| `values` | immutable value 列 |
-| `blocks` | `BasicBlock` 列 |
-| `entry` | entry block ID |
-
-`BasicBlock` は少なくとも次を持つ。
-
-| Field | Meaning |
-| --- | --- |
-| `id` | block ID |
-| `parameters` | SSA IR が使用する block parameter 列 |
-| `instructions` | source evaluation order に並ぶ instruction |
-| `terminator` | block の終了動作 |
-
-instruction は少なくとも次を表せればよい。
-
-- constant、unary、binary、cast
-- address-of と place projection
-- load
-- store
-- aggregate copy
-- runtime check
-- direct / indirect call
-
-terminator は少なくとも次を表せればよい。
-
-- `Jump`
-- `Branch`
-- `Return`
-- `Trap`
-- `Unreachable`
-
-### 5.7 Call Representation
+### 5.6 Call Representation
 
 - direct call は target symbol を持つ。
 - indirect call は callee operand を持つ。
@@ -226,9 +173,9 @@ terminator は少なくとも次を表せればよい。
 - helper symbol と ABI は MIR より後の target lowering が決定する。
 - 未解析の call は全 memory を読み書きでき、fault しうる barrier として扱う。
 
-### 5.8 Detailed Contract
+### 5.7 Detailed Contract
 
-MIR の型、effect、validation、SSA conversion、optimization policy の詳細は [Ond MIR Design](../../compiler-core/docs/mir.md) に従う。
+MIR の型、effect、validation、lowering の契約は [Ond MIR Design](../../compiler-core/docs/mir.md) に従う。
 
 ## 6. Object Boundary
 
@@ -242,9 +189,6 @@ MIR の型、effect、validation、SSA conversion、optimization policy の詳�
 - [Ond Linker v1](./ond-linker.md) で定義した `sections`
 - `symbols`
 - `relocations`
-- `imports`
-- `init_symbol`
-- `main_symbol`
 
 ### 6.3 Object Must Not Contain
 

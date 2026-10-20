@@ -80,42 +80,6 @@ fn validate_type_table(types: &TypeTable) -> Vec<ValidationError> {
                     check(types, &mut errors, definition.id, field.ty, "field");
                 }
             }
-            TypeKind::Interface(interface) => {
-                check(
-                    types,
-                    &mut errors,
-                    definition.id,
-                    interface.data_pointer,
-                    "interface data pointer",
-                );
-                check(
-                    types,
-                    &mut errors,
-                    definition.id,
-                    interface.vtable,
-                    "interface vtable",
-                );
-                for method in &interface.methods {
-                    for parameter in &method.signature.parameters {
-                        check(
-                            types,
-                            &mut errors,
-                            definition.id,
-                            *parameter,
-                            "interface method parameter",
-                        );
-                    }
-                    for result in &method.signature.returns {
-                        check(
-                            types,
-                            &mut errors,
-                            definition.id,
-                            *result,
-                            "interface method return",
-                        );
-                    }
-                }
-            }
             TypeKind::Defined { underlying } => check(
                 types,
                 &mut errors,

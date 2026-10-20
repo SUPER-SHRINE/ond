@@ -258,7 +258,6 @@ fn type_name(ty: &ast::Type) -> String {
         ast::Type::Pointer(inner, _) => format!("*{}", type_name(inner)),
         ast::Type::Array { element, .. } => format!("[...]{}", type_name(element)),
         ast::Type::Struct { .. } => "struct".to_string(),
-        ast::Type::Interface { .. } => "interface".to_string(),
         ast::Type::Func { .. } => "func".to_string(),
     }
 }

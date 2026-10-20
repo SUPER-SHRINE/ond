@@ -48,7 +48,7 @@ fn encode(output: &mut String, id: TypeId, types: &TypeTable, universe: &[TypePa
     if let Some(name) = &definition.name
         && matches!(
             definition.kind,
-            TypeKind::Pending | TypeKind::Defined { .. } | TypeKind::Interface(_)
+            TypeKind::Pending | TypeKind::Defined { .. }
         )
     {
         output.push('n');
@@ -98,8 +98,8 @@ fn encode(output: &mut String, id: TypeId, types: &TypeTable, universe: &[TypePa
         TypeKind::U32 => output.push('u'),
         TypeKind::I32 => output.push('j'),
         TypeKind::F32 => output.push('r'),
-        TypeKind::Pending | TypeKind::Defined { .. } | TypeKind::Interface(_) => {
-            unreachable!("pending, defined and interface types must have a nominal name")
+        TypeKind::Pending | TypeKind::Defined { .. } => {
+            unreachable!("pending and defined types must have a nominal name")
         }
     }
 }

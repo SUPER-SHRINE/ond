@@ -698,7 +698,7 @@ import "test/api"
 func main() {
     cell := api.Cell[api.Token]{}
     _ = cell.Get()
-    var reader: api.Reader[api.Token] = (&cell) as api.Reader[api.Token]
+    var reader = api.Reader[api.Token]{Cell:&cell}
     _ = reader.Get()
     _ = len(cell)
     _ = api.Plain{} + cell
@@ -711,7 +711,8 @@ func main() {
 type Token struct { Value:u32 }
 type Plain struct {}
 type Cell[T] struct { Value:T }
-type Reader[T] interface { Get()->T }
+type Reader[T] struct { Cell:*Cell[T] }
+func (reader:Reader[T]) Get()->T { return reader.Cell.Get() }
 func (cell: *Cell[T]) Get()->T { return cell.Value }
 operator (cell: Cell[T]) len()->u32 { return 1 }
 operator (plain: Plain) + (cell: Cell[Token])->u32 { return cell.Value.Value }

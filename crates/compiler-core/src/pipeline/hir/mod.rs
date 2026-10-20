@@ -316,22 +316,6 @@ fn lower_context_to_hir(
                                 .find(|package| package.id == source_package.id)
                                 .and_then(|package| package.declarations.get(&spec.name.name))
                                 .expect("collected type declaration must be available");
-                            if let ast::Type::Interface { methods, .. } = &declaration.ty {
-                                for method in methods {
-                                    if !method
-                                        .name
-                                        .name
-                                        .as_bytes()
-                                        .first()
-                                        .is_some_and(u8::is_ascii_uppercase)
-                                    {
-                                        diagnostics.push(Diagnostic::error(
-                                            method.name.span,
-                                            "interface methods must be exported",
-                                        ));
-                                    }
-                                }
-                            }
                             if !declaration.type_params.is_empty() {
                                 continue;
                             }
@@ -738,16 +722,6 @@ fn lower_context_to_hir(
                                 Some(crate::semantic::TypeKind::Pointer(pointee)) => *pointee,
                                 _ => receiver_type,
                             };
-                            if matches!(
-                                validation_types.underlying_kind(receiver_base_type),
-                                Some(crate::semantic::TypeKind::Interface(_))
-                            ) {
-                                diagnostics.push(Diagnostic::error(
-                                    receiver.span,
-                                    "methods cannot be declared on interface types",
-                                ));
-                                continue;
-                            }
                             let key = (receiver_name.to_string(), decl.name.name.clone());
                             if seen_methods.insert(key, decl.name.span).is_some() {
                                 diagnostics.push(Diagnostic::error(

@@ -146,14 +146,13 @@ fn generic_type_methods_infer_receiver_arguments_and_monomorphize() {
 }
 
 #[test]
-fn instantiated_generic_methods_satisfy_interfaces() {
+fn instantiated_generic_methods_work_through_pointer_parameters() {
     let compilation = compile(
         "package main\n\
-         type Reader interface { Read() -> u32; }\n\
          type Cell[T] struct { value: T; }\n\
          func (cell: *Cell[Element]) Read() -> Element { return cell.value; }\n\
-         func consume(reader: Reader) -> u32 { return reader.Read(); }\n\
-         func observe() -> u32 { var cell = Cell[u32]{value: 7}; return consume((&cell) as Reader); }\n\
+         func consume(reader: *Cell[u32]) -> u32 { return reader.Read(); }\n\
+         func observe() -> u32 { var cell = Cell[u32]{value: 7}; return consume(&cell); }\n\
          func main() {}\n",
         None,
     )

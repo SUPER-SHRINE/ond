@@ -25,7 +25,7 @@ fn array_layout_limit_accepts_the_boundary_and_zero_sizes() {
         ("[4294967295][0]u32", 0),
     ] {
         let source = format!(
-            "package main\ntype Element interface {{}}\ntype Accepted {ty}\nfunc main() {{}}\n"
+            "package main\ntype Element struct {{ First:u32; Second:u32 }}\ntype Accepted {ty}\nfunc main() {{}}\n"
         );
         let result = compile(&source, None).unwrap_or_else(|error| panic!("{source}: {error}"));
         let accepted = result.hir.types.find_named("main.Accepted").unwrap();
@@ -55,7 +55,7 @@ fn array_layout_limit_applies_to_all_resolved_type_positions() {
         "type Alias [1073741824]u32\ntype Unused Alias",
         "type Unused [2][2147483648]u8",
         "type Unused [0][1073741824]u32",
-        "type Element interface {}\ntype Unused [536870912]Element",
+        "type Element struct { First:u32; Second:u32 }\ntype Unused [536870912]Element",
         "type Unused [1073741824]*u8",
         "type Unused [1073741824]func()",
     ] {
@@ -270,10 +270,6 @@ fn isolated_generic_signature_validation_keeps_declaration_errors() {
         (
             "type Buffer[T] struct { Do: T }\nfunc (b: *Buffer[T]) Do() {}",
             "conflicts with a field",
-        ),
-        (
-            "type Buffer[T] interface {}\nfunc (b: Buffer[T]) Do() {}",
-            "methods cannot be declared on interface types",
         ),
         (
             "type Buffer[T] struct {}\noperator (b: *Buffer[T]) len() -> u8 { return 0 }",
