@@ -1,18 +1,17 @@
 //! Host-side incremental build orchestration. MIR never crosses this boundary.
 mod cache;
-mod cache_identity;
+mod json;
+
 mod compile;
 mod dependencies;
 mod graph;
 mod input;
 mod requests;
 pub use requests::{CompileRequest, CompileResult, LinkRequest, LinkResult};
-mod libraries;
 mod link;
 pub use cache::atomic_write as write_artifact;
 pub use compile::compile;
 pub use dependencies::{ResolvedDependencies, resolve_dependencies, resolve_project_sources};
-pub use libraries::load as library_sources;
 pub use link::{link, link_with_debug};
 pub type DriverResult<T> = Result<T, Vec<String>>;
 
@@ -24,4 +23,9 @@ pub fn compiler_identity() -> DriverResult<String> {
 #[cfg(test)]
 mod export_tests;
 #[cfg(test)]
+mod generation_tests;
+#[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod dependency_test_support;

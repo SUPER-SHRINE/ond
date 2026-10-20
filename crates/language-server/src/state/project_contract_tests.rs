@@ -125,36 +125,19 @@ fn library_without_main_resolves_qualified_sibling_in_editor() {
 }
 
 #[test]
-fn identical_library_root_files_preserve_project_sources_and_conflicts_fail() {
-    let root = project("duplicate-library", "shared");
+fn identical_dependency_names_from_distinct_directories_are_rejected() {
+    let root = project("duplicate-dependency", "shared");
     let sdk = root.join("target/sdk");
     fs::create_dir_all(sdk.join("shared")).unwrap();
     let source = "package shared\nfunc Own() {}\n";
     fs::write(root.join("api.ond"), source).unwrap();
     fs::write(sdk.join("shared/api.ond"), source).unwrap();
-    let state = ServerState::with_library_roots(vec![sdk.clone()]);
-    let loaded = state.load_current_project(&root).unwrap();
-    let package = loaded
-        .packages
-        .iter()
-        .find(|p| p.logical_path == "shared")
-        .unwrap();
-    assert_eq!(package.files.len(), 1);
-    assert_eq!(
-        loaded.sources.file(package.files[0]).path(),
-        root.join("api.ond").canonicalize().unwrap()
-    );
-    assert!(compiler::compile_loaded_project(loaded).is_ok());
-    fs::write(
-        sdk.join("shared/extra.ond"),
-        "package shared\nfunc extra() {}\n",
-    )
-    .unwrap();
+    let state = ServerState::with_dependencies(&root, vec![sdk]);
     assert!(
         state
             .load_current_project(&root)
             .unwrap_err()
-            .contains("library conflicts with project package: shared")
+            .contains("dependency namespace")
     );
     fs::remove_dir_all(root).unwrap();
 }

@@ -47,7 +47,6 @@ impl Fixture {
             contract: Contract::default(),
             project_root: self.0.clone(),
             sources: BTreeMap::new(),
-            libraries: BTreeMap::new(),
             cache_dir: None,
         }
     }
@@ -556,7 +555,7 @@ fn explicit_trap_reason_is_emitted_only_to_linked_debug_metadata() {
         .manifest
         .packages
         .iter()
-        .find(|reference| reference.package == ".")
+        .find(|reference| reference.package == "test")
         .unwrap();
     let artifact = cache::read_artifact(main_ref).unwrap();
     assert!(artifact.object.sections.iter().all(|section| {
@@ -758,3 +757,61 @@ operator (plain: Plain) + (cell: Cell[Token])->u32 { return cell.Value.Value }
 
 #[path = "test_build_tests.rs"]
 mod test_build;
+
+#[test]
+fn linker_rejects_application_root_imports_from_unreachable_packages() {
+    let f = Fixture::new();
+    let mut manifest = compile(f.request(), &compiler_identity().unwrap())
+        .unwrap()
+        .manifest;
+    let root = manifest
+        .packages
+        .iter()
+        .find(|p| p.package == "test")
+        .unwrap()
+        .clone();
+    let reference = manifest
+        .packages
+        .iter_mut()
+        .find(|p| p.package == "test/other")
+        .unwrap();
+    let mut artifact = cache::read_artifact(reference).unwrap();
+    artifact.imports.push(root.package.clone());
+    artifact
+        .dependencies
+        .insert(root.package.clone(), root.build_id.clone());
+    *reference = cache::publish(&f.0.join("altered"), &artifact).unwrap();
+    assert!(link(request_link(manifest)).is_err());
+    let imports = BTreeMap::from([
+        ("lib".into(), vec![]),
+        ("lib/other".into(), vec!["lib".into()]),
+    ]);
+    crate::graph::Graph::from_imports_with_root(imports, None)
+        .expect("library roots remain importable");
+}
+
+#[test]
+fn relative_project_requests_keep_ignore_paths_canonical() {
+    let f = Fixture::new();
+    f.put(
+        "ond.toml",
+        "[project]\nname=\"test\"\n[resolve]\nignore=[\"generated\"]\n",
+    );
+    f.put("generated/broken.ond", "invalid source");
+    let mut request = f.request();
+    let cwd = std::env::current_dir().unwrap().canonicalize().unwrap();
+    let root = f.0.canonicalize().unwrap();
+    let common = cwd
+        .ancestors()
+        .find(|ancestor| root.starts_with(ancestor))
+        .unwrap();
+    request.project_root = cwd
+        .strip_prefix(common)
+        .unwrap()
+        .components()
+        .map(|_| "..")
+        .collect::<PathBuf>()
+        .join(root.strip_prefix(common).unwrap());
+    compile(request, &compiler_identity().unwrap())
+        .expect("relative root uses the same absolute ignore boundary");
+}

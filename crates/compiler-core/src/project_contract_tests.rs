@@ -1,6 +1,6 @@
 use crate::{
     ExternalSource, ExternalSources, SemanticCache, compile_loaded_project, compile_project,
-    load_library_sources, load_project, load_project_with_inputs, load_project_with_test_inputs,
+    load_project, load_project_with_inputs, load_project_with_test_inputs,
 };
 use std::collections::BTreeMap;
 use std::fs;
@@ -125,7 +125,6 @@ fn required_generated_sources_use_the_project_namespace() {
         &BTreeMap::new(),
         &[],
         &required,
-        &BTreeMap::new(),
         &ExternalSources::new(),
     )
     .unwrap();
@@ -153,7 +152,6 @@ fn external_logical_paths_coexist_and_real_collisions_are_rejected() {
         fixture.root(),
         &BTreeMap::new(),
         &[],
-        &BTreeMap::new(),
         &BTreeMap::new(),
         &external,
     )
@@ -196,7 +194,6 @@ fn external_logical_paths_coexist_and_real_collisions_are_rejected() {
         &BTreeMap::new(),
         &[],
         &BTreeMap::new(),
-        &BTreeMap::new(),
         &conflicting,
     )
     .unwrap_err();
@@ -217,7 +214,6 @@ fn external_logical_paths_coexist_and_real_collisions_are_rejected() {
         fixture.root(),
         &BTreeMap::new(),
         &[],
-        &BTreeMap::new(),
         &BTreeMap::new(),
         &identical,
     )
@@ -240,14 +236,25 @@ fn optional_files_with_the_same_relative_name_keep_separate_package_identity() {
             } else {
                 BTreeMap::from([("math/value.ond".into(), own_text.into())])
             };
-            let optional = BTreeMap::from([("math/value.ond".into(), external_text.into())]);
+            let optional: BTreeMap<String, String> =
+                BTreeMap::from([("math/value.ond".into(), external_text.into())]);
             let loaded = load_project_with_inputs(
                 fixture.root(),
                 &BTreeMap::new(),
                 &[],
                 &required,
-                &optional,
-                &ExternalSources::new(),
+                &optional
+                    .iter()
+                    .map(|(name, text)| {
+                        (
+                            name.clone(),
+                            ExternalSource {
+                                path: fixture.root().join("vendor").join(name),
+                                text: text.clone(),
+                            },
+                        )
+                    })
+                    .collect(),
             )
             .unwrap();
             for (package, text) in [("game/math", own_text), ("math", external_text)] {
@@ -287,7 +294,7 @@ fn optional_root_library_packages_require_an_identical_complete_file_set() {
         ]),
         BTreeMap::from([("shared/api.ond".into(), own.into())]),
     ] {
-        for file_backed in [false, true] {
+        {
             let external = files
                 .iter()
                 .map(|(name, text): (&String, &String)| {
@@ -300,15 +307,12 @@ fn optional_root_library_packages_require_an_identical_complete_file_set() {
                     )
                 })
                 .collect();
-            let empty = BTreeMap::new();
-            let no_external = ExternalSources::new();
             let result = load_project_with_test_inputs(
                 fixture.root(),
                 &BTreeMap::new(),
                 &[],
                 &BTreeMap::new(),
-                if file_backed { &empty } else { &files },
-                if file_backed { &external } else { &no_external },
+                &external,
             );
             if files == BTreeMap::from([("shared/api.ond".into(), own.into())]) {
                 let loaded = result.unwrap();
@@ -341,13 +345,11 @@ fn file_backed_root_library_package_cannot_mix_with_project_files() {
         "target/sdk/shared/extra.ond",
         "package shared\nfunc extra() {}\n",
     );
-    let external =
-        load_library_sources(fixture.root(), std::slice::from_ref(&sdk), &BTreeMap::new()).unwrap();
+    let external = file_inputs(&sdk, &["shared/extra.ond"]);
     let error = load_project_with_test_inputs(
         fixture.root(),
         &BTreeMap::new(),
         &[],
-        &BTreeMap::new(),
         &BTreeMap::new(),
         &external,
     )
@@ -359,16 +361,31 @@ fn file_backed_root_library_package_cannot_mix_with_project_files() {
     );
     fs::remove_file(sdk.join("shared/extra.ond")).unwrap();
     fixture.write("target/sdk/shared/api.ond", own);
-    let external = load_library_sources(fixture.root(), &[sdk], &BTreeMap::new()).unwrap();
+    let external = file_inputs(&sdk, &["shared/api.ond"]);
     assert_eq!(external.len(), 1);
     let loaded = load_project_with_test_inputs(
         fixture.root(),
         &BTreeMap::new(),
         &[],
         &BTreeMap::new(),
-        &BTreeMap::new(),
         &external,
     )
     .unwrap();
     assert_eq!(loaded.packages[0].files.len(), 2);
+}
+
+fn file_inputs(root: &Path, names: &[&str]) -> ExternalSources {
+    names
+        .iter()
+        .map(|name| {
+            let path = root.join(name).canonicalize().unwrap();
+            (
+                name.to_string(),
+                ExternalSource {
+                    text: fs::read_to_string(&path).unwrap(),
+                    path,
+                },
+            )
+        })
+        .collect()
 }

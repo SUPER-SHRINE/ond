@@ -11,7 +11,9 @@ mod body_names;
 mod cache;
 pub use cache::SemanticCache;
 mod control_flow;
+pub(crate) mod generation;
 mod generic_functions;
+mod generic_paths;
 mod identity;
 #[cfg(test)]
 mod identity_tests;
@@ -42,6 +44,23 @@ fn lower_context_to_hir(
     ast: &ast::Project,
     selected: Option<&BTreeSet<crate::source::FileId>>,
 ) -> Result<hir::Project, FrontendError> {
+    lower_context_with_generation(loaded, ast, selected, false).map(|(project, _)| project)
+}
+
+pub(crate) fn lower_to_hir_with_generation(
+    loaded: &LoadedProject,
+    ast: &ast::Project,
+) -> Result<(hir::Project, generation::Collected), FrontendError> {
+    validate_test_signatures(loaded, ast)?;
+    lower_context_with_generation(loaded, ast, None, true)
+}
+
+fn lower_context_with_generation(
+    loaded: &LoadedProject,
+    ast: &ast::Project,
+    selected: Option<&BTreeSet<crate::source::FileId>>,
+    capture: bool,
+) -> Result<(hir::Project, generation::Collected), FrontendError> {
     let mut diagnostics = Diagnostics::new();
     let early_return_diagnostics = return_diagnostics(ast);
     let mut logical_to_package = BTreeMap::<String, PackageId>::new();
@@ -51,6 +70,9 @@ fn lower_context_to_hir(
     let mut types = crate::semantic::TypeTable::new();
     let symbols = validation::collect_symbols(loaded, ast, &logical_to_package);
     let type_universe = collect_type_universe(loaded, ast, &logical_to_package, &mut types);
+    for package in &type_universe {
+        package.generation.borrow_mut().enabled = capture;
+    }
     resolve_all_defined_types(&type_universe, &mut types, &mut diagnostics);
     // Invalid definitions cannot be used by item/body lowering. Stop here instead
     // of resolving the same invalid declaration again and duplicating its error.
@@ -919,13 +941,19 @@ fn lower_context_to_hir(
 
     if diagnostics.is_empty() {
         let initialization_order = Vec::new();
-        Ok(hir::Project {
+        let project = hir::Project {
             types,
             symbols,
             packages,
             entry_package: PackageId(0),
             initialization_order,
-        })
+        };
+        let generation = if capture {
+            generation::collect(&project, ast, &type_universe)
+        } else {
+            generation::Collected::default()
+        };
+        Ok((project, generation))
     } else {
         Err(FrontendError::new(diagnostics.into_vec()))
     }

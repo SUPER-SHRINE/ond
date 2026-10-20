@@ -8,16 +8,9 @@ use crate::util::{find_project_root, normalize_path, render_frontend_error, same
 pub(super) fn load_project(
     root: &Path,
     overrides: &BTreeMap<PathBuf, String>,
-    library_roots: &[PathBuf],
 ) -> Result<compiler::LoadedProject, String> {
     let resolved =
         ond_cli::resolve_dependencies(root).map_err(|diagnostics| diagnostics.join("\n"))?;
-    let normalized_root = normalize_path(root.to_path_buf());
-    let library_roots = library_roots
-        .iter()
-        .filter(|library| !same_path(library, &normalized_root))
-        .cloned()
-        .collect::<Vec<_>>();
     let has_root_sources = std::fs::read_dir(root)
         .map_err(|error| error.to_string())?
         .filter_map(Result::ok)
@@ -42,15 +35,8 @@ pub(super) fn load_project(
             .and_then(|name| name.split('/').next())
             .map(str::to_string)
     };
-    let mut libraries = compiler::load_library_sources(root, &library_roots, overrides)
-        .map_err(render_frontend_error)?;
-    let mut excluded_library_roots = library_roots
-        .iter()
-        .map(|library| normalize_path(library.clone()))
-        .filter(|library| {
-            library.starts_with(&normalized_root) && !same_path(library, &normalized_root)
-        })
-        .collect::<Vec<_>>();
+    let mut libraries = compiler::ExternalSources::new();
+    let mut excluded_library_roots = Vec::new();
     let mut synthetic_entry = None;
     excluded_library_roots.extend(resolved.ignored_directories);
     merge_external_sources(&mut libraries, resolved.sources, overrides)?;
@@ -76,7 +62,6 @@ pub(super) fn load_project(
         root,
         overrides,
         &excluded_library_roots,
-        &BTreeMap::new(),
         &BTreeMap::new(),
         &libraries,
     )

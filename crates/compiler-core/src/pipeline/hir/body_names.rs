@@ -116,6 +116,44 @@ pub(super) fn validate_generic_body_names(
                     Some((alias, names))
                 })
                 .collect::<BTreeMap<String, BTreeSet<String>>>();
+            let mut generic_functions = package
+                .files
+                .iter()
+                .flat_map(|file| &file.decls)
+                .filter_map(|decl| match decl {
+                    ast::TopLevelDecl::Func(function)
+                        if function.receiver.is_none() && !function.type_params.is_empty() =>
+                    {
+                        Some(vec![function.name.name.clone()])
+                    }
+                    _ => None,
+                })
+                .collect::<BTreeSet<_>>();
+            for import in &file.imports {
+                let Ok(logical) = crate::string_literal::import_path(&import.path) else {
+                    continue;
+                };
+                let alias = import
+                    .alias
+                    .as_ref()
+                    .map(|alias| alias.name.clone())
+                    .unwrap_or_else(|| logical.rsplit('/').next().unwrap_or_default().into());
+                if let Some(imported) = project
+                    .packages
+                    .iter()
+                    .find(|package| package.logical_path == logical)
+                {
+                    for decl in imported.files.iter().flat_map(|file| &file.decls) {
+                        if let ast::TopLevelDecl::Func(function) = decl
+                            && function.receiver.is_none()
+                            && !function.type_params.is_empty()
+                        {
+                            generic_functions
+                                .insert(vec![alias.clone(), function.name.name.clone()]);
+                        }
+                    }
+                }
+            }
             for declaration in &file.decls {
                 match declaration {
                     ast::TopLevelDecl::Func(function)
@@ -131,6 +169,7 @@ pub(super) fn validate_generic_body_names(
                             &imports,
                             hidden_types,
                             &imported_names,
+                            &generic_functions,
                             &mut diagnostics,
                         );
                         validator
@@ -142,7 +181,7 @@ pub(super) fn validate_generic_body_names(
                                     .type_parameters
                                     .extend(generic.parameters.iter().map(|p| p.name.clone()));
                             }
-                            validator.declare(&receiver.name);
+                            validator.declare(&receiver.name, Binding::Variable);
                             validator.ty(&receiver.ty);
                         }
                         for result in &function.signature.results {
@@ -150,9 +189,9 @@ pub(super) fn validate_generic_body_names(
                         }
                         for parameter in &function.signature.params {
                             validator.ty(&parameter.ty);
-                            validator.declare(&parameter.name);
+                            validator.declare(&parameter.name, Binding::Variable);
                         }
-                        validator.block(&function.body);
+                        validator.body(&function.body);
                     }
                     ast::TopLevelDecl::Operator(operator) if !operator.type_params.is_empty() => {
                         let mut validator = NameValidator::new(
@@ -160,6 +199,7 @@ pub(super) fn validate_generic_body_names(
                             &imports,
                             hidden_types,
                             &imported_names,
+                            &generic_functions,
                             &mut diagnostics,
                         );
                         validator
@@ -170,9 +210,9 @@ pub(super) fn validate_generic_body_names(
                         }
                         for parameter in &operator.signature.params {
                             validator.ty(&parameter.ty);
-                            validator.declare(&parameter.name);
+                            validator.declare(&parameter.name, Binding::Variable);
                         }
-                        validator.block(&operator.body);
+                        validator.body(&operator.body);
                     }
                     ast::TopLevelDecl::Type(declaration) => {
                         for spec in declaration
@@ -185,6 +225,7 @@ pub(super) fn validate_generic_body_names(
                                 &imports,
                                 hidden_types,
                                 &imported_names,
+                                &generic_functions,
                                 &mut diagnostics,
                             );
                             validator
@@ -222,13 +263,20 @@ fn top_level_value_names(declaration: &ast::TopLevelDecl) -> Vec<String> {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Binding {
+    Variable,
+    Constant,
+}
+
 struct NameValidator<'a> {
     package_values: &'a BTreeSet<String>,
     imports: &'a BTreeSet<String>,
     hidden_types: &'a BTreeSet<String>,
     imported_names: &'a BTreeMap<String, BTreeSet<String>>,
+    generic_functions: &'a BTreeSet<Vec<String>>,
     type_parameters: BTreeSet<String>,
-    scopes: Vec<BTreeSet<String>>,
+    scopes: Vec<BTreeMap<String, Binding>>,
     diagnostics: &'a mut Diagnostics,
 }
 
@@ -238,6 +286,7 @@ impl<'a> NameValidator<'a> {
         imports: &'a BTreeSet<String>,
         hidden_types: &'a BTreeSet<String>,
         imported_names: &'a BTreeMap<String, BTreeSet<String>>,
+        generic_functions: &'a BTreeSet<Vec<String>>,
         diagnostics: &'a mut Diagnostics,
     ) -> Self {
         Self {
@@ -245,18 +294,29 @@ impl<'a> NameValidator<'a> {
             imports,
             hidden_types,
             imported_names,
+            generic_functions,
             type_parameters: BTreeSet::new(),
-            scopes: vec![BTreeSet::new()],
+            scopes: vec![BTreeMap::new()],
             diagnostics,
         }
     }
 
-    fn declare(&mut self, name: &ast::Ident) {
+    fn declare(&mut self, name: &ast::Ident, binding: Binding) {
         if name.name != "_" {
-            self.scopes
+            let scope = self
+                .scopes
                 .last_mut()
-                .expect("name validator always has a scope")
-                .insert(name.name.clone());
+                .expect("name validator always has a scope");
+            if let std::collections::btree_map::Entry::Vacant(entry) =
+                scope.entry(name.name.clone())
+            {
+                entry.insert(binding);
+            } else {
+                self.diagnostics.push(Diagnostic::error(
+                    name.span,
+                    format!("duplicate local declaration `{}`", name.name),
+                ));
+            }
         }
     }
 
@@ -265,15 +325,43 @@ impl<'a> NameValidator<'a> {
             || BUILTINS.contains(&name)
             || self.package_values.contains(name)
             || self.imports.contains(name)
-            || self.scopes.iter().rev().any(|scope| scope.contains(name))
+            || self
+                .scopes
+                .iter()
+                .rev()
+                .any(|scope| scope.contains_key(name))
+    }
+
+    fn generic_function(&self, expression: &ast::Expr) -> bool {
+        let ast::Expr::Name(path) = expression else {
+            return false;
+        };
+        if matches!(path.segments.as_slice(), [name] if name.name=="alloc") {
+            return true;
+        }
+        !path.segments.first().is_some_and(|name| {
+            self.scopes
+                .iter()
+                .any(|scope| scope.contains_key(&name.name))
+        }) && self.generic_functions.contains(
+            &path
+                .segments
+                .iter()
+                .map(|name| name.name.clone())
+                .collect::<Vec<_>>(),
+        )
     }
 
     fn block(&mut self, block: &ast::Block) {
-        self.scopes.push(BTreeSet::new());
+        self.scopes.push(BTreeMap::new());
+        self.body(block);
+        self.scopes.pop();
+    }
+
+    fn body(&mut self, block: &ast::Block) {
         for statement in &block.statements {
             self.statement(statement);
         }
-        self.scopes.pop();
     }
 
     fn statement(&mut self, statement: &ast::Stmt) {
@@ -287,7 +375,7 @@ impl<'a> NameValidator<'a> {
                         self.expr(value);
                     }
                     for name in &spec.names {
-                        self.declare(name);
+                        self.declare(name, Binding::Constant);
                     }
                 }
             }
@@ -300,7 +388,7 @@ impl<'a> NameValidator<'a> {
                         self.expr(value);
                     }
                     for name in &spec.names {
-                        self.declare(name);
+                        self.declare(name, Binding::Variable);
                     }
                 }
             }
@@ -308,8 +396,30 @@ impl<'a> NameValidator<'a> {
                 for value in &declaration.values {
                     self.expr(value);
                 }
-                for name in &declaration.names {
-                    self.declare(name);
+                let scope = self.scopes.last().expect("short declaration has a scope");
+                let mut seen = BTreeSet::new();
+                let mut new_names = Vec::new();
+                for name in declaration.names.iter().filter(|name| name.name != "_") {
+                    if !seen.insert(&name.name) {
+                        self.diagnostics.push(Diagnostic::error(
+                            name.span,
+                            "duplicate name in short declaration",
+                        ));
+                    } else if scope.get(&name.name) == Some(&Binding::Constant) {
+                        self.diagnostics
+                            .push(Diagnostic::error(name.span, "cannot assign to a constant"));
+                    } else if !scope.contains_key(&name.name) {
+                        new_names.push(name);
+                    }
+                }
+                if new_names.is_empty() {
+                    self.diagnostics.push(Diagnostic::error(
+                        declaration.span,
+                        "short declaration requires at least one new name",
+                    ));
+                }
+                for name in new_names {
+                    self.declare(name, Binding::Variable);
                 }
             }
             ast::Stmt::Assign(assignment) => {
@@ -329,7 +439,7 @@ impl<'a> NameValidator<'a> {
             ast::Stmt::Defer(statement) => self.block(&statement.block),
             ast::Stmt::Block(block) => self.block(block),
             ast::Stmt::If(statement) => {
-                self.scopes.push(BTreeSet::new());
+                self.scopes.push(BTreeMap::new());
                 if let Some(init) = statement.init.as_deref() {
                     self.statement(init);
                 }
@@ -341,7 +451,7 @@ impl<'a> NameValidator<'a> {
                 self.scopes.pop();
             }
             ast::Stmt::For(statement) => {
-                self.scopes.push(BTreeSet::new());
+                self.scopes.push(BTreeMap::new());
                 match &statement.kind {
                     ast::ForKind::Infinite => {}
                     ast::ForKind::While(condition) => self.expr(condition),
@@ -369,7 +479,11 @@ impl<'a> NameValidator<'a> {
     }
 
     fn imported_member(&mut self, alias: &ast::Ident, name: &ast::Ident) {
-        if self.scopes.iter().any(|scope| scope.contains(&alias.name)) {
+        if self
+            .scopes
+            .iter()
+            .any(|scope| scope.contains_key(&alias.name))
+        {
             return;
         }
         if let Some(names) = self.imported_names.get(&alias.name)
@@ -466,8 +580,15 @@ impl<'a> NameValidator<'a> {
                 base, arguments, ..
             } => {
                 self.expr(base);
-                for ty in arguments {
-                    self.ty(ty);
+                if !self.generic_function(base)
+                    && let [argument] = arguments.as_slice()
+                    && let Some(index) = super::body::type_argument_index(argument)
+                {
+                    self.expr(&index);
+                } else {
+                    for ty in arguments {
+                        self.ty(ty);
+                    }
                 }
             }
             ast::Expr::Selector { base, field, .. } => {
@@ -480,7 +601,13 @@ impl<'a> NameValidator<'a> {
             }
             ast::Expr::Index { base, index, .. } => {
                 self.expr(base);
-                self.expr(index);
+                if self.generic_function(base)
+                    && let Some(ty) = super::body::index_type_argument(index)
+                {
+                    self.ty(&ty);
+                } else {
+                    self.expr(index);
+                }
             }
             ast::Expr::Cast { expr, ty, .. } => {
                 self.expr(expr);

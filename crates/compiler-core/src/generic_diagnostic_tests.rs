@@ -486,6 +486,75 @@ fn type05_nested_growing_nominal() {
 }
 
 #[test]
+fn generic_paths_include_skipped_root_and_nested_source_uses() {
+    let source = "package main\nfunc Flip[A,B]()->bool{return false&&Flip[B,A]()}\nfunc unused(){_=true||Flip[u8,u16]()}\nfunc main(){}\n";
+    let error =
+        compile(source, None).expect_err("skipped source uses still require valid instantiations");
+    assert!(
+        error
+            .diagnostics()
+            .iter()
+            .any(|d| d.message.contains("same path"))
+    );
+}
+
+#[test]
+fn generic_paths_check_existing_instances_and_function_values() {
+    let source = "package main\nfunc Pick[T](){_=Pick[u16]}\nfunc main(){_=Pick[u8];_=Pick[u16]}\n";
+    let error = compile(source, None)
+        .expect_err("already requested function values still form invalid paths");
+    assert!(
+        error
+            .diagnostics()
+            .iter()
+            .any(|d| d.message.contains("same path")),
+        "{error}"
+    );
+}
+
+#[test]
+fn generic_paths_replay_completed_nominal_requests() {
+    let source = "package main\ntype A[T] struct{next:*B[u8]}\ntype B[T] struct{next:*A[u16]}\nvar Early:B[u8]\nvar Later:A[u8]\nfunc main(){}\n";
+    let error = compile(source, None)
+        .expect_err("a cached nominal must be checked in each requesting path");
+    assert!(
+        error
+            .diagnostics()
+            .iter()
+            .any(|d| d.message.contains("same path"))
+    );
+}
+
+#[test]
+fn generic_paths_keep_many_independent_roots_separate() {
+    let mut source = String::from("package main\nfunc F[T](){F[T]()}\nfunc main(){\n");
+    for length in 0..32 {
+        source.push_str(&format!("F[[{length}]u8]()\n"));
+    }
+    source.push_str("}\n");
+    compile(&source, None).expect("independent roots may request different arguments");
+}
+
+#[test]
+fn generic_paths_continue_checking_independent_failures() {
+    let source = "package main\nfunc Grow[T](){Grow[*T]()}\nfunc Invalid[T](x:T){_=x.missing}\nfunc main(){Grow[u8]();Invalid[u8](1)}\n";
+    let error = compile(source, None).expect_err("both independent roots must be checked");
+    assert!(
+        error
+            .diagnostics()
+            .iter()
+            .any(|d| d.message.contains("same path"))
+    );
+    assert!(
+        error.diagnostics().iter().any(|d| {
+            let span = d.primary.span;
+            &source[span.start..span.end] == "x.missing"
+        }),
+        "{error}"
+    );
+}
+
+#[test]
 fn diag02_generic_related_causes() {
     let source = "package main\ntype S struct{}\nfunc Need[T](x:T)->u32{return x.missing}\nfunc Outer[T](x:T)->u32{return Need[T](x)}\nfunc main(){_=Outer[S](S{});_=Need[S](S{});_=Need[u32](1)}\n";
     let error = compile(source, None).expect_err("both generic instantiations must fail");

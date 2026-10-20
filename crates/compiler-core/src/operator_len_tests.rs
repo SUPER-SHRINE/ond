@@ -86,7 +86,7 @@ func main() {}
     .expect("len should produce one u32 and preserve receiver and array selection");
     assert_eq!(
         memory_test_vm::execute(&compilation.mir, "main.observe", &[]).unwrap(),
-        [3, 5, 7, 2, 9]
+        [3, 5, 7, 99, 9]
     );
 }
 

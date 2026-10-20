@@ -7,6 +7,144 @@ fn test_request(f: &Fixture) -> CompileRequest {
 }
 
 #[test]
+fn library_test_build_initializes_globals_with_and_without_cases() {
+    for (name, cases) in [("test", false), ("test", true)] {
+        let f = Fixture::new();
+        f.put(
+            "library/ond.toml",
+            &format!("[project]\nname = \"{name}\"\n"),
+        );
+        f.put(
+            "library/api.ond",
+            &format!("package {name}\nvar Value:i32=1\n"),
+        );
+        if cases {
+            f.put(
+                "library/api_test.ond",
+                &format!("package {name}\nfunc TestRoot(){{_=Value}}\n"),
+            );
+        }
+        let mut request = test_request(&f);
+        request.project_root = f.0.join("library");
+        let manifest = compile(request, &compiler_identity().unwrap())
+            .unwrap()
+            .manifest;
+        link_with_debug(request_link(manifest)).expect("library test initialization metadata");
+    }
+}
+
+#[test]
+fn package_main_in_a_main_named_project_requires_executable_entry_files() {
+    let f = Fixture::new();
+    f.put("library/ond.toml", "[project]\nname = \"main\"\n");
+    f.put("library/api.ond", "package main\nvar Value:i32=1\n");
+    f.put(
+        "library/api_test.ond",
+        "package main\nfunc TestRoot(){_=Value}\n",
+    );
+    let mut request = test_request(&f);
+    request.project_root = f.0.join("library");
+    let errors = compile(request, &compiler_identity().unwrap()).unwrap_err();
+    assert!(
+        errors.iter().any(|error| error.contains("main.ond")),
+        "{errors:?}"
+    );
+}
+
+#[test]
+fn malformed_cached_test_metadata_is_rebuilt_after_frontend() {
+    let f = Fixture::new();
+    f.put("main_test.ond", "package main\nfunc TestRoot(){}\n");
+    let id = compiler_identity().unwrap();
+    let request = test_request(&f);
+    let cold = compile(request.clone(), &id).unwrap();
+    let reference = cold
+        .manifest
+        .packages
+        .iter()
+        .find(|r| r.package == "test")
+        .unwrap();
+    let mut artifact = cache::read_artifact(reference).unwrap();
+    artifact.tests = None;
+    cache::publish(reference.path.parent().unwrap(), &artifact).unwrap();
+    let recovered = compile(request, &id).unwrap();
+    assert!(recovered.rebuilt.contains(&".".into()));
+    link_with_debug(request_link(recovered.manifest)).expect("repaired test metadata");
+}
+
+#[test]
+fn artifact_test_cases_require_ownership_and_uniqueness() {
+    let mut rejected = Vec::new();
+    for scenario in ["foreign", "duplicate"] {
+        let f = Fixture::new();
+        f.put("main.ond", "package main\nfunc main(){}\n");
+        f.put("main_test.ond", "package main\nfunc TestRoot(){}\n");
+        let mut manifest = compile(test_request(&f), &compiler_identity().unwrap())
+            .unwrap()
+            .manifest;
+        let root = manifest
+            .packages
+            .iter()
+            .position(|reference| reference.package == "test")
+            .unwrap();
+        let mut artifact = cache::read_artifact(&manifest.packages[root]).unwrap();
+        let case = artifact.tests.as_ref().unwrap().cases[0].clone();
+        if scenario == "foreign" {
+            artifact.tests.as_mut().unwrap().cases.clear();
+            let other = manifest
+                .packages
+                .iter()
+                .position(|reference| reference.package != "test")
+                .unwrap();
+            let mut foreign = cache::read_artifact(&manifest.packages[other]).unwrap();
+            foreign.tests.as_mut().unwrap().cases.push(case);
+            manifest.packages[other] =
+                cache::publish(manifest.packages[other].path.parent().unwrap(), &foreign).unwrap();
+        } else {
+            artifact.tests.as_mut().unwrap().cases.push(case);
+        }
+        manifest.packages[root] =
+            cache::publish(manifest.packages[root].path.parent().unwrap(), &artifact).unwrap();
+        rejected.push(link_with_debug(request_link(manifest)).is_err());
+    }
+    assert_eq!(rejected, [true, true], "foreign owner, duplicate case");
+}
+
+#[test]
+fn test_compiler_collects_valid_test_only_functions() {
+    let f = Fixture::new();
+    f.put(
+        "main.ond",
+        "package main\nfunc main(){}\nfunc TestOrdinary(x:u32){}\n",
+    );
+    f.put("main_test.ond", "package main\nfunc TestRoot(){}\n");
+    let manifest = compile(test_request(&f), &compiler_identity().unwrap())
+        .unwrap()
+        .manifest;
+    let cases = &manifest.tests.as_ref().unwrap().cases;
+    assert_eq!(cases.len(), 1);
+    assert_eq!(
+        (
+            cases[0].package.as_str(),
+            cases[0].name.as_str(),
+            cases[0].symbol.as_str()
+        ),
+        ("test", "TestRoot", "main.TestRoot")
+    );
+    let root = manifest
+        .packages
+        .iter()
+        .find(|reference| reference.package == "test")
+        .unwrap();
+    let artifact = cache::read_artifact(root).unwrap();
+    assert_eq!(artifact.tests.as_ref().unwrap().cases, *cases);
+    assert!(!artifact.interface.exports.contains_key("TestRoot"));
+    assert!(artifact.interface.exports.contains_key("TestOrdinary"));
+    link_with_debug(request_link(manifest))
+        .expect("test-only signatures are guaranteed by compilation");
+}
+
+#[test]
 fn test_build_discovers_unreachable_packages_and_separates_cache_modes() {
     let f = Fixture::new();
     f.put(
@@ -17,16 +155,10 @@ fn test_build_discovers_unreachable_packages_and_separates_cache_modes() {
         "isolated/only_test.ond",
         "package isolated\nfunc TestUnreachable(){}\n",
     );
-    let mut normal = f.request();
-    normal
-        .libraries
-        .insert("sdk/lib.ond".into(), "package sdk\nfunc Run(){}".into());
-    normal
-        .libraries
-        .insert("sdk/bad_test.ond".into(), "invalid syntax".into());
-    normal
-        .libraries
-        .insert("sdk/test.ond".into(), "invalid syntax".into());
+    let normal = f.request();
+    crate::dependency_test_support::source(&f.0, "sdk/lib.ond", "package sdk\nfunc Run(){}");
+    crate::dependency_test_support::source(&f.0, "sdk/bad_test.ond", "invalid syntax");
+    crate::dependency_test_support::source(&f.0, "sdk/test.ond", "invalid syntax");
     let normal = compile(normal, "compiler").unwrap();
     assert!(normal.manifest.tests.is_none());
     assert!(
@@ -42,13 +174,9 @@ fn test_build_discovers_unreachable_packages_and_separates_cache_modes() {
             .iter()
             .any(|p| p.package == "test/isolated")
     );
-    let mut request = test_request(&f);
-    request
-        .libraries
-        .insert("sdk/bad_test.ond".into(), "invalid syntax".into());
-    request
-        .libraries
-        .insert("sdk/test.ond".into(), "invalid syntax".into());
+    let request = test_request(&f);
+    crate::dependency_test_support::source(&f.0, "sdk/bad_test.ond", "invalid syntax");
+    crate::dependency_test_support::source(&f.0, "sdk/test.ond", "invalid syntax");
     let tests = compile(request.clone(), "compiler").unwrap();
     assert_eq!(
         tests
@@ -250,7 +378,7 @@ fn library_test_build_links_with_no_test_cases() {
 }
 
 #[test]
-fn all_virtual_library_sources_build_tests_without_a_disk_entry_file() {
+fn virtual_project_sources_build_tests_without_a_disk_entry_file() {
     let f = Fixture::new();
     f.put("virtual/ond.toml", "[project]\nname = \"test\"\n");
     let mut request = test_request(&f);

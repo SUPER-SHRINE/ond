@@ -28,7 +28,6 @@ fn source_paths_distinguish_own_packages_from_nested_external_roots() {
         &Default::default(),
         &[],
         &Default::default(),
-        &Default::default(),
         &external,
     )
     .unwrap();

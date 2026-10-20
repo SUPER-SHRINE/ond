@@ -127,6 +127,28 @@ fn num02_cast_overflow_boundary() {
 }
 
 #[test]
+fn num02_arbitrary_precision_literals() {
+    Row::constant(
+        "NUM-02.literal-exact-reduction".into(),
+        &["NUM-02"],
+        "",
+        "184467440737095516160000000000000000000001 - 184467440737095516160000000000000000000000",
+        "i8",
+        integer(1, "i8"),
+    )
+    .run();
+    Row::constant(
+        "NUM-02.literal-signed-overflow".into(),
+        &["NUM-02"],
+        "",
+        "18446744073709551615",
+        "i32",
+        error("out of range", "18446744073709551615"),
+    )
+    .run();
+}
+
+#[test]
 fn num02_bitwise_project_signed() {
     run_constant("NUM-02.bitwise-project-signed");
 }

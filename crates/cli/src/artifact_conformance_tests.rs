@@ -6,6 +6,32 @@ use ond_protocol::{
     object::{Section, SectionKind},
 };
 const ZERO_COMPILER: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+
+#[test]
+fn unit_enum_variants_require_json_strings() {
+    use ond_protocol::{
+        debug::{DebugOperation, ReturnAddressLocation},
+        object::{RelocationKind, SectionKind, SymbolBinding, SymbolKind},
+    };
+    macro_rules! check {
+        ($ty:ty,$variant:literal) => {
+            assert!(
+                serde_json::from_str::<$ty>(concat!("{\"", $variant, "\":null}")).is_err(),
+                stringify!($ty)
+            );
+            assert!(serde_json::from_str::<$ty>(concat!("\"", $variant, "\"")).is_ok());
+        };
+    }
+    check!(SectionKind, "Text");
+    check!(SymbolBinding, "Exported");
+    check!(SymbolKind, "Function");
+    check!(RelocationKind, "Abs32");
+    check!(DebugOperation, "Call");
+    check!(ReturnAddressLocation, "LinkRegister");
+    check!(Kind, "U8");
+    check!(ValueKind, "Zero");
+    check!(ValueKind, "Nil");
+}
 const SHARED_INTERFACE: &str = r###"{"exports":{"T0":{"Global":0},"T1":{"Global":1},"T10":{"Global":10},"T11":{"Global":11},"T2":{"Global":2},"T3":{"Global":3},"T4":{"Global":4},"T5":{"Global":5},"T6":{"Global":6},"T7":{"Global":7},"T8":{"Global":8},"T9":{"Global":9}},"package":"p","types":[{"kind":"I8","methods":[],"name":null},{"kind":"U8","methods":[],"name":null},{"kind":"I16","methods":[],"name":null},{"kind":"I32","methods":[],"name":null},{"kind":"U32","methods":[],"name":null},{"kind":"F32","methods":[],"name":null},{"kind":"Bool","methods":[],"name":null},{"kind":{"Pointer":1},"methods":[],"name":null},{"kind":{"Function":{"parameters":[],"returns":[]}},"methods":[],"name":null},{"kind":{"Array":{"element":1,"length":2}},"methods":[],"name":null},{"kind":{"Struct":[{"name":"Value","private_owner":null,"ty":1}]},"methods":[],"name":null},{"kind":{"Defined":1},"methods":[],"name":"p.Byte"}]}"###;
 fn typed_value(id: &str, json: &str, accept: bool, mutate: fn(&mut Interface)) {
     let mut interface: Interface = serde_json::from_str(SHARED_INTERFACE).unwrap();
@@ -638,6 +664,56 @@ fn art01_generic_types() {
 #[test]
 fn art01_duplicate_decoded_map_key() {
     assert!(serde_json::from_str::<Interface>(r#"{"package":"p","types":[{"name":null,"kind":"U8","methods":[]}],"exports":{"X":{"Global":0},"\u0058":{"Global":0}}}"#).is_err(),"ART-01 closed wire: duplicate decoded map key");
+}
+
+#[test]
+fn direct_storage_cycles_reject_but_function_cycles_are_indirect() {
+    let interface = |kind| {
+        format!(
+            r#"{{"package":"p","types":[{{"name":"p.T","kind":{{"Defined":1}},"methods":[]}},{{"name":null,"kind":{kind},"methods":[]}}],"exports":{{"T":{{"Type":0}}}}}}"#
+        )
+    };
+    for kind in [
+        r#"{"Array":{"length":1,"element":0}}"#,
+        r#"{"Struct":[{"name":"x","ty":0,"private_owner":"p"}]}"#,
+    ] {
+        assert!(
+            serde_json::from_str::<Interface>(&interface(kind))
+                .unwrap()
+                .validate()
+                .is_err()
+        );
+    }
+    for kind in [
+        r#"{"Pointer":0}"#,
+        r#"{"Function":{"parameters":[0],"returns":[0]}}"#,
+    ] {
+        serde_json::from_str::<Interface>(&interface(kind))
+            .unwrap()
+            .validate()
+            .unwrap();
+    }
+}
+
+#[test]
+fn artifact_reader_rejects_invalid_build_hashes_with_matching_reference() {
+    let f = Fixture::new("invalid-build-hashes");
+    for (index, bad) in [
+        "x",
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut artifact: PackageArtifact = serde_json::from_str(ARTIFACT_A).unwrap();
+        artifact.build_id = bad.into();
+        let reference = cache::publish(&f.0, &artifact).unwrap();
+        assert!(cache::read_artifact(&reference).is_err(), "{index}");
+    }
+    let mut artifact: PackageArtifact = serde_json::from_str(ARTIFACT_A).unwrap();
+    artifact.dependencies.insert("p".into(), "bad".into());
+    let reference = cache::publish(&f.0, &artifact).unwrap();
+    assert!(cache::read_artifact(&reference).is_err());
 }
 #[test]
 fn hash01_image_build_id_canonical() {

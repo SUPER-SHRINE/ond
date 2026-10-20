@@ -27,24 +27,24 @@ pub(super) fn instantiate_generic_functions(
         })
         .collect::<BTreeSet<_>>();
     let mut failed = BTreeSet::new();
-    let initial_functions = generated.clone();
+    let mut invalid_requests = Vec::new();
     let mut failed_diagnostics = Vec::<(String, String, Diagnostic)>::new();
     loop {
-        let mut requested = BTreeMap::<String, Vec<Span>>::new();
-        for package in packages.iter() {
-            for item in &package.statics {
-                collect_generic_symbols_expr(&item.value, &mut requested);
-            }
-            for item in &package.items {
-                if let hir::Item::Func(function) = item {
-                    let hir::Body::Typed(body) = &function.body;
-                    collect_generic_symbols_block(&body.block, &mut requested);
-                }
-            }
-        }
-        let Some((symbol, _)) = requested
+        let requests = super::generic_paths::requests(universe)
             .into_iter()
-            .find(|(symbol, _)| !failed.contains(symbol) && !generated.contains(symbol))
+            .filter(|request| !invalid_requests.contains(request))
+            .collect::<Vec<_>>();
+        if let Some((request, diagnostic)) = super::generic_paths::validate(&requests, universe) {
+            invalid_requests.push(request);
+            diagnostics.push(diagnostic);
+            continue;
+        }
+        let Some(symbol) = requests
+            .iter()
+            .map(|request| &request.symbol)
+            .filter(|symbol| !failed.contains(*symbol) && !generated.contains(*symbol))
+            .min()
+            .cloned()
         else {
             break;
         };
@@ -161,6 +161,7 @@ pub(super) fn instantiate_generic_functions(
                 sources,
                 &mut specialization_diagnostics,
                 substitutions,
+                Some(&symbol),
             ) else {
                 defer_generic_diagnostics(
                     &mut failed_diagnostics,
@@ -272,6 +273,7 @@ pub(super) fn instantiate_generic_functions(
                 sources,
                 &mut specialization_diagnostics,
                 substitutions,
+                Some(&symbol),
             ) else {
                 defer_generic_diagnostics(
                     &mut failed_diagnostics,
@@ -369,6 +371,7 @@ pub(super) fn instantiate_generic_functions(
             sources,
             &mut specialization_diagnostics,
             substitutions,
+            Some(&symbol),
         ) else {
             defer_generic_diagnostics(
                 &mut failed_diagnostics,
@@ -397,7 +400,7 @@ pub(super) fn instantiate_generic_functions(
     if failed_diagnostics.is_empty() {
         return;
     }
-    let uses = collect_generic_uses(packages, &initial_functions);
+    let uses = collect_generic_uses(universe);
     for (symbol, description, diagnostic) in failed_diagnostics {
         report_generic_diagnostic(diagnostics, diagnostic, &symbol, &uses, &description);
     }
@@ -416,41 +419,13 @@ struct GenericUse {
     span: Span,
 }
 
-fn collect_generic_uses(
-    packages: &[hir::Package],
-    initial_functions: &BTreeSet<String>,
-) -> BTreeMap<String, Vec<GenericUse>> {
+fn collect_generic_uses(universe: &[TypePackage]) -> BTreeMap<String, Vec<GenericUse>> {
     let mut uses = BTreeMap::<String, Vec<GenericUse>>::new();
-    for package in packages {
-        for item in &package.statics {
-            let mut requested = BTreeMap::new();
-            collect_generic_symbols_expr(&item.value, &mut requested);
-            for (symbol, spans) in requested {
-                uses.entry(symbol).or_default().extend(
-                    spans
-                        .into_iter()
-                        .map(|span| GenericUse { caller: None, span }),
-                );
-            }
-        }
-        for item in &package.items {
-            let hir::Item::Func(function) = item else {
-                continue;
-            };
-            let hir::Body::Typed(body) = &function.body;
-            let mut requested = BTreeMap::new();
-            collect_generic_symbols_block(&body.block, &mut requested);
-            let caller = (!initial_functions.contains(&function.canonical_name))
-                .then(|| function.canonical_name.clone());
-            for (symbol, spans) in requested {
-                uses.entry(symbol)
-                    .or_default()
-                    .extend(spans.into_iter().map(|span| GenericUse {
-                        caller: caller.clone(),
-                        span,
-                    }));
-            }
-        }
+    for request in super::generic_paths::requests(universe) {
+        uses.entry(request.symbol).or_default().push(GenericUse {
+            caller: request.caller,
+            span: request.span,
+        });
     }
     uses
 }
@@ -532,132 +507,4 @@ fn report_generic_diagnostic(
     }
     diagnostic.related.extend(previous_related);
     output.push(diagnostic);
-}
-
-fn collect_generic_symbols_block(block: &hir::Block, output: &mut BTreeMap<String, Vec<Span>>) {
-    for statement in &block.statements {
-        match statement {
-            hir::Stmt::LocalDecl { values, .. } | hir::Stmt::Return { values, .. } => {
-                collect_generic_symbols_values(values, output)
-            }
-            hir::Stmt::Assign {
-                targets,
-                values,
-                overloaded,
-                ..
-            } => {
-                for target in targets.iter().flatten() {
-                    collect_generic_symbols_expr(target, output);
-                }
-                collect_generic_symbols_values(values, output);
-                if let Some(call) = overloaded {
-                    collect_generic_symbols_call(call, output);
-                }
-            }
-            hir::Stmt::IndexAssign(statement) => {
-                collect_generic_symbols_expr(&statement.base, output);
-                collect_generic_symbols_expr(&statement.index, output);
-                collect_generic_symbols_call(&statement.getter, output);
-                collect_generic_symbols_values(&statement.values, output);
-                if let Some(call) = &statement.overloaded {
-                    collect_generic_symbols_call(call, output);
-                }
-                collect_generic_symbols_call(&statement.setter, output);
-            }
-            hir::Stmt::Expr(expr) => collect_generic_symbols_expr(expr, output),
-            hir::Stmt::Call(call) => collect_generic_symbols_call(call, output),
-            hir::Stmt::Defer { block, .. } | hir::Stmt::Block(block) => {
-                collect_generic_symbols_block(block, output)
-            }
-            hir::Stmt::If {
-                condition,
-                then_block,
-                else_block,
-                ..
-            } => {
-                collect_generic_symbols_expr(condition, output);
-                collect_generic_symbols_block(then_block, output);
-                collect_generic_symbols_block(else_block, output);
-            }
-            hir::Stmt::For {
-                condition,
-                body,
-                post,
-                ..
-            } => {
-                if let Some(condition) = condition {
-                    collect_generic_symbols_expr(condition, output);
-                }
-                collect_generic_symbols_block(body, output);
-                collect_generic_symbols_block(post, output);
-            }
-            hir::Stmt::Break(_) | hir::Stmt::Continue(_) | hir::Stmt::Trap { .. } => {}
-        }
-    }
-}
-
-fn collect_generic_symbols_values(
-    values: &hir::ValueList,
-    output: &mut BTreeMap<String, Vec<Span>>,
-) {
-    match values {
-        hir::ValueList::Expressions(values) => {
-            for value in values {
-                collect_generic_symbols_expr(value, output);
-            }
-        }
-        hir::ValueList::Call(call) => collect_generic_symbols_call(call, output),
-    }
-}
-
-fn collect_generic_symbols_call(call: &hir::Call, output: &mut BTreeMap<String, Vec<Span>>) {
-    collect_generic_symbols_expr(&call.callee, output);
-    for argument in &call.arguments {
-        collect_generic_symbols_expr(argument, output);
-    }
-}
-
-fn collect_generic_symbols_expr(expr: &hir::Expr, output: &mut BTreeMap<String, Vec<Span>>) {
-    match &expr.kind {
-        hir::ExprKind::Function(symbol) => {
-            if symbol.contains(".\u{1f}generic.")
-                || symbol.contains(".\u{1f}generic_operator.")
-                || symbol.contains(".\u{1f}generic_method.")
-            {
-                let spans = output.entry(symbol.clone()).or_default();
-                if !spans.contains(&expr.span) {
-                    spans.push(expr.span);
-                }
-            }
-        }
-        hir::ExprKind::Dereference(value)
-        | hir::ExprKind::AddressOf(value)
-        | hir::ExprKind::EvaluatedLength { value, .. }
-        | hir::ExprKind::Unary { operand: value, .. }
-        | hir::ExprKind::Cast { value } => collect_generic_symbols_expr(value, output),
-        hir::ExprKind::Field { base, .. } => collect_generic_symbols_expr(base, output),
-        hir::ExprKind::Index { base, index }
-        | hir::ExprKind::Binary {
-            lhs: base,
-            rhs: index,
-            ..
-        } => {
-            collect_generic_symbols_expr(base, output);
-            collect_generic_symbols_expr(index, output);
-        }
-        hir::ExprKind::Composite(values) => {
-            for (_, value) in values {
-                collect_generic_symbols_expr(value, output);
-            }
-        }
-        hir::ExprKind::Call(call) => collect_generic_symbols_call(call, output),
-        hir::ExprKind::Zero
-        | hir::ExprKind::Integer(_)
-        | hir::ExprKind::Float32(_)
-        | hir::ExprKind::Bool(_)
-        | hir::ExprKind::Nil
-        | hir::ExprKind::Local(_)
-        | hir::ExprKind::Global(_)
-        | hir::ExprKind::Intrinsic(_) => {}
-    }
 }

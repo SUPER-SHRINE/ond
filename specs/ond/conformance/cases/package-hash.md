@@ -1,7 +1,7 @@
 # Package build_idの完全入力
 <!-- ond-spec-id: conformance/cases/package-hash -->
 
-要件は`HASH-01`、定義元は[公開識別子](../../build/cache.md#公開識別子)と[正規化集合](../../build/cache.md#意味型具体化定数の正規化)とする。適用Contractはrevision 6、target kagura-v1、abi ond-kagura-v1である。操作はsourceとmanifestからPackageBuildInputを構成してcanonical JSONとSHA-256を比較する。compiler_idはこのhash操作の論理入力として64個の`0`に固定し、mode=normal、package=main、dependencies={}とする。各caseは独立し、追加library、依存project、既存cacheは用いない。manifestの全UTF-8 bytesは`[project]`、`name = "main"`の2行、LF区切り・末尾LFありとする。source欄の`<br>`をLFへ復元し、末尾LFも含める。
+要件は`HASH-01`、定義元は[公開識別子](../../build/cache.md#公開識別子)と[正規化集合](../../build/cache.md#意味型具体化定数の正規化)とする。適用Contractはrevision 6、target kagura-v1、abi ond-kagura-v1である。操作はsourceとmanifestからPackageBuildInputを構成してcanonical JSONとSHA-256を比較する。compiler_idはこのhash操作の論理入力として64個の`0`に固定し、mode=normal、package=main、dependencies={}とする。各caseは独立し、依存project、既存cacheは用いない。manifestの全UTF-8 bytesは`[project]`、`name = "main"`の2行、LF区切り・末尾LFありとする。source欄の`<br>`をLFへ復元し、末尾LFも含める。
 
 ## HASH-01.package-empty
 <!-- ond-spec-id: conformance/package-hash/package-empty -->

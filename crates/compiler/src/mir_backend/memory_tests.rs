@@ -444,3 +444,13 @@ fn layout_and_abi_have_independent_fixed_expectations() {
         assert_eq!((d.size, d.alignment, d.fields), (size, align, fields));
     }
 }
+
+#[test]
+fn compound_index_reference_receiver_checks_bounds_before_rhs() {
+    let f = Fixture::new(
+        "package main\ntype N struct{Value:u32}\noperator(n:*N)+(v:u32)->N{return *n}\nfunc rhs()->u32{*(4294934608 as u32 as *u32)=123;return 1}\nfunc main(){var a:[1]N;var i:u32=1;a[i]+=rhs()}",
+    );
+    let image = crate::test_support::compile_image(&f.0).unwrap();
+    let (mut bus, _) = assignment_fault(&image);
+    assert_eq!(bus.read32(0xffff8050).unwrap(), 0);
+}

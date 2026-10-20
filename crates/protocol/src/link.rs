@@ -3,8 +3,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 /// RAM layout with an optional disjoint region for executable/read-only bytes.
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct LinkPlan {
     /// Optional separate read-only region for Text/Rodata. Data/Bss remain in RAM.
+    #[serde(deserialize_with = "crate::required_nullable")]
     pub read_only: Option<MemoryRegion>,
     pub memory_base: u32,
     pub memory_size: u32,
@@ -15,12 +17,14 @@ pub struct LinkPlan {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[serde(deny_unknown_fields)]
 pub struct MemoryRegion {
     pub base: u32,
     pub size: u32,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct LinkedSection {
     pub kind: SectionKind,
     pub alignment: u32,
@@ -32,6 +36,7 @@ pub struct LinkedSection {
 
 /// Runtime addresses and patched bytes only; no cartridge offsets or container headers.
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct LinkedImage {
     pub build_id: String,
     pub entry_point: u32,
@@ -41,5 +46,6 @@ pub struct LinkedImage {
     pub heap_base: u32,
     pub stack_bottom: u32,
     pub stack_top: u32,
+    #[serde(deserialize_with = "crate::unique_map")]
     pub symbols: BTreeMap<String, u32>,
 }

@@ -52,10 +52,8 @@ $tempRoot = Join-Path $tempBase ("ond-release-smoke-" + [Guid]::NewGuid().ToStri
 $project = Join-Path $tempRoot "hello"
 [System.IO.Directory]::CreateDirectory($project) | Out-Null
 
-$previousOndPath = [Environment]::GetEnvironmentVariable("OND_PATH", "Process")
 try {
     Get-ChildItem -LiteralPath (Join-Path $repoRoot "examples/hello") | Copy-Item -Destination $project -Recurse
-    [Environment]::SetEnvironmentVariable("OND_PATH", $null, "Process")
 
     Invoke-Checked -FileName $ond -Arguments @("compile", $project)
     $manifest = Join-Path $project "target/build.ondbuild"
@@ -124,7 +122,6 @@ try {
     Write-Host "Release smoke test passed ($Profile, LSP $version)."
 }
 finally {
-    [Environment]::SetEnvironmentVariable("OND_PATH", $previousOndPath, "Process")
     $resolvedTempRoot = [System.IO.Path]::GetFullPath($tempRoot)
     $safePrefix = $tempBase.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
     if ($resolvedTempRoot.StartsWith($safePrefix, [System.StringComparison]::OrdinalIgnoreCase) -and

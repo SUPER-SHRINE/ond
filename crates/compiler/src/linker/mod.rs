@@ -41,6 +41,32 @@ pub fn link_objects_with_debug(
     debug_objects: &[DebugObject],
     plan: &LinkPlan,
 ) -> Result<LinkedOutput, LinkError> {
+    link_with_ownership(objects, debug_objects, None, plan)
+}
+
+/// Link object/debug pairs with an explicit owning object for every record.
+pub fn link_object_pairs_with_debug(
+    pairs: &[(&Object, &DebugObject)],
+    plan: &LinkPlan,
+) -> Result<LinkedOutput, LinkError> {
+    let objects = pairs
+        .iter()
+        .map(|(object, _)| (*object).clone())
+        .collect::<Vec<_>>();
+    let debug = pairs
+        .iter()
+        .map(|(_, debug)| (*debug).clone())
+        .collect::<Vec<_>>();
+    let ownership = (0..pairs.len()).collect::<Vec<_>>();
+    link_with_ownership(&objects, &debug, Some(&ownership), plan)
+}
+
+fn link_with_ownership(
+    objects: &[Object],
+    debug_objects: &[DebugObject],
+    ownership: Option<&[usize]>,
+    plan: &LinkPlan,
+) -> Result<LinkedOutput, LinkError> {
     validate::validate(objects)?;
     let ram_size = plan.memory_size;
     let stack_size = plan.stack_size;
@@ -51,7 +77,7 @@ pub fn link_objects_with_debug(
     if ram_size == 0 || stack_size == 0 || stack_size >= ram_size {
         return Err(link_error("invalid RAM/stack configuration"));
     }
-    if plan.memory_base % 4 != 0 || memory_end % 4 != 0 || stack_size % 4 != 0 {
+    if plan.memory_base % 4 != 0 || memory_end % 8 != 0 || stack_size % 4 != 0 {
         return Err(link_error("memory/stack must be word-aligned"));
     }
     let readonly_end = if let Some(r) = plan.read_only {
@@ -236,6 +262,15 @@ pub fn link_objects_with_debug(
                     thunks::patch(object, relocation, linked_section, patch_offset, target)?;
                 }
                 RelocationKind::Call16 | RelocationKind::Jump16 => {
+                    let word = read_u32(linked_section, patch_offset)?;
+                    let valid = match relocation.kind {
+                        RelocationKind::Call16 => word & 0xffff_0000 == 0xcf00_0000,
+                        RelocationKind::Jump16 => word & 0xff0f_0000 == 0xc000_0000,
+                        _ => unreachable!(),
+                    };
+                    if !valid {
+                        return Err(link_error("invalid branch relocation instruction"));
+                    }
                     let target = resolved.resolve(object_index, &relocation.target)?;
                     patch_branch_imm(linked_section, patch_offset, target, relocation.addend)?;
                 }
@@ -266,19 +301,84 @@ pub fn link_objects_with_debug(
 
     let mut functions = Vec::new();
     let mut ranges = Vec::new();
-    let mut debug_packages = std::collections::BTreeSet::new();
-    for debug in debug_objects {
-        if !debug_packages.insert(&debug.package) {
-            return Err(link_error(format!(
-                "duplicate debug object: {}",
-                debug.package
-            )));
+    for (debug_index, debug) in debug_objects.iter().enumerate() {
+        if debug.functions.is_empty() && debug.ranges.is_empty() {
+            continue;
         }
-        let object_index = objects
-            .iter()
-            .position(|object| object.name == debug.package)
-            .ok_or_else(|| link_error(format!("debug data has no object: {}", debug.package)))?;
+        let object_index = if let Some(ownership) = ownership {
+            ownership[debug_index]
+        } else {
+            let candidates = objects
+                .iter()
+                .enumerate()
+                .filter(|(_, object)| {
+                    debug
+                        .functions
+                        .iter()
+                        .map(|function| &function.symbol)
+                        .chain(debug.ranges.iter().map(|range| &range.function))
+                        .all(|name| {
+                            object.symbols.iter().any(|symbol| {
+                                &symbol.name == name && symbol.section == Some(SectionKind::Text)
+                            })
+                        })
+                })
+                .map(|(index, _)| index)
+                .collect::<Vec<_>>();
+            match candidates.as_slice() {
+                [index] => *index,
+                _ => return Err(link_error("debug data has no unique owning object")),
+            }
+        };
         for function in &debug.functions {
+            validate_debug_source(function.source.as_ref())?;
+            let end = function
+                .offset
+                .checked_add(function.size)
+                .ok_or_else(|| link_error("debug function extent overflow"))?;
+            let object = &objects[object_index];
+            if function.section != SectionKind::Text
+                || function.size == 0
+                || function.offset % 4 != 0
+                || function.size % 4 != 0
+                || !object.symbols.iter().any(|symbol| {
+                    symbol.name == function.symbol
+                        && symbol.kind == crate::ir::object::SymbolKind::Function
+                        && symbol.section == Some(SectionKind::Text)
+                        && symbol.offset == function.offset
+                        && symbol.size == function.size
+                })
+                || function.frame_size % 8 != 0
+                || (function.return_address_offset != 0
+                    && (function.return_address_offset % 4 != 0
+                        || function
+                            .return_address_offset
+                            .checked_add(4)
+                            .is_none_or(|end| end > function.frame_size)))
+            {
+                return Err(link_error("invalid debug function"));
+            }
+            let mut positions = std::collections::BTreeSet::new();
+            for row in &function.unwind {
+                if row.offset < function.offset
+                    || row.offset > end
+                    || row.offset % 4 != 0
+                    || !positions.insert(row.offset)
+                    || row.cfa_sp_offset % 8 != 0
+                    || row.cfa_sp_offset > function.frame_size
+                    || matches!(row.return_address, ond_protocol::debug::ReturnAddressLocation::StackOffset(offset) if offset % 4 != 0 || offset.checked_add(4).is_none_or(|end| end > row.cfa_sp_offset))
+                {
+                    return Err(link_error("invalid debug unwind row"));
+                }
+            }
+            if let Some(row) = function.unwind.iter().min_by_key(|row| row.offset)
+                && (row.offset != function.offset
+                    || row.cfa_sp_offset != 0
+                    || row.return_address
+                        != ond_protocol::debug::ReturnAddressLocation::LinkRegister)
+            {
+                return Err(link_error("invalid initial debug unwind row"));
+            }
             validate_debug_extent(
                 &objects[object_index],
                 function.section,
@@ -297,6 +397,20 @@ pub fn link_objects_with_debug(
             let address = base
                 .checked_add(function.offset)
                 .ok_or_else(|| link_error("debug function address overflow"))?;
+            let mut unwind = function
+                .unwind
+                .iter()
+                .map(|row| {
+                    Ok(UnwindRow {
+                        address: base
+                            .checked_add(row.offset)
+                            .ok_or_else(|| link_error("debug unwind address overflow"))?,
+                        cfa_sp_offset: row.cfa_sp_offset,
+                        return_address: row.return_address,
+                    })
+                })
+                .collect::<Result<Vec<_>, LinkError>>()?;
+            unwind.sort_by_key(|row| row.address);
             functions.push(FunctionDebug {
                 symbol: function.symbol.clone(),
                 address,
@@ -304,28 +418,30 @@ pub fn link_objects_with_debug(
                 frame_size: function.frame_size,
                 return_address_offset: function.return_address_offset,
                 source: function.source.clone(),
-                unwind: function
-                    .unwind
-                    .iter()
-                    .map(|row| {
-                        validate_debug_extent(
-                            &objects[object_index],
-                            function.section,
-                            row.offset,
-                            row.offset,
-                        )?;
-                        Ok(UnwindRow {
-                            address: base
-                                .checked_add(row.offset)
-                                .ok_or_else(|| link_error("debug unwind address overflow"))?,
-                            cfa_sp_offset: row.cfa_sp_offset,
-                            return_address: row.return_address,
-                        })
-                    })
-                    .collect::<Result<Vec<_>, LinkError>>()?,
+                unwind,
             });
         }
         for range in &debug.ranges {
+            validate_debug_source(range.source.as_ref())?;
+            if range.section != SectionKind::Text
+                || range.start % 4 != 0
+                || range.end % 4 != 0
+                || range.start >= range.end
+                || (range.operation == ond_protocol::debug::DebugOperation::ExplicitTrap)
+                    != range.message.is_some()
+                || !objects[object_index].symbols.iter().any(|symbol| {
+                    symbol.name == range.function
+                        && symbol.kind == crate::ir::object::SymbolKind::Function
+                        && symbol.section == Some(SectionKind::Text)
+                        && range.start >= symbol.offset
+                        && symbol
+                            .offset
+                            .checked_add(symbol.size)
+                            .is_some_and(|end| range.end <= end)
+                })
+            {
+                return Err(link_error("invalid debug range"));
+            }
             validate_debug_extent(
                 &objects[object_index],
                 range.section,
@@ -353,6 +469,15 @@ pub fn link_objects_with_debug(
         }
     }
     functions.sort_by_key(|function| function.address);
+    for pair in functions.windows(2) {
+        if pair[0]
+            .address
+            .checked_add(pair[0].size)
+            .is_none_or(|end| end > pair[1].address)
+        {
+            return Err(link_error("overlapping debug functions"));
+        }
+    }
     ranges.sort_by_key(|range| (range.start, range.end));
 
     let image = LinkedImage {
@@ -374,6 +499,16 @@ pub fn link_objects_with_debug(
         ranges,
     };
     Ok(LinkedOutput { image, debug })
+}
+
+fn validate_debug_source(
+    source: Option<&ond_protocol::debug::SourceLocation>,
+) -> Result<(), LinkError> {
+    if source.is_some_and(|source| source.path.is_empty() || source.line == 0 || source.column == 0)
+    {
+        return Err(link_error("invalid debug source location"));
+    }
+    Ok(())
 }
 
 fn validate_debug_extent(
@@ -426,7 +561,10 @@ fn patch_branch_imm(
         .checked_add(patch_offset)
         .ok_or_else(|| link_error("branch patch address overflow"))?;
     let target_address = checked_address(target_address, addend)?;
-    let diff = i64::from(target_address) - i64::from(site_address.wrapping_add(4));
+    let next_address = site_address
+        .checked_add(4)
+        .ok_or_else(|| link_error("branch next address overflow"))?;
+    let diff = i64::from(target_address) - i64::from(next_address);
     if diff % 4 != 0 {
         return Err(link_error("branch relocation target is not word-aligned"));
     }

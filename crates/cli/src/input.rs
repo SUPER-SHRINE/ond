@@ -9,13 +9,15 @@ pub fn load(request: &CompileRequest) -> DriverResult<LoadedProject> {
     } else {
         ond_compiler_core::load_project_with_inputs
     };
+    let resolved = crate::resolve_dependencies(&request.project_root)?;
+    let mut excluded_dirs = request.excluded_dirs.clone();
+    excluded_dirs.extend(resolved.ignored_directories);
     let mut loaded = loader(
         &request.project_root,
         &BTreeMap::new(),
-        &request.excluded_dirs,
+        &excluded_dirs,
         &request.sources,
-        &request.libraries,
-        &BTreeMap::new(),
+        &resolved.sources,
     )
     .map_err(|error| {
         error
@@ -59,4 +61,30 @@ pub fn errors(error: ond_compiler_core::FrontendError, loaded: &LoadedProject) -
         .iter()
         .map(|diagnostic| diagnostic.render(&loaded.sources))
         .collect()
+}
+
+pub(super) fn logical_packages(loaded: &mut LoadedProject) -> DriverResult<Option<String>> {
+    let text =
+        std::fs::read_to_string(&loaded.manifest_path).map_err(|error| vec![error.to_string()])?;
+    let manifest: toml::Value = toml::from_str(&text).map_err(|error| vec![error.to_string()])?;
+    let name = manifest
+        .get("project")
+        .and_then(|project| project.get("name"))
+        .and_then(toml::Value::as_str)
+        .ok_or_else(|| vec!["project name is required".into()])?
+        .to_string();
+    let application = loaded
+        .packages
+        .iter()
+        .find(|package| package.logical_path == "." && package.directory == loaded.root)
+        .map(|_| name.clone());
+    loaded
+        .packages
+        .retain(|package| package.logical_path != "." || package.directory == loaded.root);
+    for package in &mut loaded.packages {
+        if package.logical_path == "." {
+            package.logical_path = name.clone();
+        }
+    }
+    Ok(application)
 }

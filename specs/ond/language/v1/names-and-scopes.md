@@ -28,7 +28,7 @@ project manifestとsource探索は[package build](../../build/packages.md)、通
 各 file は先頭に 1 個の package clause を持つ。
 
 - project root、manifestの名前、source探索は[Manifestとsource探索](../../build/packages.md#manifestとsource探索)に従う
-- 実行projectのrootは`main` packageであり、`main.ond`と`func main`を含む
+- rootで`package main`を宣言したprojectは実行projectとする。実行projectのrootは`main` packageであり、`main.ond`と`func main`を含む
 root直下の全`.ond` fileは`package main`を宣言する。\
 実行projectのroot packageの論理package pathは、そのprojectの`[project].name`を`p`とすると`p`である。\
 この`p`をrootのpackage成果物・公開interface・debug metadata・具体化identity・test metadataの所属に用いる。\
@@ -40,7 +40,6 @@ library rootにsourceがある場合、そのpackage名はproject名と一致す
 - project内のsubpackageのimport pathは`project名/相対directory`を`/`区切りで表す
 library root packageのimport pathはproject名そのものとする。\
 import pathの先頭にproject名がない入力はcompile errorとなる\
-実装が提供する追加library rootのpackageは、そのroot内の論理pathで参照する。\
 実行projectのroot packageをimport対象とする入力はcompile errorとなる
 - `import alias "path"`はidentifierのimport aliasを宣言する
   - 構文は本章のImportDeclに従う

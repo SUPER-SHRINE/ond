@@ -210,6 +210,46 @@ fn debug_fixture() -> (Object, DebugObject, LinkPlan) {
     };
     (object, debug, plan)
 }
+
+#[test]
+fn paired_debug_preserves_ambiguous_local_ownership() {
+    let (mut first, mut first_debug, mut plan) = debug_fixture();
+    first.name = "first diagnostic".into();
+    first.symbols[0].name = "First".into();
+    first_debug.package = "first logical".into();
+    first_debug.functions[0].symbol = "G".into();
+    for range in &mut first_debug.ranges {
+        range.function = "G".into();
+    }
+    let mut second = first.clone();
+    second.name = "second diagnostic".into();
+    second.symbols[0].name = "Second".into();
+    let mut second_debug = first_debug.clone();
+    second_debug.package = "first logical".into();
+    plan.entry_symbol = "First".into();
+    assert!(
+        super::super::link_objects_with_debug(
+            &[first.clone(), second.clone()],
+            &[first_debug.clone(), second_debug.clone()],
+            &plan
+        )
+        .is_err()
+    );
+    let output = super::super::link_object_pairs_with_debug(
+        &[(&first, &first_debug), (&second, &second_debug)],
+        &plan,
+    )
+    .unwrap();
+    assert_eq!(
+        output
+            .debug
+            .functions
+            .iter()
+            .map(|function| function.address)
+            .collect::<Vec<_>>(),
+        vec![4096, 4160]
+    );
+}
 #[test]
 fn dbg01_relative_link_object_name_independent() {
     let (o, d, p) = debug_fixture();

@@ -7,8 +7,16 @@ use ond_interface::{
     ConcreteMethod, Export, Field, Interface, Kind, Signature, Type, Value, ValueKind,
 };
 use std::collections::{BTreeMap, BTreeSet};
+pub(crate) mod identity;
 
 pub fn package(project: &hir::Project, path: &str) -> Result<Interface, String> {
+    package_and_type_ids(project, path).map(|(interface, _)| interface)
+}
+
+pub(crate) fn package_and_type_ids(
+    project: &hir::Project,
+    path: &str,
+) -> Result<(Interface, Vec<TypeId>), String> {
     let package = project
         .packages
         .iter()
@@ -42,7 +50,7 @@ pub fn package(project: &hir::Project, path: &str) -> Result<Interface, String> 
             hir::Item::Type(item) if public(&item.name) => {
                 exports.insert(item.name.clone(), Export::Type(writer.ty(item.ty)?));
             }
-            hir::Item::Func(item) if public(&item.name) => {
+            hir::Item::Func(item) if item.receiver.is_none() && public(&item.name) => {
                 let signature = writer.signature(
                     item.signature.parameters.iter().map(|p| p.ty),
                     item.signature.returns.iter().copied(),
@@ -113,13 +121,17 @@ pub fn package(project: &hir::Project, path: &str) -> Result<Interface, String> 
             break;
         }
     }
+    let mut type_ids = vec![TypeId::BOOL; writer.types.len()];
+    for (id, local) in &writer.ids {
+        type_ids[*local as usize] = *id;
+    }
     let interface = Interface {
         package: path.into(),
         types: writer.types,
         exports,
     };
     interface.validate()?;
-    Ok(interface)
+    Ok((interface, type_ids))
 }
 struct Writer<'a> {
     project: &'a hir::Project,
@@ -199,7 +211,7 @@ impl Writer<'_> {
         };
         self.types[local as usize] = Type {
             name: if matches!(kind, Kind::Defined(_)) {
-                definition.name
+                Some(identity::nominal_name(self.project, id)?)
             } else {
                 None
             },
@@ -222,6 +234,22 @@ impl Writer<'_> {
                     .collect::<Result<_, String>>()?,
             ),
             _ => return Err("export constant was not fully evaluated".into()),
+        };
+        let kind = match kind {
+            ValueKind::Integer(0)
+            | ValueKind::Float32(0)
+            | ValueKind::Bool(false)
+            | ValueKind::Nil => ValueKind::Zero,
+            ValueKind::Composite(mut items) => {
+                items.retain(|(_, value)| value.kind != ValueKind::Zero);
+                items.sort_by_key(|(index, _)| *index);
+                if items.is_empty() {
+                    ValueKind::Zero
+                } else {
+                    ValueKind::Composite(items)
+                }
+            }
+            kind => kind,
         };
         Ok(Value {
             ty: self.ty(expr.ty)?,

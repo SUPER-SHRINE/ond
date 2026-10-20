@@ -7,6 +7,68 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 struct Fixture(PathBuf);
+
+#[test]
+fn large_exact_literals_do_not_exhaust_the_compiler_stack() {
+    let f = Fixture::new();
+    for zeros in [256, 512, 1000] {
+        let number = format!("1{}", "0".repeat(zeros));
+        f.put(
+            "game/main.ond",
+            &format!("package main\nconst X:i32={number}-{number}\nfunc main(){{}}\n"),
+        );
+        let output = run(&f.0, &["compile", "game", "-o", "-"], None);
+        assert!(
+            output.status.success(),
+            "{zeros}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let manifest: CompilationManifest = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(manifest.packages.len(), 1);
+    }
+}
+
+#[test]
+fn public_json_outputs_use_canonical_bytes() {
+    let f = Fixture::new();
+    f.put("game/main.ond", "package main\nfunc main(){}\n");
+    f.put("game/main_test.ond", "package main\nfunc TestRoot(){}\n");
+    let compile = run(&f.0, &["compile", "game", "--test", "-o", "-"], None);
+    assert!(
+        compile.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    let canonical = |bytes: &[u8]| {
+        let value: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+        assert_eq!(bytes, serde_json::to_vec(&value).unwrap());
+    };
+    canonical(&compile.stdout);
+    let link = run(
+        &f.0,
+        &[
+            "link",
+            "-",
+            "--ram",
+            "4096:262144",
+            "--stack",
+            "65536",
+            "--return-to",
+            "0",
+            "-o",
+            "image.ondimage",
+        ],
+        Some(&compile.stdout),
+    );
+    assert!(
+        link.status.success(),
+        "{}",
+        String::from_utf8_lossy(&link.stderr)
+    );
+    for path in ["image.ondimage", "image.onddebug", "image.ondtest"] {
+        canonical(&fs::read(f.0.join(path)).unwrap());
+    }
+}
 #[test]
 fn no_arguments_prints_help_and_succeeds() {
     let output = Command::new(env!("CARGO_BIN_EXE_ond"))
@@ -34,7 +96,7 @@ impl Fixture {
         ));
         fs::create_dir(&p).unwrap();
         let f = Self(p);
-        f.put("game/ond.toml", "[project]\nname = \"game\"\n");
+
         f.put(
             "game/main.ond",
             "package main\nimport \"math\"\nfunc main(){var _=math.Value()}",
@@ -42,6 +104,11 @@ impl Fixture {
         f.put(
             "libraries/math/value.ond",
             "package math\nfunc Value()->i32{return 7}",
+        );
+        f.put("libraries/math/ond.toml", "[project]\nname = \"math\"\n");
+        f.put(
+            "game/ond.toml",
+            "[project]\nname = \"game\"\n[dependencies]\nmath={path=\"../libraries/math\"}\n",
         );
         f
     }
@@ -60,7 +127,6 @@ fn run(root: &Path, args: &[&str], input: Option<&[u8]>) -> std::process::Output
     let mut child = Command::new(env!("CARGO_BIN_EXE_ond"))
         .current_dir(root)
         .args(args)
-        .env_remove("OND_PATH")
         .stdin(if input.is_some() {
             Stdio::piped()
         } else {
@@ -77,7 +143,7 @@ fn run(root: &Path, args: &[&str], input: Option<&[u8]>) -> std::process::Output
 }
 
 #[test]
-fn ond_path_supplies_library_roots() {
+fn ond_path_does_not_supply_dependencies() {
     let f = Fixture::new();
     f.put(
         "game/main.ond",
@@ -93,12 +159,11 @@ fn ond_path_supplies_library_roots() {
         .output()
         .unwrap();
     assert!(
-        output.status.success(),
+        !output.status.success(),
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let manifest: CompilationManifest = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(manifest.packages.len(), 3);
+    assert!(String::from_utf8_lossy(&output.stderr).contains("unknown imported package"));
 }
 
 #[test]
@@ -259,11 +324,7 @@ const LINK: &[&str] = &[
 #[test]
 fn files_default_output_cache_stdout_and_stdin_link() {
     let f = Fixture::new();
-    let cold = run(
-        &f.0,
-        &["compile", "game", "--library-dir", "libraries", "-v"],
-        None,
-    );
+    let cold = run(&f.0, &["compile", "game", "-v"], None);
     assert!(
         cold.status.success(),
         "{}",
@@ -272,19 +333,7 @@ fn files_default_output_cache_stdout_and_stdin_link() {
     assert!(cold.stdout.is_empty());
     assert!(String::from_utf8_lossy(&cold.stderr).contains("rebuilt: ., math"));
     let manifest = fs::read(f.0.join("game/target/build.ondbuild")).unwrap();
-    let warm = run(
-        &f.0,
-        &[
-            "compile",
-            "game",
-            "--library-dir",
-            "libraries",
-            "-o",
-            "-",
-            "-v",
-        ],
-        None,
-    );
+    let warm = run(&f.0, &["compile", "game", "-o", "-", "-v"], None);
     assert!(warm.status.success());
     assert!(String::from_utf8_lossy(&warm.stderr).contains("reused: ., math"));
     assert_eq!(warm.stdout, manifest);
@@ -320,11 +369,7 @@ fn files_default_output_cache_stdout_and_stdin_link() {
         serde_json::from_slice(&fs::read(f.0.join("image.onddebug")).unwrap()).unwrap();
     assert_eq!(image.build_id, debug.build_id);
     assert!(!debug.functions.is_empty());
-    let cwd = run(
-        &f.0.join("game"),
-        &["compile", "--library-dir", "../libraries", "-o", "-"],
-        None,
-    );
+    let cwd = run(&f.0.join("game"), &["compile", "-o", "-"], None);
     assert!(cwd.status.success());
     assert_eq!(cwd.stdout, manifest);
 }
@@ -333,8 +378,7 @@ fn pipe_connects_real_processes_without_wrapping_requests() {
     let f = Fixture::new();
     let mut compile = Command::new(env!("CARGO_BIN_EXE_ond"))
         .current_dir(&f.0)
-        .args(["compile", "game", "--library-dir", "libraries", "-o", "-"])
-        .env_remove("OND_PATH")
+        .args(["compile", "game", "-o", "-"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -433,102 +477,41 @@ fn errors_are_stderr_only_and_preserve_previous_outputs() {
     );
 }
 #[test]
-fn library_package_collisions_and_unused_packages() {
+fn dependency_names_and_unused_packages() {
     let f = Fixture::new();
-    f.put("game/math/other.ond", "package math\nfunc Other(){}");
-    let distinct = run(
-        &f.0,
-        &["compile", "game", "--library-dir", "libraries", "-o", "-"],
-        None,
-    );
+    f.put("game/math/other.ond", "package math\nfunc Other(){}\n");
+    let output = run(&f.0, &["compile", "game", "-o", "-"], None);
     assert!(
-        distinct.status.success(),
+        output.status.success(),
         "{}",
-        String::from_utf8_lossy(&distinct.stderr)
+        String::from_utf8_lossy(&output.stderr)
     );
-    let distinct: CompilationManifest = serde_json::from_slice(&distinct.stdout).unwrap();
-    assert!(
-        distinct
-            .packages
-            .iter()
-            .any(|package| package.package == "game/math")
-    );
-    assert!(
-        distinct
-            .packages
-            .iter()
-            .any(|package| package.package == "math")
-    );
+    let manifest: CompilationManifest = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(manifest.packages.iter().any(|p| p.package == "game/math"));
+    assert!(manifest.packages.iter().any(|p| p.package == "math"));
+    f.put("libraries/unused/ond.toml", "[project]\nname=\"unused\"\n");
     f.put(
-        "libraries/game/math/conflict.ond",
-        "package math\nfunc Other(){}",
+        "libraries/unused/api.ond",
+        "package unused\nfunc Unused(){}\n",
     );
-    let bad = run(
-        &f.0,
-        &["compile", "game", "--library-dir", "libraries", "-o", "-"],
-        None,
-    );
-    assert!(!bad.status.success());
-    assert!(String::from_utf8_lossy(&bad.stderr).contains("conflicts"));
-    fs::remove_file(f.0.join("libraries/game/math/conflict.ond")).unwrap();
-    fs::remove_file(f.0.join("game/math/other.ond")).unwrap();
-    f.put(
-        "libraries/unused/unused.ond",
-        "package unused\nfunc Unused(){}",
-    );
-    let out = run(
-        &f.0,
-        &["compile", "game", "--library-dir", "libraries", "-o", "-"],
-        None,
-    );
-    assert!(out.status.success());
-    let m: CompilationManifest = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(m.packages.len(), 2);
-    f.put(
-        "game/generated/unused/unused.ond",
-        "package unused\nfunc Unused(){}",
-    );
-    let nested = run(
-        &f.0,
-        &[
-            "compile",
-            "game",
-            "--library-dir",
-            "libraries",
-            "--library-dir",
-            "game/generated",
-            "-o",
-            "-",
-        ],
-        None,
-    );
+    f.put("game/ond.toml","[project]\nname=\"game\"\n[dependencies]\na={path=\"../libraries/math\"}\nb={path=\"../libraries/math\"}\nunused={path=\"../libraries/unused\"}\n");
+    let output = run(&f.0, &["compile", "game", "-o", "-"], None);
     assert!(
-        nested.status.success(),
+        output.status.success(),
         "{}",
-        String::from_utf8_lossy(&nested.stderr)
+        String::from_utf8_lossy(&output.stderr)
     );
-    let nested: CompilationManifest = serde_json::from_slice(&nested.stdout).unwrap();
-    assert_eq!(nested.packages.len(), 2);
+    let manifest: CompilationManifest = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(manifest.packages.len(), 3);
+    f.put("libraries2/math/ond.toml", "[project]\nname=\"math\"\n");
     f.put(
-        "libraries2/math/another.ond",
-        "package math\nfunc Another(){}",
+        "libraries2/math/api.ond",
+        "package math\nfunc Value()->i32{return 7}\n",
     );
-    let bad = run(
-        &f.0,
-        &[
-            "compile",
-            "game",
-            "--library-dir",
-            "libraries",
-            "--library-dir",
-            "libraries2",
-            "-o",
-            "-",
-        ],
-        None,
-    );
-    assert!(!bad.status.success());
-    assert!(String::from_utf8_lossy(&bad.stderr).contains("conflicting library"));
+    f.put("game/ond.toml","[project]\nname=\"game\"\n[dependencies]\na={path=\"../libraries/math\"}\nb={path=\"../libraries2/math\"}\n");
+    let output = run(&f.0, &["compile", "game", "-o", "-"], None);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("dependency namespace"));
 }
 
 #[test]
@@ -540,11 +523,7 @@ fn libraries_with_matching_physical_names_keep_qualified_package_identity() {
         "package math\nfunc Value()->i32{return 9}",
     ] {
         f.put("game/math/value.ond", own);
-        let output = run(
-            &f.0,
-            &["compile", "game", "--library-dir", "libraries", "-o", "-"],
-            None,
-        );
+        let output = run(&f.0, &["compile", "game", "-o", "-"], None);
         assert!(
             output.status.success(),
             "{}",
@@ -557,52 +536,48 @@ fn libraries_with_matching_physical_names_keep_qualified_package_identity() {
                 .iter()
                 .map(|p| p.package.as_str())
                 .collect::<Vec<_>>(),
-            [".", "game/math", "math"]
+            ["game", "game/math", "math"]
         );
     }
 }
 
 #[test]
-fn ignored_or_nested_project_files_do_not_shadow_library_packages() {
+fn ignored_or_nested_project_files_do_not_shadow_dependencies() {
     for directory in ["generated", ".ond", "nested"] {
-        for own_value in [7, 9] {
-            let f = Fixture::new();
-            let package = format!("game/{directory}/math");
-            f.put(
-                "game/main.ond",
-                &format!(
-                    "package main\nimport \"{package}\"\nfunc main() {{ _ = math.Value() }}\n"
-                ),
-            );
-            f.put(
-                &format!("game/{directory}/math/value.ond"),
-                &format!("package math\nfunc Value()->i32{{return {own_value}}}"),
-            );
-            f.put(
-                &format!("libraries/{package}/value.ond"),
-                "package math\nfunc Value()->i32{return 7}",
-            );
-            if directory == "generated" {
-                f.put(
-                    "game/ond.toml",
-                    "[project]\nname = \"game\"\n[resolve]\nignore = [\"generated\"]\n",
-                );
-            } else if directory == "nested" {
-                f.put("game/nested/ond.toml", "[project]\nname = \"nested\"\n");
-            }
-            let output = run(
-                &f.0,
-                &["compile", "game", "--library-dir", "libraries", "-o", "-"],
-                None,
-            );
-            assert!(
-                output.status.success(),
-                "{directory}/{own_value}: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            let manifest: CompilationManifest = serde_json::from_slice(&output.stdout).unwrap();
-            assert!(manifest.packages.iter().any(|item| item.package == package));
+        let f = Fixture::new();
+        f.put(
+            "libraries/generated/ond.toml",
+            "[project]\nname=\"generated\"\n",
+        );
+        f.put(
+            "libraries/generated/math/value.ond",
+            "package math\nfunc Value()->i32{return 7}\n",
+        );
+        f.put("game/ond.toml",&format!("[project]\nname=\"game\"\n[dependencies]\ngenerated={{path=\"../libraries/generated\"}}\n[resolve]\nignore=[{directory:?}]\n"));
+        f.put(
+            "game/main.ond",
+            "package main\nimport \"generated/math\"\nfunc main(){_=math.Value()}\n",
+        );
+        f.put(
+            &format!("game/{directory}/math/value.ond"),
+            "invalid duplicate source",
+        );
+        if directory == "nested" {
+            f.put("game/nested/ond.toml", "[project]\nname=\"nested\"\n");
         }
+        let output = run(&f.0, &["compile", "game", "-o", "-"], None);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let manifest: CompilationManifest = serde_json::from_slice(&output.stdout).unwrap();
+        assert!(
+            manifest
+                .packages
+                .iter()
+                .any(|p| p.package == "generated/math")
+        );
     }
 }
 
@@ -622,7 +597,7 @@ fn test_build_defaults_sidecars_and_stdout_contract() {
         "invalid source must be ignored",
     );
     for test in [false, true] {
-        let mut args = vec!["compile", "game", "--library-dir", "libraries"];
+        let mut args = vec!["compile", "game"];
         if test {
             args.push("--test");
         }
@@ -724,14 +699,7 @@ fn test_build_defaults_sidecars_and_stdout_contract() {
                 assert!(!f.0.join(collision).exists());
             }
         }
-        let mut args = vec![
-            "compile",
-            "game",
-            "--library-dir",
-            "libraries",
-            "-o",
-            "explicit.ondbuild",
-        ];
+        let mut args = vec!["compile", "game", "-o", "explicit.ondbuild"];
         if test {
             args.push("--test");
         }
@@ -743,13 +711,9 @@ fn test_build_defaults_sidecars_and_stdout_contract() {
     fs::remove_file(f.0.join("game/main_test.ond")).unwrap();
     fs::remove_file(f.0.join("game/unused/only_test.ond")).unwrap();
     assert!(
-        run(
-            &f.0,
-            &["compile", "game", "--library-dir", "libraries", "--test"],
-            None
-        )
-        .status
-        .success()
+        run(&f.0, &["compile", "game", "--test"], None)
+            .status
+            .success()
     );
     assert!(
         run(
@@ -778,11 +742,7 @@ fn test_build_defaults_sidecars_and_stdout_contract() {
 
 fn artifact_path_case(mode: &str) {
     let f = Fixture::new();
-    let compiled = run(
-        &f.0,
-        &["compile", "game", "--library-dir", "libraries", "-o", "-"],
-        None,
-    );
+    let compiled = run(&f.0, &["compile", "game", "-o", "-"], None);
     assert!(compiled.status.success(), "{:?}", compiled);
     let mut manifest: CompilationManifest = serde_json::from_slice(&compiled.stdout).unwrap();
     let build = f.0.join("build");
@@ -843,4 +803,179 @@ fn art01_path_stdin() {
 #[test]
 fn art01_path_absolute() {
     artifact_path_case("absolute");
+}
+
+#[test]
+fn dependency_root_roles_and_subpackages_are_preserved_in_test_links() {
+    let f = Fixture::new();
+    f.put(
+        "libraries/hogeLib/ond.toml",
+        "[project]\nname=\"hogeLib\"\n",
+    );
+    f.put(
+        "libraries/hogeLib/main.ond",
+        "package hogeLib\nfunc main(){}\nfunc Value()->u32{return 1}\n",
+    );
+    f.put(
+        "game/ond.toml",
+        "[project]\nname=\"game\"\n[dependencies]\nhogeLib={path=\"../libraries/hogeLib\"}\n",
+    );
+    f.put(
+        "game/main.ond",
+        "package main\nimport \"hogeLib\"\nfunc main(){_=hogeLib.Value()}\n",
+    );
+    f.put("game/main_test.ond", "package main\nfunc TestRoot(){}\n");
+    for mode in [false, true] {
+        let mut args = vec!["compile", "game", "-o", "-"];
+        if mode {
+            args.push("--test");
+        }
+        let output = run(&f.0, &args, None);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let linked = run(
+            &f.0,
+            &[
+                "link",
+                "-",
+                "--ram",
+                "4096:65536",
+                "--stack",
+                "8192",
+                "--return-to",
+                "0",
+                "-o",
+                "-",
+            ],
+            Some(&output.stdout),
+        );
+        assert!(
+            linked.status.success(),
+            "{}",
+            String::from_utf8_lossy(&linked.stderr)
+        );
+    }
+    f.put(
+        "libraries/executable/ond.toml",
+        "[project]\nname=\"main\"\n",
+    );
+    f.put(
+        "libraries/executable/main.ond",
+        "package main\nfunc main(){}\nfunc Value()->u32{return 1}\n",
+    );
+    f.put(
+        "libraries/executable/api/api.ond",
+        "package api\nfunc Value()->u32{return 2}\n",
+    );
+    f.put(
+        "game/ond.toml",
+        "[project]\nname=\"game\"\n[dependencies]\nother={path=\"../libraries/executable\"}\n",
+    );
+    f.put(
+        "game/main.ond",
+        "package main\nimport other \"main\"\nfunc main(){_=other.Value()}\n",
+    );
+    let output = run(&f.0, &["compile", "game", "-o", "-"], None);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("cannot import application root"));
+    f.put(
+        "game/main.ond",
+        "package main\nimport \"main/api\"\nfunc main(){_=api.Value()}\n",
+    );
+    let output = run(&f.0, &["compile", "game", "--test", "-o", "-"], None);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let linked = run(
+        &f.0,
+        &[
+            "link",
+            "-",
+            "--ram",
+            "4096:65536",
+            "--stack",
+            "8192",
+            "--return-to",
+            "0",
+            "-o",
+            "-",
+        ],
+        Some(&output.stdout),
+    );
+    assert!(
+        linked.status.success(),
+        "{}",
+        String::from_utf8_lossy(&linked.stderr)
+    );
+}
+
+#[test]
+fn removed_library_option_is_an_argument_error() {
+    let f = Fixture::new();
+    let output = run(
+        &f.0,
+        &["compile", "game", "--library-dir", "libraries"],
+        None,
+    );
+    assert_eq!(output.status.code(), Some(2));
+}
+
+#[test]
+fn dependency_main_subpackage_keeps_its_qualified_function_namespace() {
+    let f = Fixture::new();
+    f.put(
+        "libraries/hogeLib/ond.toml",
+        "[project]\nname=\"hogeLib\"\n",
+    );
+    f.put(
+        "libraries/hogeLib/main/api.ond",
+        "package main\nfunc main(){}\nfunc Value()->u32{return 1}\n",
+    );
+    f.put(
+        "game/ond.toml",
+        "[project]\nname=\"game\"\n[dependencies]\nlib={path=\"../libraries/hogeLib\"}\n",
+    );
+    f.put(
+        "game/main.ond",
+        "package main\nimport lib \"hogeLib/main\"\nfunc main(){_=lib.Value()}\n",
+    );
+    f.put("game/main_test.ond", "package main\nfunc TestRoot(){}\n");
+    for mode in [false, true] {
+        let mut args = vec!["compile", "game", "-o", "-"];
+        if mode {
+            args.push("--test");
+        }
+        let output = run(&f.0, &args, None);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let linked = run(
+            &f.0,
+            &[
+                "link",
+                "-",
+                "--ram",
+                "4096:65536",
+                "--stack",
+                "8192",
+                "--return-to",
+                "0",
+                "-o",
+                "-",
+            ],
+            Some(&output.stdout),
+        );
+        assert!(
+            linked.status.success(),
+            "{}",
+            String::from_utf8_lossy(&linked.stderr)
+        );
+    }
 }

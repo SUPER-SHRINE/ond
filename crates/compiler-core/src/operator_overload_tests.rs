@@ -1,6 +1,24 @@
 use crate::{memory_test_vm, test_support};
 
 #[test]
+fn builtin_compound_index_captures_a_pointer_call_once() {
+    let compilation = test_support::compile("package main\nvar A:u32\nvar Trace:u32\nfunc base()->*u32{Trace=Trace*10+1;return &A}\nfunc index()->u32{Trace=Trace*10+2;return 0}\nfunc rhs()->u32{Trace=Trace*10+3;return 3}\nfunc observe()->(u32,u32){A=7;Trace=0;base()[index()]+=rhs();return A,Trace}\nfunc main(){}\n", None).unwrap();
+    assert_eq!(
+        memory_test_vm::execute(&compilation.mir, "main.observe", &[]).unwrap(),
+        [10, 123]
+    );
+}
+
+#[test]
+fn builtin_compound_index_freezes_the_pointer_before_index_effects() {
+    let compilation = test_support::compile("package main\nvar A:u32\nvar B:u32\nvar P:*u32\nfunc index()->u32{P=&B;return 0}\nfunc observe()->(u32,u32){A=7;B=20;P=&A;P[index()]+=3;return A,B}\nfunc main(){}\n", None).unwrap();
+    assert_eq!(
+        memory_test_vm::execute(&compilation.mir, "main.observe", &[]).unwrap(),
+        [10, 20]
+    );
+}
+
+#[test]
 fn compound_assignment_dereferences_receiver_before_rhs() {
     let compilation = test_support::compile(
         r#"package main

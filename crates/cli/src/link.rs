@@ -40,6 +40,19 @@ pub fn link_with_debug(request: LinkRequest) -> DriverResult<LinkResult> {
         }
     }
     for artifact in artifacts.values() {
+        if let Some(initializer) = &artifact.initializer
+            && !artifact.object.symbols.iter().any(|symbol| {
+                symbol.name == *initializer
+                    && symbol.binding == ond_protocol::object::SymbolBinding::Exported
+                    && symbol.kind == ond_protocol::object::SymbolKind::Function
+                    && symbol.section == Some(ond_protocol::object::SectionKind::Text)
+            })
+        {
+            return Err(vec![format!(
+                "initializer is not owned by package {}",
+                artifact.package
+            )]);
+        }
         if artifact
             .imports
             .iter()
@@ -57,11 +70,30 @@ pub fn link_with_debug(request: LinkRequest) -> DriverResult<LinkResult> {
             }
         }
     }
-    let graph = Graph::from_imports(
+    let application_roots = artifacts
+        .iter()
+        .filter(|(_, artifact)| {
+            artifact.object.symbols.iter().any(|symbol| {
+                symbol.name == "main.main"
+                    && symbol.binding == ond_protocol::object::SymbolBinding::Exported
+                    && symbol.kind == ond_protocol::object::SymbolKind::Function
+                    && symbol.section == Some(ond_protocol::object::SectionKind::Text)
+            })
+        })
+        .map(|(path, _)| path.as_str())
+        .collect::<Vec<_>>();
+    if application_roots.len() > 1
+        || request.manifest.tests.is_none() && application_roots.len() != 1
+    {
+        return Err(vec!["normal build requires one application root".into()]);
+    }
+    let application_root = application_roots.first().copied();
+    let graph = Graph::from_imports_with_root(
         artifacts
             .iter()
             .map(|(p, a)| (p.clone(), a.imports.clone()))
             .collect(),
+        application_root,
     )?;
     let expected: Vec<_> = graph
         .initialization_order
@@ -83,6 +115,17 @@ pub fn link_with_debug(request: LinkRequest) -> DriverResult<LinkResult> {
             ]);
         }
         if let Some(tests) = &artifact.tests {
+            let mut seen = std::collections::BTreeSet::new();
+            for case in &tests.cases {
+                if case.package != artifact.package
+                    || !seen.insert((&case.package, &case.name, &case.symbol))
+                {
+                    return Err(vec![format!(
+                        "invalid test case ownership or duplicate in package {}",
+                        artifact.package
+                    )]);
+                }
+            }
             expected_tests.extend(tests.cases.clone());
         }
     }
@@ -105,9 +148,11 @@ pub fn link_with_debug(request: LinkRequest) -> DriverResult<LinkResult> {
             ]);
         }
     }
-    let mut debug_objects = artifacts
-        .values()
-        .map(|artifact| artifact.debug.clone())
+    let mut debug_objects = request
+        .manifest
+        .packages
+        .iter()
+        .map(|reference| artifacts[&reference.package].debug.clone())
         .collect::<Vec<_>>();
     let termination = ond_compiler::kagura_encoding::absolute_thunk(request.main_return_address);
     let mut wrappers = Vec::new();
@@ -116,7 +161,7 @@ pub fn link_with_debug(request: LinkRequest) -> DriverResult<LinkResult> {
         for (index, case) in tests.cases.iter().enumerate() {
             let expected_symbol = format!(
                 "{}.{}",
-                if case.package == "." {
+                if application_root == Some(case.package.as_str()) {
                     "main"
                 } else {
                     &case.package
@@ -137,6 +182,7 @@ pub fn link_with_debug(request: LinkRequest) -> DriverResult<LinkResult> {
             }
             if !artifact.object.symbols.iter().any(|symbol| {
                 symbol.name == case.symbol
+                    && symbol.binding == ond_protocol::object::SymbolBinding::Exported
                     && symbol.kind == ond_protocol::object::SymbolKind::Function
                     && symbol.section == Some(ond_protocol::object::SectionKind::Text)
             }) {
@@ -159,33 +205,55 @@ pub fn link_with_debug(request: LinkRequest) -> DriverResult<LinkResult> {
     }
     let startup = if request.manifest.tests.is_some() {
         let object = ond_compiler::program::test_startup(&wrappers, &termination);
-        debug_objects.push(ond_protocol::debug::DebugObject {
-            package: object.name.clone(),
-            functions: Vec::new(),
-            ranges: vec![ond_protocol::debug::ObjectDebugRange {
-                section: ond_protocol::object::SectionKind::Text,
-                start: 0,
-                end: 4,
-                operation: ond_protocol::debug::DebugOperation::ExplicitTrap,
-                message: Some("select a test case entry point from the .ondtest sidecar".into()),
-                source: None,
-                function: "__ond.entry".into(),
-            }],
-        });
+        debug_objects.insert(
+            0,
+            ond_protocol::debug::DebugObject {
+                package: object.name.clone(),
+                functions: Vec::new(),
+                ranges: vec![ond_protocol::debug::ObjectDebugRange {
+                    section: ond_protocol::object::SectionKind::Text,
+                    start: 0,
+                    end: 4,
+                    operation: ond_protocol::debug::DebugOperation::ExplicitTrap,
+                    message: Some(
+                        "select a test case entry point from the .ondtest sidecar".into(),
+                    ),
+                    source: None,
+                    function: "__ond.entry".into(),
+                }],
+            },
+        );
         object
     } else {
-        ond_compiler::program::program_startup(&expected, "main.main", &termination)
+        let object = ond_compiler::program::program_startup(&expected, "main.main", &termination);
+        debug_objects.insert(
+            0,
+            ond_protocol::debug::DebugObject {
+                package: object.name.clone(),
+                ..Default::default()
+            },
+        );
+        object
     };
     let mut objects = vec![startup];
-    objects.extend(artifacts.into_values().map(|a| a.object));
+    objects.extend(request.manifest.packages.iter().map(|reference| {
+        artifacts
+            .remove(&reference.package)
+            .expect("validated artifact")
+            .object
+    }));
     let generated = ond_compiler::mir_backend::runtime::supply_with_debug(objects, debug_objects)
         .map_err(|e| vec![e.to_string()])?;
-    let mut linked = ond_compiler::linker::link_objects_with_debug(
-        &generated.objects,
-        &generated.debug,
-        &request.layout,
-    )
-    .map_err(|e| vec![e.to_string()])?;
+    if generated.objects.len() != generated.debug.len() {
+        return Err(vec!["generated object/debug ownership mismatch".into()]);
+    }
+    let pairs = generated
+        .objects
+        .iter()
+        .zip(&generated.debug)
+        .collect::<Vec<_>>();
+    let mut linked = ond_compiler::linker::link_object_pairs_with_debug(&pairs, &request.layout)
+        .map_err(|e| vec![e.to_string()])?;
     let build_id = cache::hash(&cache::encode(&linked.image)?);
     linked.image.build_id = build_id.clone();
     linked.debug.build_id = build_id.clone();

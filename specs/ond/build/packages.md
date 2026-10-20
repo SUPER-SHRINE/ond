@@ -78,12 +78,7 @@ absolute path、`..`、globを含むignore入力はerrorとなる。\
 `.ond/`は常にsource探索から除き、子directoryの別のond.tomlで探索を区切る。\
 依存先は自身のignore設定に従う。
 
-追加library rootは[compile option](./commands.md#ond-compile)で指定する。\
-root配下の`DIR/platform/assets/ids.ond`は`platform/assets` packageとなる。\
-追加libraryはimport到達packageを採用し、import文字列をdecodeして依存を解決する。\
-library root直下の`.ond`、symlink、project root自身をlibrary rootとする入力はerrorとなる。\
-project内の追加library directoryは独立したlibrary探索範囲として収集する。\
-同名packageが複数の探索元に存在する場合、source相対名の集合と内容がすべて一致すれば受理し、不一致ならerrorとなる。
+依存sourceは各依存projectのnamespaceで収集し、import文字列をdecodeして到達するpackageを採用する。
 
 ## コンパイル単位と成果物
 <!-- ond-spec-id: build/implemented-units-and-constraints -->

@@ -5,22 +5,21 @@ use ond_protocol::{
     interface::{Export, Kind, ValueKind},
 };
 use std::{collections::BTreeMap, fs, path::PathBuf};
-struct Fixture(PathBuf);
+pub(crate) struct Fixture(pub(crate) PathBuf);
 impl Fixture {
-    fn new(label: &str) -> Self {
+    pub(crate) fn new(label: &str) -> Self {
         let root = std::env::temp_dir().join(format!("ond-exports-{label}-{}", std::process::id()));
         fs::create_dir(&root).unwrap();
         fs::write(root.join("ond.toml"), "[project]\nname = \"test\"\n").unwrap();
         Self(root)
     }
-    fn request(&self) -> CompileRequest {
+    pub(crate) fn request(&self) -> CompileRequest {
         CompileRequest {
             test: false,
             excluded_dirs: Vec::new(),
             contract: Contract::default(),
             project_root: self.0.clone(),
             sources: BTreeMap::new(),
-            libraries: BTreeMap::new(),
             cache_dir: None,
         }
     }
@@ -132,13 +131,12 @@ fn optional_library_reachability_and_required_package_membership() {
     request
         .sources
         .insert("main.ond".into(), "package main\nfunc main(){}".into());
-    request.libraries.insert(
-        "lib/lib.ond".into(),
-        "package lib\nimport \"dep\"\nconst Value=dep.Value".into(),
+    crate::dependency_test_support::source(
+        &f.0,
+        "lib/lib.ond",
+        "package lib\nimport \"dep\"\nconst Value=dep.Value",
     );
-    request
-        .libraries
-        .insert("dep/dep.ond".into(), "package dep\nconst Value=5".into());
+    crate::dependency_test_support::source(&f.0, "dep/dep.ond", "package dep\nconst Value=5");
     let result = compile(request.clone(), "test").unwrap();
     assert_eq!(result.rebuilt, ["."]);
     request.sources.insert(

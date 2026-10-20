@@ -35,7 +35,7 @@
 各caseは他caseから独立したprojectとして扱い、sourceとmanifestは入力欄をそのままUTF-8で作成する。\
 既定manifestは`ond.toml`に`[project]`と`name = "test"`をLFで記す。\
 `PKG-01.missing_manifest`だけはmanifestを置かず、それ以外の例外は各familyに記す。\
-追加library、依存project、cacheは入力欄に明示された場合だけ用いる。\
+依存project、cacheは入力欄に明示された場合だけ用いる。\
 file見出しのない単一file入力は`main.ond`として扱う。\
 file見出しがある場合は、見出しに続くsourceを各fileの内容として復元する。\
 表の入力欄はHTML entityを元の文字へ復号し、`<br>`をLF、`&#13;`をCRとしてsource byte列を復元する。\

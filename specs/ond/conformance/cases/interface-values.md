@@ -43,7 +43,7 @@
 ## Generic sourceと宣言owner
 <!-- ond-spec-id: conformance/interface-values/generic-owner -->
 
-Ond v1とKagura v1を適用し、manifestの全bytesは`[project]`と`name = "p"`の2行（LF区切り・末尾LFあり）とする。通常compileを新しいproject状態で行い、追加library/依存projectは持たない。入力は次の2file全文とし、UTF-8、LF、各末尾LFを保持する。
+Ond v1とKagura v1を適用し、manifestの全bytesは`[project]`と`name = "p"`の2行（LF区切り・末尾LFあり）とする。通常compileを新しいproject状態で行い、依存projectは持たない。入力は次の2file全文とし、UTF-8、LF、各末尾LFを保持する。
 
 `main.ond`:
 ```ond
@@ -111,7 +111,7 @@ p/lib.Box[{"Defined":{"arguments":["U8"],"name":"Box","package":"p/lib"}}]
 
 要件は`PKG-01`、`ART-01`、`HASH-01`とし、[実行rootの論理path](../../language/v1/names-and-scopes.md#packageとimport)、[成果物schema](../../artifacts.md#packageartifactとcompilationmanifest)、[具体化identity](../../build/cache.md#意味型具体化定数の正規化)、[test metadata](../../build/test-build.md#buildと起動入口)を適用する。\
 独立projectのmanifest全文は`[project]`、`name = "p"`の2行をLFで連結し、末尾LFを付ける。\
-追加library、依存project、既存cacheは持たず、次の2fileをUTF-8、LF、各末尾LFありで置く。\
+依存project、既存cacheは持たず、次の2fileをUTF-8、LF、各末尾LFありで置く。\
 test側は`ond compile --test . -o target/test.ondbuild`に続けて`ond link target/test.ondbuild --ram 0x10002000:0x03ffe000 --stack 1MiB --return-to 0x10000000 -o target/test.ondimage`を実行してsidecarを読む。
 
 `main.ond`:

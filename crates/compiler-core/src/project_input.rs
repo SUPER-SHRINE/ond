@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+#[cfg(test)]
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -14,61 +15,12 @@ pub struct ExternalSource {
 
 pub type ExternalSources = BTreeMap<String, ExternalSource>;
 
-/// Read optional packages from file-backed library roots.
-///
-/// Logical source names are relative to each library root. Packages supplied by
-/// multiple roots must be byte-for-byte identical, and a root may not contain
-/// `.ond` files directly.
-pub fn load_library_sources(
-    _project: &Path,
-    roots: &[PathBuf],
-    overrides: &BTreeMap<PathBuf, String>,
-) -> Result<ExternalSources, FrontendError> {
-    let mut result = ExternalSources::new();
-    let mut packages = BTreeMap::<String, BTreeMap<String, ExternalSource>>::new();
-
-    for root in roots {
-        let root = root
-            .canonicalize()
-            .map_err(|error| failure(format!("library {}: {error}", root.display())))?;
-        let mut files = ExternalSources::new();
-        scan_library_root(&root, &root, overrides, &mut files)?;
-
-        let mut groups = BTreeMap::<String, ExternalSources>::new();
-        for (name, source) in files {
-            let package = package_for_source_name(&name);
-            groups.entry(package).or_default().insert(name, source);
-        }
-
-        for (package, files) in groups {
-            if package == "." {
-                return Err(failure(
-                    "library root must contain package subdirectories, not root .ond files",
-                ));
-            }
-            if let Some(previous) = packages.get(&package) {
-                if source_texts(previous) != source_texts(&files) {
-                    return Err(failure(format!("conflicting library package: {package}")));
-                }
-                continue;
-            }
-
-            result.extend(files.clone());
-            packages.insert(package, files);
-        }
-    }
-
-    Ok(result)
-}
-
-/// Load a project and merge required virtual sources, optional virtual sources,
-/// and file-backed external libraries using the same rules for every frontend.
+/// Load project source overlays and resolved dependency sources through the shared frontend boundary.
 pub fn load_project_with_inputs(
     root: impl AsRef<Path>,
     overrides: &BTreeMap<PathBuf, String>,
     excluded_dirs: &[PathBuf],
     required_sources: &BTreeMap<String, String>,
-    optional_sources: &BTreeMap<String, String>,
     external_sources: &ExternalSources,
 ) -> Result<LoadedProject, FrontendError> {
     load_project_with_inputs_impl(
@@ -76,7 +28,6 @@ pub fn load_project_with_inputs(
         overrides,
         excluded_dirs,
         required_sources,
-        optional_sources,
         external_sources,
         false,
         false,
@@ -90,7 +41,6 @@ pub fn load_project_with_inputs_allow_incomplete(
     overrides: &BTreeMap<PathBuf, String>,
     excluded_dirs: &[PathBuf],
     required_sources: &BTreeMap<String, String>,
-    optional_sources: &BTreeMap<String, String>,
     external_sources: &ExternalSources,
 ) -> Result<LoadedProject, FrontendError> {
     load_project_with_inputs_impl(
@@ -98,7 +48,6 @@ pub fn load_project_with_inputs_allow_incomplete(
         overrides,
         excluded_dirs,
         required_sources,
-        optional_sources,
         external_sources,
         true,
         true,
@@ -110,7 +59,6 @@ pub fn load_project_with_test_inputs(
     overrides: &BTreeMap<PathBuf, String>,
     excluded_dirs: &[PathBuf],
     required_sources: &BTreeMap<String, String>,
-    optional_sources: &BTreeMap<String, String>,
     external_sources: &ExternalSources,
 ) -> Result<LoadedProject, FrontendError> {
     load_project_with_inputs_impl(
@@ -118,7 +66,6 @@ pub fn load_project_with_test_inputs(
         overrides,
         excluded_dirs,
         required_sources,
-        optional_sources,
         external_sources,
         false,
         true,
@@ -131,7 +78,6 @@ fn load_project_with_inputs_impl(
     overrides: &BTreeMap<PathBuf, String>,
     excluded_dirs: &[PathBuf],
     required_sources: &BTreeMap<String, String>,
-    optional_sources: &BTreeMap<String, String>,
     external_sources: &ExternalSources,
     allow_incomplete: bool,
     include_tests: bool,
@@ -203,19 +149,8 @@ fn load_project_with_inputs_impl(
         )?;
     }
 
-    let virtual_libraries = optional_sources
-        .iter()
-        .map(|(name, text)| {
-            (
-                name.clone(),
-                ExternalSource {
-                    path: loaded.root.join(".ond/__virtual_libraries__").join(name),
-                    text: text.clone(),
-                },
-            )
-        })
-        .collect();
-    for sources in [&virtual_libraries, external_sources] {
+    {
+        let sources = external_sources;
         merge_optional_packages(
             &mut loaded,
             sources,
@@ -230,7 +165,25 @@ fn load_project_with_inputs_impl(
     loaded
         .packages
         .sort_by(|left, right| left.logical_path.cmp(&right.logical_path));
-    retain_reachable_packages(&mut loaded, &optional, allow_incomplete)?;
+    let external_roots = external_sources
+        .keys()
+        .filter_map(|name| name.split_once('/').map(|(root, _)| root.to_string()))
+        .collect::<BTreeSet<_>>();
+    let application_roots = external_roots
+        .into_iter()
+        .filter(|root| {
+            crate::project::is_application_root(
+                external_sources
+                    .iter()
+                    .filter(|(name, _)| {
+                        name.rsplit_once('/')
+                            .is_some_and(|(parent, _)| parent == root)
+                    })
+                    .map(|(_, source)| (source.path.as_path(), source.text.as_str())),
+            )
+        })
+        .collect();
+    retain_reachable_packages(&mut loaded, &optional, &application_roots, allow_incomplete)?;
     assign_package_ids(&mut loaded);
     Ok(loaded)
 }
@@ -389,6 +342,7 @@ struct PackageClassification<'a> {
 fn retain_reachable_packages(
     loaded: &mut LoadedProject,
     optional: &BTreeSet<String>,
+    application_roots: &BTreeSet<String>,
     allow_incomplete: bool,
 ) -> Result<(), FrontendError> {
     if optional.is_empty() {
@@ -411,6 +365,11 @@ fn retain_reachable_packages(
     let mut pending = root_imports.into_values().flatten().collect::<Vec<_>>();
 
     while let Some(package) = pending.pop() {
+        if application_roots.contains(&package) {
+            return Err(failure(format!(
+                "cannot import application root: {package}"
+            )));
+        }
         if !package_paths.contains(&package) || !reachable.insert(package.clone()) {
             continue;
         }
@@ -508,75 +467,6 @@ fn validate_source_name(name: &str) -> Result<(), FrontendError> {
     Ok(())
 }
 
-fn scan_library_root(
-    root: &Path,
-    directory: &Path,
-    overrides: &BTreeMap<PathBuf, String>,
-    files: &mut ExternalSources,
-) -> Result<(), FrontendError> {
-    let mut entries = fs::read_dir(directory)
-        .map_err(|error| failure(error.to_string()))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| failure(error.to_string()))?;
-    entries.sort_by_key(|entry| entry.file_name());
-    for entry in entries {
-        let kind = entry
-            .file_type()
-            .map_err(|error| failure(error.to_string()))?;
-        let path = entry.path();
-        if kind.is_symlink() {
-            return Err(failure(format!(
-                "library symlink is not supported: {}",
-                path.display()
-            )));
-        }
-        if kind.is_dir() {
-            if !matches!(
-                entry.file_name().to_str(),
-                Some(".git" | "target" | ".idea")
-            ) {
-                scan_library_root(root, &path, overrides, files)?;
-            }
-        } else if kind.is_file()
-            && path.extension().is_some_and(|extension| extension == "ond")
-            && !crate::project::is_test_source(&path)
-        {
-            let name = path
-                .strip_prefix(root)
-                .expect("scanned path is below its library root")
-                .to_str()
-                .ok_or_else(|| failure("non-UTF8 library path"))?
-                .replace('\\', "/");
-            let text = read_source(&path, overrides)?;
-            files.insert(name, ExternalSource { path, text });
-        }
-    }
-    Ok(())
-}
-
-fn read_source(
-    path: &Path,
-    overrides: &BTreeMap<PathBuf, String>,
-) -> Result<String, FrontendError> {
-    if let Some(text) = overrides.get(path) {
-        return Ok(text.clone());
-    }
-    if let Ok(canonical) = path.canonicalize()
-        && let Some(text) = overrides.get(&canonical)
-    {
-        return Ok(text.clone());
-    }
-    fs::read_to_string(path)
-        .map_err(|error| failure(format!("failed to read `{}`: {error}", path.display())))
-}
-
-fn source_texts(sources: &ExternalSources) -> BTreeMap<String, String> {
-    sources
-        .iter()
-        .map(|(name, source)| (name.clone(), source.text.clone()))
-        .collect()
-}
-
 fn package_for_source_name(name: &str) -> String {
     name.rsplit_once('/')
         .map_or(".", |(package, _)| package)
@@ -622,18 +512,10 @@ mod tests {
         )
         .unwrap();
 
-        let sources =
-            load_library_sources(&project, std::slice::from_ref(&library), &BTreeMap::new())
+        let sources = file_inputs(&library, &["shared/lib.ond", "unused/lib.ond"]);
+        let loaded =
+            load_project_with_inputs(&project, &BTreeMap::new(), &[], &BTreeMap::new(), &sources)
                 .unwrap();
-        let loaded = load_project_with_inputs(
-            &project,
-            &BTreeMap::new(),
-            &[],
-            &BTreeMap::new(),
-            &BTreeMap::new(),
-            &sources,
-        )
-        .unwrap();
 
         assert!(
             loaded
@@ -677,7 +559,7 @@ mod tests {
             "package shared\nfunc Run() {}\n",
         )
         .unwrap();
-        let sources = load_library_sources(&project, &[library], &BTreeMap::new()).unwrap();
+        let sources = file_inputs(&library, &["shared/lib.ond"]);
         let mut overrides = BTreeMap::new();
         overrides.insert(
             main_path.canonicalize().unwrap(),
@@ -685,21 +567,13 @@ mod tests {
         );
 
         assert!(
-            load_project_with_inputs(
-                &project,
-                &overrides,
-                &[],
-                &BTreeMap::new(),
-                &BTreeMap::new(),
-                &sources,
-            )
-            .is_err()
+            load_project_with_inputs(&project, &overrides, &[], &BTreeMap::new(), &sources,)
+                .is_err()
         );
         let loaded = load_project_with_inputs_allow_incomplete(
             &project,
             &overrides,
             &[],
-            &BTreeMap::new(),
             &BTreeMap::new(),
             &sources,
         )
@@ -711,6 +585,22 @@ mod tests {
                 .any(|package| package.logical_path == "shared")
         );
         fs::remove_dir_all(base).unwrap();
+    }
+
+    fn file_inputs(root: &Path, names: &[&str]) -> ExternalSources {
+        names
+            .iter()
+            .map(|name| {
+                let path = root.join(name).canonicalize().unwrap();
+                (
+                    name.to_string(),
+                    ExternalSource {
+                        text: fs::read_to_string(&path).unwrap(),
+                        path,
+                    },
+                )
+            })
+            .collect()
     }
 
     fn temp_directory(label: &str) -> PathBuf {
