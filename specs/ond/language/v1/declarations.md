@@ -61,6 +61,7 @@ const Width: u32 = 320
 - 配列・struct の定数では入れ子の要素にも同じ条件を適用し、省略された要素は指定された要素型の zero value とする
   - 型付き aggregate 内の `nil` は field・要素型を型文脈として使用できる
 - 定数の field・index 参照も compile-time に評価できる
+  - 定数値をoperandとする演算・変換・field/index参照、型layout query、および定数配列を引数とする組み込み`len`のcallから定数式を構成する。call式のconst適格性はこの組み込み`len`に限る
   - 通常call、allocation、外部memory read、非`nil` pointer/function値を含むconst initializerはcompile errorとなる
 - 配列・struct定数は実行時参照のための静的な読み取り専用実体を持つ
   - 定数自身のfield・要素はaddressableだが、定数を根とする代入はcompile errorとする

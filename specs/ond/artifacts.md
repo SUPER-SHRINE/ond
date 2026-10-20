@@ -182,8 +182,9 @@ ProgramMetadataは通常startup計画を表す。\
 通常buildのentry_symbolはmain.mainを指し、そのExported Functionを持つpackageをrootとして、[言語の初期化順](./language/v1/execution.md#初期化とエントリ)から導く全initializer列とprogram.initializersが一致することを要求する。
 
 test起動は各case.packageから導くwrapper計画とする。\
+compileは[test sourceの成立条件](./build/test-build.md#sourceと文脈)を満たす宣言からtest caseを収録する。\
 各artifactのcase.packageは当該artifact.packageに一致する。\
-各caseは所属packageのparameter/resultなしでTest prefixを持つfunctionを指し、symbolは[名前規則](#link-symbolの名前と所属)と対応する定義Functionに一致する。\
+linkはcase.symbolが[名前規則](#link-symbolの名前と所属)と対応する所属packageのExported Function定義に一致することを検査する。\
 wrapperは所属packageと依存先のinitializer列、対象functionの順を[test起動契約](./build/test-build.md#buildと起動入口)で実行する。\
 test modeのprogram.entry_symbolに通常mainの解決を要求せず、library testは同章のlibrary成立条件に従う。
 

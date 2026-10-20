@@ -8,6 +8,16 @@ impl BodyLowerer<'_> {
         expr: &ast::Expr,
         expected: Option<crate::semantic::TypeId>,
     ) -> Option<hir::Expr> {
+        let value = self.lower_expr_inner(expr, expected)?;
+        self.record_source_expression(expr, &value);
+        Some(value)
+    }
+
+    fn lower_expr_inner(
+        &mut self,
+        expr: &ast::Expr,
+        expected: Option<crate::semantic::TypeId>,
+    ) -> Option<hir::Expr> {
         use crate::semantic::{TypeId, TypeKind};
 
         if matches!(self.builtin_name(expr), Some("len")) {
@@ -25,14 +35,16 @@ impl BodyLowerer<'_> {
                 if !self.types.is_integer(ty) {
                     return self.fail(expr.span(), "integer literal requires an integer type");
                 }
-                let Some(bits) = crate::numeric_literal::integer(value) else {
+                let Some(value) = crate::numeric_literal::integer_exact(value) else {
                     return self.fail(expr.span(), "invalid or out-of-range integer literal");
                 };
-                let (_, max) = crate::constant::integer_range(self.types, ty)?;
-                if i128::from(bits) > max {
-                    return self.fail(expr.span(), "integer literal out of range for its type");
+                use num_traits::ToPrimitive;
+                if let Some(bits) = value.to_i64() {
+                    (hir::ExprKind::Integer(bits as u64), ty)
+                } else {
+                    let (_, digits) = value.to_radix_be(128);
+                    return Some(super::integer_literal::balanced(&digits, ty, expr.span()));
                 }
-                (hir::ExprKind::Integer(bits), ty)
             }
             ast::Expr::Literal(ast::Literal::Float(value, _)) => {
                 let ty = expected.unwrap_or(TypeId::F32);
@@ -116,28 +128,6 @@ impl BodyLowerer<'_> {
                 (hir::ExprKind::Local(local), ty)
             }
             ast::Expr::Unary { op, expr, .. } => {
-                if *op == ast::UnaryOp::Minus {
-                    if let ast::Expr::Literal(ast::Literal::Int(text, _)) = expr.as_ref() {
-                        let ty = expected.unwrap_or(TypeId::I32);
-                        let Some((min, max)) = crate::constant::integer_range(self.types, ty)
-                        else {
-                            return self.fail(expr.span(), "integer literal requires integer type");
-                        };
-                        let Some(bits) = crate::numeric_literal::integer(text) else {
-                            return self.fail(expr.span(), "integer literal out of range");
-                        };
-                        let value = -i128::from(bits);
-                        if value < min || value > max {
-                            return self
-                                .fail(expr.span(), "integer literal out of range for its type");
-                        }
-                        return Some(hir::Expr {
-                            kind: hir::ExprKind::Integer(value as u64),
-                            ty,
-                            span: expr.span(),
-                        });
-                    }
-                }
                 if matches!(op, ast::UnaryOp::AddrOf | ast::UnaryOp::Deref) {
                     if *op == ast::UnaryOp::AddrOf
                         && matches!(expr.as_ref(), ast::Expr::Composite { .. })
@@ -174,7 +164,28 @@ impl BodyLowerer<'_> {
                     };
                     return self.constant_use(result, expected, expr.span());
                 }
-                let operand = self.lower_expr(expr, expected)?;
+                let operand =
+                    self.lower_expr(expr, contextual_literal(expr).then_some(expected).flatten())?;
+                if matches!(op, ast::UnaryOp::Plus | ast::UnaryOp::Minus) {
+                    let name = if *op == ast::UnaryOp::Plus {
+                        ast::OperatorName::Add
+                    } else {
+                        ast::OperatorName::Sub
+                    };
+                    if let Some(call) =
+                        self.matching_operator_call(name, vec![operand.clone()], expr.span())?
+                    {
+                        let [ty] = call.signature.returns.as_slice() else {
+                            return self.fail(expr.span(), "unary operator must return one value");
+                        };
+                        let value = hir::Expr {
+                            ty: *ty,
+                            kind: hir::ExprKind::Call(Box::new(call)),
+                            span: expr.span(),
+                        };
+                        return self.constant_use(value, expected, expr.span());
+                    }
+                }
                 let builtin = match op {
                     ast::UnaryOp::Plus | ast::UnaryOp::Minus | ast::UnaryOp::BitNot
                         if self.types.is_integer(operand.ty) =>
@@ -199,34 +210,13 @@ impl BodyLowerer<'_> {
                     }
                     _ => false,
                 };
-                if !builtin && matches!(op, ast::UnaryOp::Plus | ast::UnaryOp::Minus) {
-                    let name = if *op == ast::UnaryOp::Plus {
-                        ast::OperatorName::Add
-                    } else {
-                        ast::OperatorName::Sub
-                    };
-                    let Some(call) =
-                        self.matching_operator_call(name, vec![operand], expr.span())?
-                    else {
-                        return self.fail(expr.span(), "invalid unary operand type");
-                    };
-                    let [ty] = call.signature.returns.as_slice() else {
-                        return self.fail(expr.span(), "unary operator must return one value");
-                    };
-                    let ty = *ty;
-                    if expected.is_some_and(|expected| expected != ty) {
-                        return self.fail(expr.span(), "expression type mismatch");
-                    }
-                    return Some(hir::Expr {
-                        kind: hir::ExprKind::Call(Box::new(call)),
-                        ty,
-                        span: expr.span(),
-                    });
-                }
                 if !builtin {
                     return self.fail(expr.span(), "invalid unary operand type");
                 }
                 let ty = operand.ty;
+                if expected.is_some_and(|expected| expected != ty) {
+                    return self.type_mismatch(expr.span(), expected.unwrap(), ty);
+                }
                 (
                     hir::ExprKind::Unary {
                         op: *op,
@@ -285,60 +275,75 @@ impl BodyLowerer<'_> {
                             | ast::BinaryOp::Div
                             | ast::BinaryOp::Rem
                     );
-                    let lhs_expected = (!comparison
-                        && (!overloadable || matches!(lhs.as_ref(), ast::Expr::Literal(_))))
-                    .then_some(expected)
-                    .flatten();
-                    let candidate = self.lower_expr(lhs, lhs_expected)?;
-                    let lhs = if overloadable
-                        && lhs_expected.is_none()
-                        && expected.is_some()
-                        && (self.types.is_integer(candidate.ty)
-                            || matches!(
-                                self.types.underlying_kind(candidate.ty),
-                                Some(TypeKind::F32)
-                            )) {
-                        self.lower_expr(lhs, expected)?
+                    let lhs_expected = (!comparison && contextual_literal(lhs))
+                        .then_some(expected)
+                        .flatten();
+                    let lhs = self.lower_expr(lhs, lhs_expected)?;
+                    let known_rhs = if overloadable && !contextual_literal(rhs) {
+                        Some(self.lower_expr(rhs, None)?)
                     } else {
-                        candidate
+                        None
                     };
-                    let rhs = if matches!(op, ast::BinaryOp::ShiftLeft | ast::BinaryOp::ShiftRight)
-                    {
-                        self.lower_expr(rhs, Some(TypeId::U32))?
-                    } else if overloadable
-                        && (self.types.is_integer(lhs.ty)
-                            || matches!(self.types.underlying_kind(lhs.ty), Some(TypeKind::F32)))
-                    {
-                        self.lower_expr(rhs, Some(lhs.ty))?
-                    } else if overloadable {
-                        let inferred = binary_operator_name(*op)
+                    let inferred = if overloadable {
+                        binary_operator_name(*op)
                             .and_then(|name| {
                                 self.unique_operator_parameter_types(
                                     name,
-                                    &[Some(lhs.ty), None],
+                                    &lhs,
+                                    &[Some(lhs.ty), known_rhs.as_ref().map(|value| value.ty)],
                                     expr.span(),
                                 )
                             })
-                            .map(|parameters| parameters[1]);
-                        let candidate = self.lower_expr(rhs, inferred)?;
-                        if inferred.is_none()
-                            && candidate.ty != lhs.ty
-                            && matches!(
-                                rhs.as_ref(),
-                                ast::Expr::Literal(
-                                    ast::Literal::Int(_, _) | ast::Literal::Float(_, _)
-                                )
-                            )
-                        {
-                            self.lower_expr(rhs, Some(lhs.ty))?
-                        } else {
-                            candidate
-                        }
+                            .map(|parameters| parameters[1])
                     } else {
-                        self.lower_expr(rhs, Some(lhs.ty))?
+                        None
+                    };
+                    if overloadable
+                        && known_rhs.is_none()
+                        && inferred.is_none()
+                        && !self.types.is_integer(lhs.ty)
+                        && !matches!(self.types.underlying_kind(lhs.ty), Some(TypeKind::F32))
+                    {
+                        return self.fail(expr.span(), "invalid binary operand type");
+                    }
+                    let rhs = if let Some(rhs) = known_rhs {
+                        rhs
+                    } else if matches!(op, ast::BinaryOp::ShiftLeft | ast::BinaryOp::ShiftRight) {
+                        self.lower_value(rhs, Some(TypeId::U32))?
+                    } else {
+                        self.lower_expr(
+                            rhs,
+                            Some(
+                                if matches!(
+                                    op,
+                                    ast::BinaryOp::ShiftLeft | ast::BinaryOp::ShiftRight
+                                ) {
+                                    TypeId::U32
+                                } else {
+                                    inferred.unwrap_or(lhs.ty)
+                                },
+                            ),
+                        )?
                     };
                     (lhs, rhs)
                 };
+                if let Some(name) = binary_operator_name(*op)
+                    && let Some(call) = self.matching_operator_call(
+                        name,
+                        vec![lhs.clone(), rhs.clone()],
+                        expr.span(),
+                    )?
+                {
+                    let [ty] = call.signature.returns.as_slice() else {
+                        return self.fail(expr.span(), "binary operator must return one value");
+                    };
+                    let value = hir::Expr {
+                        ty: *ty,
+                        kind: hir::ExprKind::Call(Box::new(call)),
+                        span: expr.span(),
+                    };
+                    return self.constant_use(value, expected, expr.span());
+                }
                 let operand_kind = self.types.underlying_kind(lhs.ty);
                 let valid = if self.types.is_integer(lhs.ty) {
                     true
@@ -367,22 +372,24 @@ impl BodyLowerer<'_> {
                     || (!matches!(op, ast::BinaryOp::ShiftLeft | ast::BinaryOp::ShiftRight)
                         && lhs.ty != rhs.ty)
                 {
-                    if let Some(name) = binary_operator_name(*op)
-                        && let Some(call) =
-                            self.matching_operator_call(name, vec![lhs, rhs], expr.span())?
-                    {
-                        let [ty] = call.signature.returns.as_slice() else {
-                            return self.fail(expr.span(), "binary operator must return one value");
-                        };
-                        let ty = *ty;
-                        if expected.is_some_and(|expected| expected != ty) {
-                            return self.fail(expr.span(), "expression type mismatch");
+                    if lhs.ty != rhs.ty {
+                        let parameter = binary_operator_name(*op)
+                            .and_then(|name| {
+                                self.unique_operator_parameter_types(
+                                    name,
+                                    &lhs,
+                                    &[Some(lhs.ty), None],
+                                    expr.span(),
+                                )
+                            })
+                            .map(|parameters| parameters[1]);
+                        if valid || parameter.is_some_and(|parameter| parameter != rhs.ty) {
+                            return self.type_mismatch(
+                                rhs.span,
+                                parameter.unwrap_or(lhs.ty),
+                                rhs.ty,
+                            );
                         }
-                        return Some(hir::Expr {
-                            kind: hir::ExprKind::Call(Box::new(call)),
-                            ty,
-                            span: expr.span(),
-                        });
                     }
                     return self.fail(expr.span(), "invalid binary operand type");
                 }
@@ -512,10 +519,29 @@ impl BodyLowerer<'_> {
                 }
                 (hir::ExprKind::Call(Box::new(call)), ty)
             }
-            ast::Expr::TypeApply { .. } => {
+            ast::Expr::TypeApply {
+                base,
+                arguments,
+                span,
+            } => {
+                if let Some(value) = self.lower_generic_function_value(base, arguments, *span)? {
+                    return self.constant_use(value, expected, *span);
+                }
+                if let [argument] = arguments.as_slice()
+                    && let Some(index) = type_argument_index(argument)
+                {
+                    let value = self.lower_index(base, &index, *span)?;
+                    return self.constant_use(value, expected, *span);
+                }
                 return self.fail(expr.span(), "type arguments must be followed by a call");
             }
             ast::Expr::Index { base, index, span } => {
+                if let Some(argument) = index_type_argument(index)
+                    && let Some(value) =
+                        self.lower_generic_function_value(base, &[argument], *span)?
+                {
+                    return self.constant_use(value, expected, *span);
+                }
                 let value = self.lower_index(base, index, *span)?;
                 return self.constant_use(value, expected, *span);
             }
@@ -538,7 +564,10 @@ impl BodyLowerer<'_> {
             && crate::constant::is_constant(&result, self.types)
         {
             return match crate::constant::evaluate(&result, self.types) {
-                Ok(value) => Some(value),
+                Ok(value) => {
+                    self.record_evaluated(&value);
+                    Some(value)
+                }
                 Err(message) => self.fail(result.span, message),
             };
         }
@@ -555,4 +584,93 @@ pub(super) fn binary_operator_name(op: ast::BinaryOp) -> Option<ast::OperatorNam
         ast::BinaryOp::Rem => ast::OperatorName::Rem,
         _ => return None,
     })
+}
+
+pub(super) fn contextual_literal(source: &ast::Expr) -> bool {
+    match source {
+        ast::Expr::Literal(ast::Literal::Bool(_, _)) => false,
+        ast::Expr::Literal(_) => true,
+        ast::Expr::Unary {
+            op: ast::UnaryOp::Plus | ast::UnaryOp::Minus | ast::UnaryOp::BitNot,
+            expr,
+            ..
+        } => contextual_literal(expr),
+        ast::Expr::Binary {
+            op:
+                ast::BinaryOp::Add
+                | ast::BinaryOp::Sub
+                | ast::BinaryOp::Mul
+                | ast::BinaryOp::Div
+                | ast::BinaryOp::Rem
+                | ast::BinaryOp::BitAnd
+                | ast::BinaryOp::BitOr
+                | ast::BinaryOp::BitXor
+                | ast::BinaryOp::BitAndNot
+                | ast::BinaryOp::ShiftLeft
+                | ast::BinaryOp::ShiftRight,
+            lhs,
+            rhs,
+            ..
+        } => contextual_literal(lhs) && contextual_literal(rhs),
+        _ => false,
+    }
+}
+pub(in crate::pipeline::hir) fn type_argument_index(argument: &ast::Type) -> Option<ast::Expr> {
+    match argument {
+        ast::Type::Named(path) => Some(ast::Expr::Name(path.clone())),
+        ast::Type::Pointer(inner, span) => Some(ast::Expr::Unary {
+            op: ast::UnaryOp::Deref,
+            expr: Box::new(type_argument_index(inner)?),
+            span: *span,
+        }),
+        ast::Type::Apply {
+            base,
+            arguments,
+            span,
+        } if arguments.len() == 1 => Some(ast::Expr::Index {
+            base: Box::new(ast::Expr::Name(base.clone())),
+            index: Box::new(type_argument_index(&arguments[0])?),
+            span: *span,
+        }),
+        _ => None,
+    }
+}
+
+pub(in crate::pipeline::hir) fn index_type_argument(index: &ast::Expr) -> Option<ast::Type> {
+    match index {
+        ast::Expr::Name(path) => Some(ast::Type::Named(path.clone())),
+        ast::Expr::Unary {
+            op: ast::UnaryOp::Deref,
+            expr,
+            span,
+        } => Some(ast::Type::Pointer(
+            Box::new(index_type_argument(expr)?),
+            *span,
+        )),
+        ast::Expr::Index { base, index, span } => {
+            let ast::Expr::Name(base) = base.as_ref() else {
+                return None;
+            };
+            Some(ast::Type::Apply {
+                base: base.clone(),
+                arguments: vec![index_type_argument(index)?],
+                span: *span,
+            })
+        }
+        ast::Expr::TypeApply {
+            base,
+            arguments,
+            span,
+        } => {
+            let ast::Expr::Name(base) = base.as_ref() else {
+                return None;
+            };
+            Some(ast::Type::Apply {
+                base: base.clone(),
+                arguments: arguments.clone(),
+                span: *span,
+            })
+        }
+        _ => None,
+    }
 }

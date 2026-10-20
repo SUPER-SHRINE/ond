@@ -1,4 +1,5 @@
 mod args;
+mod json;
 use ond_cli::{CompileRequest, LinkRequest};
 use ond_protocol::{CompilationManifest, Contract};
 use std::io::{self, Read, Write};
@@ -8,7 +9,6 @@ fn execute(command: args::Command) -> Result<(), Vec<String>> {
         args::Command::Compile {
             root,
             output,
-            mut libraries,
             cache,
             verbose,
             test,
@@ -19,41 +19,13 @@ fn execute(command: args::Command) -> Result<(), Vec<String>> {
             } else {
                 root
             };
-            let resolved = ond_cli::resolve_dependencies(&root)?;
-            if let Some(value) = std::env::var_os("OND_PATH") {
-                if !value.is_empty() {
-                    for path in std::env::split_paths(&value) {
-                        if path.as_os_str().is_empty() {
-                            return Err(vec!["OND_PATH contains an empty path".into()]);
-                        }
-                        libraries.push(path);
-                    }
-                }
-            }
-            let mut excluded_dirs = libraries
-                .iter()
-                .map(|p| p.canonicalize().map_err(|e| vec![e.to_string()]))
-                .collect::<Result<Vec<_>, _>>()?;
-            if excluded_dirs.contains(&root) {
-                return Err(vec!["project root cannot also be a library root".into()]);
-            }
-            excluded_dirs.extend(resolved.ignored_directories);
-            let mut library_sources = ond_cli::library_sources(&root, &libraries)?;
-            for (name, source) in resolved.sources {
-                if let Some(previous) = library_sources.insert(name.clone(), source.text.clone())
-                    && previous != source.text
-                {
-                    return Err(vec![format!("conflicting dependency source: {name}")]);
-                }
-            }
             let result = ond_cli::compile(
                 CompileRequest {
                     test,
-                    excluded_dirs,
+                    excluded_dirs: Vec::new(),
                     contract: Contract::default(),
                     project_root: root.clone(),
                     sources: Default::default(),
-                    libraries: library_sources,
                     cache_dir: cache,
                 },
                 &ond_cli::compiler_identity()?,
@@ -69,10 +41,7 @@ fn execute(command: args::Command) -> Result<(), Vec<String>> {
                     "target/build.ondbuild"
                 })
             });
-            write(
-                &output,
-                &serde_json::to_vec(&result.manifest).map_err(|e| vec![e.to_string()])?,
-            )
+            write(&output, &json::encode(&result.manifest)?)
         }
         args::Command::Link {
             input,
@@ -89,15 +58,23 @@ fn execute(command: args::Command) -> Result<(), Vec<String>> {
             } else {
                 std::fs::read(&input).map_err(|e| vec![format!("{}: {e}", input.display())])?
             };
-            let manifest: CompilationManifest = serde_json::from_slice(&bytes)
+            let mut manifest: CompilationManifest = serde_json::from_slice(&bytes)
                 .map_err(|e| vec![format!("invalid compilation manifest: {e}")])?;
+            if input != std::path::Path::new("-") {
+                let parent = input.parent().unwrap_or_else(|| std::path::Path::new("."));
+                for reference in &mut manifest.packages {
+                    if reference.path.is_relative() {
+                        reference.path = parent.join(&reference.path);
+                    }
+                }
+            }
             let linked = ond_cli::link_with_debug(LinkRequest {
                 manifest,
                 layout,
                 main_return_address: return_to,
             })?;
-            let image_bytes = serde_json::to_vec(&linked.image).map_err(|e| vec![e.to_string()])?;
-            let debug_bytes = serde_json::to_vec(&linked.debug).map_err(|e| vec![e.to_string()])?;
+            let image_bytes = json::encode(&linked.image)?;
+            let debug_bytes = json::encode(&linked.debug)?;
             if output == std::path::Path::new("-") {
                 write(&output, &image_bytes)?;
             } else {
@@ -116,10 +93,7 @@ fn execute(command: args::Command) -> Result<(), Vec<String>> {
                 }
                 write(&debug_output, &debug_bytes)?;
                 if let Some(tests) = &linked.tests {
-                    write(
-                        &output.with_extension("ondtest"),
-                        &serde_json::to_vec(tests).map_err(|e| vec![e.to_string()])?,
-                    )?;
+                    write(&output.with_extension("ondtest"), &json::encode(tests)?)?;
                 }
                 write(&output, &image_bytes)?;
             }

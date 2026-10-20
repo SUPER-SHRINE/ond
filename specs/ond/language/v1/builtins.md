@@ -103,13 +103,13 @@ report(thisFile(), thisLine())
 - `thisFile()` 自身を含むsource fileの論理pathを、null終端された読み取り専用byte列への`*u8`として返す
 - project所有のfileはproject rootからの相対pathを使う
 root直下のfileはfile名だけとなり、subpackageでもproject名を含めない
-- 追加library rootまたは依存projectから渡されるfileは、そのpackageのlogical import pathとfile名を`/`で連結する
+- 依存projectから渡されるfileは、そのpackageのlogical import pathとfile名を`/`で連結する
 - path separatorはhost OSによらず`/`とする
 - 指し示すstorageの寿命はプログラム全体とし、書き込んではならない
 - 同じ論理pathのstorageは同一Object内で共有してよい
 
 例えばproject rootの`main.ond`では`"main.ond\000"`相当、project `game`内の`draw/render.ond`では`"draw/render.ond\000"`相当のstorageを指す。\
-追加library package `graphics/draw`の`render.ond`では`"graphics/draw/render.ond\000"`相当となる。
+依存project `graphics`のpackage `graphics/draw`の`render.ond`では`"graphics/draw/render.ond\000"`相当となる。
 
 ## 7. `thisLine`
 <!-- ond-spec-id: builtins/this-line -->
@@ -117,6 +117,7 @@ root直下のfileはfile名だけとなり、subpackageでもproject名を含め
 - 引数は0個
 - `thisLine()` 自身の先頭tokenが置かれた、1始まりのsource行番号を`u32`で返す
 - 行番号はこのsource tokenの位置で決まる
+- 結果は実行時の`u32`値として演算・変換へ渡す。定数式の成立条件は[宣言の定数規則](./declarations.md#宣言)に従う
 
 ## 8. `trap`
 <!-- ond-spec-id: builtins/trap -->

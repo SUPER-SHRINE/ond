@@ -209,20 +209,30 @@ pub fn supply_with_debug(
     mut debug: Vec<DebugObject>,
 ) -> Result<CodegenOutput, FrontendError> {
     for object in &inputs {
-        if object.symbols.iter().any(|s| s.name.starts_with(PREFIX)) {
+        if object.symbols.iter().any(|s| {
+            s.name.starts_with(PREFIX) && s.binding != crate::ir::object::SymbolBinding::Imported
+        }) {
             return Err(failure("user object defines reserved runtime symbol"));
         }
     }
     let mut requested = BTreeSet::new();
-    for r in inputs
+    for target in inputs
         .iter()
         .flat_map(|o| &o.relocations)
-        .filter(|r| r.target.starts_with(PREFIX))
+        .map(|relocation| relocation.target.as_str())
+        .chain(
+            inputs
+                .iter()
+                .flat_map(|object| &object.symbols)
+                .filter(|symbol| symbol.binding == crate::ir::object::SymbolBinding::Imported)
+                .map(|symbol| symbol.name.as_str()),
+        )
+        .filter(|target| target.starts_with(PREFIX))
     {
         let helper = Helper::ALL
             .into_iter()
-            .find(|h| h.symbol() == r.target)
-            .ok_or_else(|| failure(format!("unknown request {}", r.target)))?;
+            .find(|h| h.symbol() == target)
+            .ok_or_else(|| failure(format!("unknown request {target}")))?;
         requested.insert(helper);
     }
     let emitted = objects_with_debug(&requested.into_iter().collect::<Vec<_>>())?;

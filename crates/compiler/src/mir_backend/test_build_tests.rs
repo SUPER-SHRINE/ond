@@ -12,7 +12,6 @@ fn test_build_wrappers_execute_private_helpers_initializers_and_one_case_only() 
         &[],
         &BTreeMap::new(),
         &BTreeMap::new(),
-        &BTreeMap::new(),
     )
     .unwrap();
     let project = ond_compiler_core::compile_loaded_project(loaded)

@@ -35,7 +35,6 @@ def measure(binary, root, tests):
                 f"package p{index:02}\nfunc TestOK() {{}}\n", encoding="utf-8"
             )
     environment = dict(os.environ)
-    environment.pop("OND_PATH", None)
     process = subprocess.Popen(
         [str(binary), "stdio"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         stderr=subprocess.PIPE, env=environment,

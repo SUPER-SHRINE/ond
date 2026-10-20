@@ -33,14 +33,12 @@ use crate::semantic_tokens::{
 use crate::symbol_index::ProjectSymbolIndex;
 use crate::symbols::{document_symbols_for_file, to_lsp_diagnostic};
 use crate::util::{
-    find_project_root, log_stderr, normalize_path, path_from_uri, render_frontend_error, same_path,
-    uri_from_path,
+    find_project_root, log_stderr, normalize_path, path_from_uri, same_path, uri_from_path,
 };
 
 #[derive(Debug, Default)]
 pub struct ServerState {
     documents: BTreeMap<PathBuf, DocumentState>,
-    library_roots: Vec<PathBuf>,
     published_project_uris: BTreeMap<PathBuf, BTreeSet<String>>,
     symbol_indexes: BTreeMap<PathBuf, ProjectSymbolIndex>,
     semantic_caches: BTreeMap<PathBuf, compiler::SemanticCache>,
@@ -52,16 +50,6 @@ struct DocumentState {
 }
 
 impl ServerState {
-    pub fn with_library_roots(library_roots: Vec<PathBuf>) -> Self {
-        Self {
-            documents: BTreeMap::new(),
-            library_roots,
-            published_project_uris: BTreeMap::new(),
-            symbol_indexes: BTreeMap::new(),
-            semantic_caches: BTreeMap::new(),
-        }
-    }
-
     pub fn open_document(
         &mut self,
         uri: String,
@@ -208,7 +196,7 @@ impl ServerState {
         root: &Path,
         overrides: &BTreeMap<PathBuf, String>,
     ) -> Result<compiler::LoadedProject, String> {
-        project_loading::load_project(root, overrides, &self.library_roots)
+        project_loading::load_project(root, overrides)
     }
 
     pub(crate) fn load_current_project(
@@ -341,13 +329,6 @@ impl ServerState {
             .iter()
             .map(|package| package.logical_path.clone())
             .collect::<BTreeSet<_>>();
-        let libraries = compiler::load_library_sources(root, &self.library_roots, &overrides)
-            .map_err(render_frontend_error)?;
-        for source_name in libraries.keys() {
-            if let Some((package, _)) = source_name.rsplit_once('/') {
-                paths.insert(package.to_string());
-            }
-        }
         let dependencies =
             ond_cli::resolve_dependencies(root).map_err(|diagnostics| diagnostics.join("\n"))?;
         for source_name in dependencies.sources.keys() {
@@ -1068,6 +1049,42 @@ fn project_error_diagnostic(message: &str) -> Value {
 #[cfg(test)]
 mod project_contract_tests;
 #[cfg(test)]
+impl ServerState {
+    fn with_dependencies(root: &Path, roots: Vec<PathBuf>) -> Self {
+        let manifest_path = root.join("ond.toml");
+        let mut text = std::fs::read_to_string(&manifest_path).unwrap();
+        if !text.contains("[dependencies]") {
+            text.push_str("\n[dependencies]\n");
+        }
+        for directory in roots {
+            if same_path(root, &directory) {
+                continue;
+            }
+            for entry in std::fs::read_dir(directory).unwrap().map(Result::unwrap) {
+                if !entry.path().is_dir() {
+                    continue;
+                }
+                let name = entry.file_name().into_string().unwrap();
+                std::fs::write(
+                    entry.path().join("ond.toml"),
+                    format!("[project]\nname={name:?}\n"),
+                )
+                .unwrap();
+                let path = entry
+                    .path()
+                    .canonicalize()
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                text.push_str(&format!("{name}={{path={path:?}}}\n"));
+            }
+        }
+        std::fs::write(manifest_path, text).unwrap();
+        Self::default()
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
     use std::path::PathBuf;
@@ -1421,7 +1438,7 @@ mod tests {
         let source = "package graphic\nfunc main() {\n    \n}\n";
         std::fs::write(&path, source).unwrap();
         let uri = uri_from_path(&path).unwrap();
-        let mut state = ServerState::with_library_roots(vec![root.clone()]);
+        let mut state = ServerState::with_dependencies(&root, vec![root.clone()]);
         let mut output = Vec::new();
         state
             .open_document(uri.clone(), source.to_string(), &mut output)
@@ -1462,7 +1479,7 @@ mod tests {
         )
         .unwrap();
         let uri = uri_from_path(&path).unwrap();
-        let mut state = ServerState::with_library_roots(vec![libraries]);
+        let mut state = ServerState::with_dependencies(&root, vec![libraries]);
         let mut output = Vec::new();
         state
             .open_document(uri.clone(), source.to_string(), &mut output)
@@ -1509,7 +1526,7 @@ mod tests {
 
         let main_uri = uri_from_path(&main_path).unwrap();
         let library_uri = uri_from_path(&library_path).unwrap();
-        let mut state = ServerState::with_library_roots(vec![libraries]);
+        let mut state = ServerState::with_dependencies(&root, vec![libraries]);
         let mut output = Vec::new();
         state
             .open_document(main_uri.clone(), source.to_string(), &mut output)
@@ -1581,7 +1598,7 @@ mod tests {
         let main1_uri = uri_from_path(&main1_path).unwrap();
         let main2_uri = uri_from_path(&main2_path).unwrap();
         let library_uri = uri_from_path(&library_path).unwrap();
-        let mut state = ServerState::with_library_roots(vec![libraries]);
+        let mut state = ServerState::with_dependencies(&root, vec![libraries]);
         let mut output = Vec::new();
         state
             .open_document(main1_uri, main1.to_string(), &mut output)
@@ -2679,7 +2696,7 @@ mod tests {
         std::fs::write(libraries.join("tools/log/log.ond"), "package log\n").unwrap();
         let path = normalize_path(path);
         let uri = uri_from_path(&path).unwrap();
-        let mut state = ServerState::with_library_roots(vec![libraries]);
+        let mut state = ServerState::with_dependencies(&root, vec![libraries]);
         state.documents.insert(
             path.clone(),
             DocumentState {
@@ -2991,7 +3008,7 @@ mod tests {
         let library_file = libraries.join("shared/lib.ond");
         std::fs::write(&library_file, "package shared\nfunc Run() {}\n").unwrap();
 
-        let state = ServerState::with_library_roots(vec![libraries]);
+        let state = ServerState::with_dependencies(&root, vec![libraries]);
         let loaded = state.load_project(&root, &BTreeMap::new()).unwrap();
         let library_file = library_file.canonicalize().unwrap();
         assert!(
@@ -3037,7 +3054,7 @@ mod tests {
         )
         .unwrap();
         let uri = uri_from_path(&path).unwrap();
-        let mut state = ServerState::with_library_roots(vec![libraries]);
+        let mut state = ServerState::with_dependencies(&root, vec![libraries]);
         let mut output = Vec::new();
         state
             .open_document(uri.clone(), valid.to_string(), &mut output)
@@ -3527,7 +3544,7 @@ mod tests {
         let path = root.join("main.ond");
         std::fs::write(&path, source).unwrap();
         let uri = uri_from_path(&path).unwrap();
-        let mut state = ServerState::with_library_roots(vec![root.clone()]);
+        let mut state = ServerState::with_dependencies(&root, vec![root.clone()]);
         let mut output = Vec::new();
         state
             .open_document(uri, source.to_string(), &mut output)
@@ -3652,7 +3669,7 @@ mod tests {
         )
         .unwrap();
 
-        let state = ServerState::with_library_roots(vec![libraries]);
+        let state = ServerState::with_dependencies(&root, vec![libraries]);
         let project = state.load_current_project(&root).unwrap();
         assert!(compiler::compile_loaded_project(project.clone()).is_ok());
         assert!(
@@ -3693,7 +3710,7 @@ mod tests {
         )
         .unwrap();
 
-        let project = ServerState::with_library_roots(vec![libraries.clone()])
+        let project = ServerState::with_dependencies(&root, vec![libraries.clone()])
             .load_current_project(&root)
             .unwrap();
         assert!(compiler::compile_loaded_project(project).is_ok());
@@ -3705,13 +3722,10 @@ mod tests {
             "package internal\nfunc Other() -> i32 { return 5 }\n",
         )
         .unwrap();
-        let error = ServerState::with_library_roots(vec![conflicting])
+        let error = ServerState::with_dependencies(&root, vec![conflicting])
             .load_current_project(&root)
             .unwrap_err();
-        assert!(
-            error.contains("library conflicts with project package"),
-            "{error}"
-        );
+        assert!(error.contains("dependency namespace"), "{error}");
         std::fs::remove_dir_all(root).unwrap();
     }
 

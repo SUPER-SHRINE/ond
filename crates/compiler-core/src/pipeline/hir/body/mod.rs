@@ -8,9 +8,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::types::{TypePackage, resolve_type};
 mod calls;
 mod composites;
+mod compound_assignment;
+mod compound_index;
 mod constants;
 mod expressions;
+pub(super) use expressions::{index_type_argument, type_argument_index};
+mod generation;
 mod globals;
+mod integer_literal;
 mod intrinsics;
 mod memory;
 mod statements;
@@ -35,6 +40,7 @@ pub(super) fn lower_typed_body(
         sources,
         diagnostics,
         BTreeMap::new(),
+        None,
     )
 }
 
@@ -48,6 +54,7 @@ pub(super) fn lower_typed_body_with_substitutions(
     sources: &SourceDb,
     diagnostics: &mut Diagnostics,
     type_substitutions: BTreeMap<String, crate::semantic::TypeId>,
+    generic_caller: Option<&str>,
 ) -> Option<(hir::Body, Vec<hir::Static>)> {
     let mut lowerer = BodyLowerer {
         package_id,
@@ -64,6 +71,10 @@ pub(super) fn lower_typed_body_with_substitutions(
         const_stack: BTreeSet::new(),
         global_stack: BTreeSet::new(),
         statics: Vec::new(),
+        static_values: BTreeMap::new(),
+        source_values: Vec::new(),
+        non_addressable_locals: BTreeSet::new(),
+        source_builtin_depth: 0,
         constant_depth: 0,
         failure: None,
         recovered_diagnostics: Diagnostics::new(),
@@ -73,6 +84,7 @@ pub(super) fn lower_typed_body_with_substitutions(
         defer_value_evaluation: false,
         sources: Some(sources),
         type_substitutions,
+        generic_caller: generic_caller.map(str::to_owned),
     };
     for parameter in &signature.parameters {
         if lowerer
@@ -98,13 +110,16 @@ pub(super) fn lower_typed_body_with_substitutions(
     let valid = lowerer.recovered_diagnostics.is_empty();
     diagnostics.extend(std::mem::take(&mut lowerer.recovered_diagnostics));
     match (block, valid) {
-        (Some(block), true) => Some((
-            hir::Body::Typed(hir::TypedBody {
-                locals: lowerer.locals,
-                block,
-            }),
-            lowerer.statics,
-        )),
+        (Some(mut block), true) => {
+            block.statements.splice(0..0, lowerer.source_values);
+            Some((
+                hir::Body::Typed(hir::TypedBody {
+                    locals: lowerer.locals,
+                    block,
+                }),
+                lowerer.statics,
+            ))
+        }
         (None, true) => {
             diagnostics.push(Diagnostic::error(
                 source.span,
@@ -117,6 +132,7 @@ pub(super) fn lower_typed_body_with_substitutions(
 }
 
 pub(super) struct BodyLowerer<'a> {
+    generic_caller: Option<String>,
     defer_value_evaluation: bool,
     package_id: PackageId,
     universe: &'a [TypePackage],
@@ -132,6 +148,10 @@ pub(super) struct BodyLowerer<'a> {
     const_stack: BTreeSet<(PackageId, String)>,
     global_stack: BTreeSet<(PackageId, String)>,
     statics: Vec<hir::Static>,
+    static_values: BTreeMap<String, hir::Expr>,
+    source_values: Vec<hir::Stmt>,
+    non_addressable_locals: BTreeSet<hir::LocalId>,
+    source_builtin_depth: usize,
     constant_depth: usize,
     pub(super) failure: Option<Diagnostic>,
     recovered_diagnostics: Diagnostics,
@@ -143,6 +163,23 @@ pub(super) struct BodyLowerer<'a> {
 }
 
 impl<'a> BodyLowerer<'a> {
+    fn record_generic_request(&self, symbol: &str, span: Span) {
+        let package = self
+            .universe
+            .iter()
+            .find(|p| p.id == self.package_id)
+            .expect("generic request has a source package");
+        let request = super::generic_paths::Request {
+            caller: self.generic_caller.clone(),
+            symbol: symbol.to_owned(),
+            span,
+        };
+        let mut requests = package.generic_requests.borrow_mut();
+        if !requests.contains(&request) {
+            requests.push(request);
+        }
+    }
+
     pub(super) fn imported_package(&self, qualifier: &str, span: Span) -> Option<PackageId> {
         self.universe
             .iter()
@@ -159,6 +196,7 @@ impl<'a> BodyLowerer<'a> {
         types: &'a mut crate::semantic::TypeTable,
     ) -> Self {
         Self {
+            generic_caller: None,
             package_id,
             universe,
             types,
@@ -173,6 +211,10 @@ impl<'a> BodyLowerer<'a> {
             const_stack: BTreeSet::new(),
             global_stack: BTreeSet::new(),
             statics: Vec::new(),
+            static_values: BTreeMap::new(),
+            source_values: Vec::new(),
+            non_addressable_locals: BTreeSet::new(),
+            source_builtin_depth: 0,
             constant_depth: 0,
             failure: None,
             recovered_diagnostics: Diagnostics::new(),
@@ -256,6 +298,9 @@ impl<'a> BodyLowerer<'a> {
         );
         if let Some(diagnostic) = diagnostics.into_vec().into_iter().next() {
             self.failure = Some(diagnostic);
+        }
+        if let Some(ty) = result {
+            self.record_generation_type(ty);
         }
         result
     }

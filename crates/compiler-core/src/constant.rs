@@ -48,7 +48,12 @@ pub(crate) fn evaluate(expr: &Expr, types: &TypeTable) -> Result<Expr, String> {
         Value::Int(value) => {
             let (min, max) = integer_range(types, expr.ty).ok_or("constant is not an integer")?;
             if value < BigInt::from(min) || value > BigInt::from(max) {
-                return Err("constant is out of range for its declared type".into());
+                return Err(if matches!(expr.kind, ExprKind::Integer(_)) {
+                    "integer literal out of range for its type"
+                } else {
+                    "constant is out of range for its declared type"
+                }
+                .into());
             }
             ExprKind::Integer(value.to_i64().ok_or("constant integer out of range")? as u64)
         }
@@ -85,6 +90,17 @@ fn eval(expr: &Expr, types: &TypeTable) -> Result<Value, String> {
     Ok(match value {
         Value::Float(value) if value.is_nan() => Value::Float(f32::from_bits(0x7fc00000)),
         value => value,
+    })
+}
+
+fn project_integer(value: BigInt, types: &TypeTable, ty: TypeId) -> Result<BigInt, String> {
+    let (min, max) = integer_range(types, ty).ok_or("invalid bitwise operand")?;
+    let modulus = BigInt::from(max - min + 1);
+    let bits = ((value % &modulus) + &modulus) % &modulus;
+    Ok(if min < 0 && bits > BigInt::from(max) {
+        bits - modulus
+    } else {
+        bits
     })
 }
 
@@ -137,14 +153,7 @@ fn eval_inner(expr: &Expr, types: &TypeTable) -> Result<Value, String> {
             (U::Minus, Value::Int(value)) => Value::Int(-value),
             (U::Minus, Value::Float(value)) => Value::Float(-value),
             (U::Not, Value::Bool(value)) => Value::Bool(!value),
-            (U::BitNot, Value::Int(value)) => {
-                let (min, max) = integer_range(types, expr.ty).ok_or("invalid bitwise operand")?;
-                Value::Int(if min == 0 {
-                    (!value) & BigInt::from(max)
-                } else {
-                    !value
-                })
-            }
+            (U::BitNot, Value::Int(value)) => Value::Int(project_integer(!value, types, expr.ty)?),
             _ => return Err("invalid constant unary operand".into()),
         },
         ExprKind::Binary { op, lhs, rhs } => {
@@ -182,10 +191,10 @@ fn eval_inner(expr: &Expr, types: &TypeTable) -> Result<Value, String> {
                             }
                             if *op == B::Div { a / b } else { a % b }
                         }
-                        B::BitAnd => a & b,
-                        B::BitOr => a | b,
-                        B::BitXor => a ^ b,
-                        B::BitAndNot => a & !b,
+                        B::BitAnd => project_integer(a & b, types, expr.ty)?,
+                        B::BitOr => project_integer(a | b, types, expr.ty)?,
+                        B::BitXor => project_integer(a ^ b, types, expr.ty)?,
+                        B::BitAndNot => project_integer(a & !b, types, expr.ty)?,
                         B::ShiftLeft | B::ShiftRight => {
                             let count = b
                                 .to_u32()

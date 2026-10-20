@@ -8,6 +8,47 @@ use crate::{
 };
 use kagura::{Bus, Cpu, DefaultBus};
 use ram::Ram;
+
+#[test]
+fn explicit_runtime_imports_supply_known_helpers_and_reject_invalid_requests() {
+    use crate::ir::object::{Symbol, SymbolBinding, SymbolKind};
+    let request = |name: String, binding| Object {
+        name: "runtime-import".into(),
+        sections: vec![],
+        relocations: vec![],
+        symbols: vec![Symbol {
+            name,
+            binding,
+            kind: SymbolKind::Function,
+            section: None,
+            offset: 0,
+            size: 0,
+        }],
+    };
+    let helper = Helper::UDiv;
+    let supplied =
+        runtime::supply(vec![request(helper.symbol(), SymbolBinding::Imported)]).unwrap();
+    assert!(
+        supplied
+            .iter()
+            .flat_map(|object| &object.symbols)
+            .any(|symbol| symbol.name == helper.symbol()
+                && symbol.binding == SymbolBinding::Exported)
+    );
+    let mut complete = vec![startup_object(&[], "main.main")];
+    complete.extend(input("package main\nfunc main(){}\n".into()));
+    complete.extend(supplied);
+    link_objects(&complete, 1024 * 1024, 65536)
+        .expect("an explicit import without relocation is resolved by supplied runtime");
+    assert!(
+        runtime::supply(vec![request(
+            "\u{1}ond.runtime.unknown".into(),
+            SymbolBinding::Imported
+        )])
+        .is_err()
+    );
+    assert!(runtime::supply(vec![request(helper.symbol(), SymbolBinding::Exported)]).is_err());
+}
 fn input(source: String) -> Vec<Object> {
     let root = std::path::PathBuf::from("<helper-caller>");
     let mut sources = SourceDb::default();

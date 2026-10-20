@@ -336,3 +336,73 @@ fn executed_numeric_faults_match_the_linked_debug_operation() {
         }
     }
 }
+
+#[test]
+fn fault01_raw_unaligned_reports_load_instruction_pc() {
+    let source = "package main\nfunc main(){var p=536870913 as u32 as *u32;_=*p}\n";
+    let fixture = Fixture::new(source);
+    let compilation = crate::pipeline::compile_project(&fixture.0).unwrap();
+    let startup = crate::program::program_startup(
+        &[],
+        "main.main",
+        &[0x0100ffff, 0x2110000f, 0x01100040, 0xb0100000, 0xc000ffff],
+    );
+    let mut objects = vec![startup];
+    objects.extend(compilation.objects);
+    let linked = crate::linker::link_objects_with_debug(
+        &objects,
+        &compilation.debug_objects,
+        &crate::linker::LinkPlan {
+            read_only: None,
+            memory_base: 0x1000,
+            memory_size: 0x800000,
+            stack_size: 0x100000,
+            entry_symbol: "__ond.entry".into(),
+            heap_base_symbol: "__ond_heap_base".into(),
+            stack_bottom_symbol: "__ond_stack_bottom".into(),
+        },
+    )
+    .unwrap();
+    let (mut cpu, mut bus, _) = super::tests::machine(&linked.image);
+    bus.map_device(0x20000000, 0x200, ram::Ram::new(0x200))
+        .unwrap();
+    for word in 0..64 {
+        bus.write32(0x20000100 + word * 4, 0xdeadbeef).unwrap();
+    }
+    let (before_pc, fault) = (0..2_000_000)
+        .find_map(|_| {
+            let pc = cpu.pc();
+            cpu.step(&mut bus).err().map(|fault| (pc, fault))
+        })
+        .expect("FAULT-01.raw-unaligned must fault");
+    assert!(
+        matches!(
+            fault,
+            kagura::Fault::UnalignedAccess {
+                addr: 536870913,
+                width: kagura::AccessWidth::Word,
+                operation: kagura::AccessOperation::Load,
+                ..
+            }
+        ),
+        "FAULT-01.raw-unaligned: {fault:?}"
+    );
+    assert_eq!(
+        fault.faulting_pc(),
+        before_pc,
+        "FAULT-01.raw-unaligned actual faulting load PC"
+    );
+    let range = linked
+        .debug
+        .ranges
+        .iter()
+        .filter(|r| r.start <= before_pc && before_pc < r.end)
+        .min_by_key(|r| r.end - r.start)
+        .expect("load debug range");
+    assert_eq!(range.operation, DebugOperation::MemoryRead);
+    assert_eq!(range.function, "main.main");
+    assert_eq!(bus.read32(0xffff8040).unwrap(), 0xdeadbeef);
+    for word in 0..64 {
+        assert_eq!(bus.read32(0x20000100 + word * 4).unwrap(), 0xdeadbeef);
+    }
+}

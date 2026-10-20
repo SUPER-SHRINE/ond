@@ -39,21 +39,24 @@ impl BodyLowerer<'_> {
             return self.fail(*span, "len expects 1 argument");
         }
         let value = self.lower_expr(&args[0], None)?;
+        if let Some(call) =
+            self.matching_operator_call(ast::OperatorName::Len, vec![value.clone()], *span)?
+        {
+            let [ty] = call.signature.returns.as_slice() else {
+                return self.fail(*span, "len operator must return one value");
+            };
+            return Some(hir::Expr {
+                ty: *ty,
+                kind: hir::ExprKind::Call(Box::new(call)),
+                span: *span,
+            });
+        }
         if let Some(TypeKind::Array { length, .. }) = self.types.underlying_kind(value.ty) {
             return Some(hir::Expr {
                 kind: hir::ExprKind::EvaluatedLength {
                     value: Box::new(value),
                     length: *length,
                 },
-                ty: TypeId::U32,
-                span: *span,
-            });
-        }
-        if let Some(call) =
-            self.matching_operator_call(ast::OperatorName::Len, vec![value], *span)?
-        {
-            return Some(hir::Expr {
-                kind: hir::ExprKind::Call(Box::new(call)),
                 ty: TypeId::U32,
                 span: *span,
             });
@@ -78,6 +81,9 @@ impl BodyLowerer<'_> {
         if !args.is_empty() {
             return self.fail(*span, format!("{name} expects 0 arguments"));
         }
+        if self.constant_depth != 0 {
+            return self.fail(*span, "constant initializer requires a compile-time value");
+        }
         let Some(sources) = self.sources else {
             return self.fail(
                 *span,
@@ -90,8 +96,23 @@ impl BodyLowerer<'_> {
                 Ok(line) => line,
                 Err(_) => return self.fail(*span, "source line exceeds u32 range"),
             };
+            let local = self.add_local(
+                format!("\u{1}source.line.{}", self.locals.len()),
+                TypeId::U32,
+                hir::LocalKind::User,
+                *span,
+            )?;
+            self.source_values.push(hir::Stmt::LocalDecl {
+                locals: vec![Some(local)],
+                values: hir::ValueList::Expressions(vec![hir::Expr {
+                    kind: hir::ExprKind::Integer(u64::from(line)),
+                    ty: TypeId::U32,
+                    span: *span,
+                }]),
+                span: *span,
+            });
             return Some(hir::Expr {
-                kind: hir::ExprKind::Integer(u64::from(line)),
+                kind: hir::ExprKind::Local(local),
                 ty: TypeId::U32,
                 span: *span,
             });
@@ -117,7 +138,10 @@ impl BodyLowerer<'_> {
             },
             str::to_string,
         );
-        let array = self.lower_string_bytes(path.into_bytes(), *span, None)?;
+        self.source_builtin_depth += 1;
+        let array = self.lower_string_bytes(path.into_bytes(), *span, None);
+        self.source_builtin_depth -= 1;
+        let array = array?;
         let element = hir::Expr {
             kind: hir::ExprKind::Index {
                 base: Box::new(array),

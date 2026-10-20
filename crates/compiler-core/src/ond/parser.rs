@@ -791,18 +791,16 @@ impl Parser {
                             return None;
                         }
                         let end = self.bump().span;
-                        let allowed = matches!(&expr, ast::Expr::Name(path)
-                            if matches!(path.segments.as_slice(), [name] if name.name == "alloc"))
-                            || self.at(TokenKind::LParen)
-                            || self.named_composite_literal_starts();
-                        if !allowed {
+                        if !self.at(TokenKind::LParen) && !self.named_composite_literal_starts()
+                            && matches!(arguments.as_slice(), [ast::Type::Named(_) | ast::Type::Pointer(_, _) | ast::Type::Apply { .. }])
+                        {
                             self.cursor = saved;
                             return None;
                         }
                         Some((arguments, end))
                     });
                     if let Some((arguments, end)) = type_application.flatten() {
-                        if self.at(TokenKind::LBrace) {
+                        if self.at(TokenKind::LBrace) && self.named_composite_literal_starts() {
                             let ast::Expr::Name(path) = expr else { unreachable!() };
                             expr = self.parse_composite_literal(ast::Type::Apply {
                                 base: path,

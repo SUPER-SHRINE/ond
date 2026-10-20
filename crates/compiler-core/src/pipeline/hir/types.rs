@@ -69,6 +69,7 @@ pub(super) struct TypeDeclaration {
     pub(super) ty: ast::Type,
     pub(super) type_params: Vec<ast::Ident>,
     pub(super) span: Span,
+    name_span: Span,
     pub(super) type_id: Option<crate::semantic::TypeId>,
 }
 
@@ -90,7 +91,10 @@ pub(super) enum GenericSpecialization {
 }
 
 pub(super) struct TypePackage {
+    pub(super) generation: RefCell<super::generation::Collector>,
     pub(super) specializations: RefCell<BTreeMap<String, GenericSpecialization>>,
+    pub(super) generic_requests: RefCell<Vec<super::generic_paths::Request>>,
+    active_types: RefCell<BTreeMap<String, Vec<crate::semantic::TypeId>>>,
     pub(super) id: PackageId,
     pub(super) logical_path: String,
     pub(super) imports: BTreeMap<FileId, BTreeMap<String, PackageId>>,
@@ -235,13 +239,17 @@ pub(super) fn collect_type_universe(
                                 ty: spec.ty.clone(),
                                 type_params: spec.type_params.clone(),
                                 span: spec.span,
+                                name_span: spec.name.span,
                                 type_id,
                             });
                     }
                 }
             }
             Some(TypePackage {
+                generation: RefCell::default(),
                 specializations: RefCell::default(),
+                generic_requests: RefCell::default(),
+                active_types: RefCell::default(),
                 id: source.id,
                 logical_path: package.logical_path.clone(),
                 imports,
@@ -482,13 +490,34 @@ fn resolve_applied_type(
             )
         })
         .collect::<Option<Vec<_>>>()?;
+    // Arguments explicitly written inside an application use the caller's path.
+    // The application itself enters only after resolving those arguments, so a
+    // root Box[Box[u8]] does not confuse the independent inner and outer uses.
+    let first_arguments = owner.active_types.borrow().get(name).cloned();
+    if first_arguments
+        .as_ref()
+        .is_some_and(|first| first != &resolved_arguments)
+    {
+        diagnostics.push(
+            Diagnostic::error(
+                span,
+                "generic instantiation changes type arguments on the same path",
+            )
+            .with_related(declaration.name_span, "generic type declared here"),
+        );
+        return None;
+    }
     let declaration_name = format!("{}.{}", owner.logical_path, name);
     let instance_name =
         super::identity::generic_name(&declaration_name, &resolved_arguments, types, universe);
     let existing = types.find_named(&instance_name);
     if let Some(id) = existing {
         if !matches!(types.kind(id), Some(crate::semantic::TypeKind::Pending)) {
-            return Some(id);
+            // A completed instance may have been reached first from another
+            // root. Replay its source requests in this path before reusing it.
+            if first_arguments.is_some() {
+                return Some(id);
+            }
         }
         if visiting.contains(&id) {
             if indirected {
@@ -510,6 +539,10 @@ fn resolve_applied_type(
         )
     });
     visiting.insert(type_id);
+    owner
+        .active_types
+        .borrow_mut()
+        .insert(name.to_string(), resolved_arguments.clone());
     let substitutions = declaration
         .type_params
         .iter()
@@ -528,6 +561,7 @@ fn resolve_applied_type(
         &mut instance_diagnostics,
     );
     visiting.remove(&type_id);
+    owner.active_types.borrow_mut().remove(name);
     for diagnostic in instance_diagnostics {
         diagnostics.push(diagnostic.reanchor(
             span,

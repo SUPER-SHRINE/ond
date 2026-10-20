@@ -52,6 +52,35 @@ impl Default for TypeTable {
 }
 
 impl TypeTable {
+    pub(crate) fn name_logical_root(
+        &mut self,
+        files: &std::collections::BTreeSet<crate::source::FileId>,
+        name: &str,
+    ) {
+        for definition in &mut self.definitions {
+            if let Some(instance) = self.generic_instances.get_mut(&definition.id) {
+                // Generic declarations use logical owners, while their span is
+                // the application site and may belong to another package.
+                if let Some(suffix) = instance.declaration.strip_prefix("..") {
+                    instance.declaration = format!("{name}.{suffix}");
+                    if let Some(old) = &mut definition.name
+                        && let Some(suffix) = old.strip_prefix("..")
+                    {
+                        *old = format!("{name}.{suffix}");
+                    }
+                }
+                continue;
+            }
+            if !files.contains(&definition.span.file) {
+                continue;
+            }
+            if let Some(old) = &mut definition.name
+                && let Some(suffix) = old.strip_prefix("main.")
+            {
+                *old = format!("{name}.{suffix}");
+            }
+        }
+    }
     pub fn new() -> Self {
         let mut table = Self {
             definitions: Vec::new(),

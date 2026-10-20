@@ -172,6 +172,35 @@ pub fn codegen_selected_with_debug(
                     size,
                 });
             }
+            if package.initializer.is_none()
+                && let Some(name) = crate::program::initializer_symbol(package)
+            {
+                let start = emitter.offset(Span::synthetic())?;
+                globals::initializer(&project.types, package, &mut emitter)?;
+                let size = emitter.offset(Span::synthetic())? - start;
+                symbols.push(Symbol {
+                    name: name.clone(),
+                    binding: SymbolBinding::Exported,
+                    kind: SymbolKind::Function,
+                    section: Some(SectionKind::Text),
+                    offset: start,
+                    size,
+                });
+                debug.functions.push(ObjectFunctionDebug {
+                    symbol: name,
+                    section: SectionKind::Text,
+                    offset: start,
+                    size,
+                    frame_size: 0,
+                    return_address_offset: 0,
+                    source: None,
+                    unwind: vec![ObjectUnwindRow {
+                        offset: start,
+                        cfa_sp_offset: 0,
+                        return_address: ond_protocol::debug::ReturnAddressLocation::LinkRegister,
+                    }],
+                });
+            }
             let (data, mut relocations) = emitter.finish()?;
             relocations.append(&mut global_relocations);
             relocations.extend(rodata_relocations);

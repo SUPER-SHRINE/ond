@@ -9,7 +9,7 @@
 
 ```sh
 ond compile .
-ond compile ./game --library-dir ./generated -o game.ondbuild
+ond compile ./game -o game.ondbuild
 ond compile --test ./game
 ond compile --test ./game -o game-test.ondbuild
 ond link game.ondbuild --ram 0x10002000:0x03FFE000 --stack 1MiB --return-to 0x10000000 -o game.ondimage
@@ -19,7 +19,7 @@ ond compile . -o - | ond link - --ram 0x10002000:0x03FFE000 --stack 1MiB --retur
 ### ond compile
 <!-- ond-spec-id: build/compile-command -->
 
-`ond compile [project] [--test] [-o FILE|-] [--library-dir DIR]... [--cache-dir DIR] [-v]`
+`ond compile [project] [--test] [-o FILE|-] [--cache-dir DIR] [-v]`
 
 `--test`はmanifestへtest metadataを記録し、link時のtest sidecar生成を指定する。
 
@@ -31,12 +31,9 @@ project省略時はcurrent directoryを選び、[manifestとsource探索](./pack
 | `-o FILE` | CompilationManifestの出力file。明示値が既定値に優先 |
 | `-o -` | CompilationManifestをstdoutへ出力 |
 | 出力省略 | 通常はproject/target/build.ondbuild、testはproject/target/test.ondbuild |
-| `--library-dir DIR` | 複数指定可能な追加package探索root |
-| `OND_PATH` | OS標準path-list区切りの追加library root列。Windowsは`;`、Unix系は`:` |
 | `--cache-dir DIR` | package `.ondpkg`保存先。既定はproject/target/ond-cache |
 | `-v` | 再生成/再利用package名をstderrへ表示 |
 
-`--library-dir`と`OND_PATH`を共に指定した場合は両方を用い、[同名package整合検査](./packages.md#manifestとsource探索)を適用する。\
 相対引数pathは呼出時current directory基準であり、既定cache/outputはproject基準である。\
 compileのsource入力はprojectのfile集合である。\
 通常manifestは`tests`を省略し、test manifestはcase 0件でも`tests: {"cases":[]}`を持つ。\
@@ -84,7 +81,6 @@ compile/link失敗時は指定先の以前の成果物を保持する。\
 引数なし、--help/-h、ond helpは使用法をstdoutに表示して正常終了する。\
 --以降は位置引数として扱う。
 
-追加sourceを生成するbuild toolは、一意な専用一時ディレクトリへsourceを生成し、--library-dirで渡す。\
-専用directoryにsourceを生成して利用者のsourceと分ける。\
+追加sourceを生成するbuild toolは、一意な専用directoryに[manifest](./packages.md#manifestとsource探索)を持つprojectを生成し、利用側manifestのpath依存へ登録する。\
 生成sourceを含むcompileの完了後に一時ディレクトリを削除する。\
 compileとlinkをpipe接続するbuild toolはcompileのstdoutからmanifestを受け取り、そのmanifestだけをlinkのstdinに渡す。

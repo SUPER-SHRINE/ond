@@ -2,14 +2,12 @@ use ond_protocol::link::{LinkPlan, MemoryRegion};
 use std::{ffi::OsString, path::PathBuf};
 
 pub const HELP: &str = "Usage:
-  ond compile [project] [--test] [-o FILE|-] [--library-dir DIR]... [--cache-dir DIR] [-v]
+  ond compile [project] [--test] [-o FILE|-] [--cache-dir DIR] [-v]
   ond link FILE|- --ram BASE:SIZE --stack SIZE --return-to ADDRESS
            [--read-only BASE:SIZE] [-o FILE|-]
   ond help
 Defaults: project=., compile output=<project>/target/build.ondbuild,
           test compile output=<project>/target/test.ondbuild, link output=a.ondimage. Diagnostics go to stderr.
-Library roots may also be supplied through the OND_PATH environment variable
-using the operating system's path-list separator.
 Numbers: decimal or 0xHEX, optionally suffixed KiB/MiB.
 Relative command-line paths are relative to the current directory.";
 
@@ -17,7 +15,6 @@ pub enum Command {
     Compile {
         root: PathBuf,
         output: Option<PathBuf>,
-        libraries: Vec<PathBuf>,
         cache: Option<PathBuf>,
         verbose: bool,
         test: bool,
@@ -45,7 +42,6 @@ pub fn parse(args: Vec<OsString>) -> Result<Command, String> {
     }
     let mut position = None;
     let mut output = None;
-    let mut libraries = Vec::new();
     let mut cache = None;
     let (mut ram, mut readonly, mut stack, mut return_to) = (None, None, None, None);
     let mut verbose = false;
@@ -74,7 +70,7 @@ pub fn parse(args: Vec<OsString>) -> Result<Command, String> {
                 continue;
             }
             let valid = flag == "-o"
-                || (command == "compile" && matches!(flag, "--library-dir" | "--cache-dir"))
+                || (command == "compile" && flag == "--cache-dir")
                 || (command == "link"
                     && matches!(flag, "--ram" | "--read-only" | "--stack" | "--return-to"));
             if !valid {
@@ -85,7 +81,6 @@ pub fn parse(args: Vec<OsString>) -> Result<Command, String> {
                 .ok_or_else(|| format!("missing value for {flag}"))?;
             match flag {
                 "-o" => set(&mut output, PathBuf::from(value), flag)?,
-                "--library-dir" => libraries.push(PathBuf::from(value)),
                 "--cache-dir" => set(
                     &mut cache,
                     std::path::absolute(value).map_err(|e| e.to_string())?,
@@ -108,7 +103,6 @@ pub fn parse(args: Vec<OsString>) -> Result<Command, String> {
         return Ok(Command::Compile {
             root: position.unwrap_or_else(|| ".".into()),
             output,
-            libraries,
             cache,
             verbose,
             test,

@@ -62,6 +62,23 @@ Windows runnerはこの絶対directory構造を同じ相対関係の専用root�
 
 modeと通常/testの起動整合は[test build](../../build/test-build.md)と[cache/link入力](./build-observations.md)も比較する。
 
+test関数の成立条件は[test source規則](../../build/test-build.md#sourceと文脈)をcompileで比較し、一覧の入力整合は[manifest読出し](../../artifacts.md#manifest読出しと参照整合)をlinkで比較する。\
+次の各入力は独立projectであり、manifestは`[project]`と`name = "test"`の2行、`main.ond`は`package main`と`func main(){}`の2行とする。\
+`main_test.ond`は`package main`、`type Device struct{}`、表の宣言の3行とし、全fileはLF区切り・末尾LFあり、manifest記載以外の入力なし・既存cacheなし、操作はrevision 6でのtest compileとする。
+
+| 入力宣言 | compile期待 |
+| --- | --- |
+| `func TestBad(x:u32){}` | compile error |
+| `func TestBad()->u32{return 1}` | compile error |
+| `func TestBad[T](){}` | compile error |
+| `func(x:Device) TestBad(){}` | compile error |
+| `func TestRoot(){}` | 成功。manifestとroot artifactのcase列はpackage=`test`、name=`TestRoot`、symbol=`main.TestRoot`の1件。test-only宣言は公開interfaceへ追加しない |
+
+正常入力の`main.ond`に`func TestOrdinary(x:u32){}`を追加した場合も、case列はTestRootの1件とする。\
+正常入力に`left/left.ond`（`package left`、`func Value(){}`の2行）を追加してtest compileし、同じcompiler executableと[cache/link入力のlink設定](./build-observations.md#操作と比較)でlinkすると成功する。\
+各操作はこのcompile出力の独立したcopyへ適用し、変更artifactの元bytesからcontent_hashを再計算してArtifactRefも更新する。\
+root artifactのcaseを空にして同caseを`test/left` artifactへ移した入力、およびroot artifactのcaseを同artifact内で複製した入力は、manifestのcase列を維持したままlinkし、それぞれ所属不一致と重複のlink errorを比較する。
+
 ## LinkPlan、symbol、短距離patch
 <!-- ond-spec-id: conformance/artifact-contracts/linking -->
 

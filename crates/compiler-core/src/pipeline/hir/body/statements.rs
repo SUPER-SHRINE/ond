@@ -218,147 +218,24 @@ impl BodyLowerer<'_> {
                         });
                     }
                     ast::Stmt::Assign(assignment) => {
+                        for target in &assignment.targets {
+                            if self.read_only_target(target) {
+                                return self.fail(target.span(), "cannot assign to a constant");
+                            }
+                        }
                         if let Some(op) = assignment.op
-                            && !assignment.implicit_one
                             && assignment.targets.len() == 1
-                            && assignment.values.len() == 1
+                            && (assignment.implicit_one || assignment.values.len() == 1)
                             && let ast::Expr::Index { base, index, .. } = &assignment.targets[0]
                         {
-                            let base = self.lower_expr(base, None)?;
-                            let expected_index = self
-                                .unique_operator_parameter_types(
-                                    ast::OperatorName::Index,
-                                    &[Some(base.ty), None],
-                                    assignment.span,
-                                )
-                                .map(|parameters| parameters[1]);
-                            let index = self.lower_value(index, expected_index)?;
-                            if let Some(getter) = self.matching_operator_call(
-                                ast::OperatorName::Index,
-                                vec![base.clone(), index.clone()],
+                            statements.extend(self.lower_compound_index(
+                                base,
+                                index,
+                                assignment.values.first(),
+                                op,
                                 assignment.span,
-                            )? {
-                                let [element_ty] = getter.signature.returns.as_slice() else {
-                                    return self.fail(
-                                        assignment.span,
-                                        "index operator must return one value",
-                                    );
-                                };
-                                let element_ty = *element_ty;
-                                let integer = self.types.is_integer(element_ty);
-                                let float = matches!(
-                                    self.types.underlying_kind(element_ty),
-                                    Some(crate::semantic::TypeKind::F32)
-                                );
-                                let builtin = integer
-                                    || float
-                                        && matches!(
-                                            op,
-                                            ast::BinaryOp::Add
-                                                | ast::BinaryOp::Sub
-                                                | ast::BinaryOp::Mul
-                                                | ast::BinaryOp::Div
-                                        );
-                                let operator_name = super::expressions::binary_operator_name(op);
-                                let rhs_expected = if builtin {
-                                    Some(element_ty)
-                                } else {
-                                    operator_name
-                                        .and_then(|name| {
-                                            self.unique_operator_parameter_types(
-                                                name,
-                                                &[Some(element_ty), None],
-                                                assignment.span,
-                                            )
-                                        })
-                                        .map(|parameters| parameters[1])
-                                };
-                                let values = self.lower_values(
-                                    &assignment.values,
-                                    &[rhs_expected],
-                                    assignment.span,
-                                    "compound index assignment",
-                                )?;
-                                let value_types = values.types();
-                                let [rhs_ty] = value_types.as_slice() else {
-                                    return self.fail(
-                                        assignment.span,
-                                        "compound assignment requires one value",
-                                    );
-                                };
-                                let mut overloaded = None;
-                                let result_ty = if builtin {
-                                    element_ty
-                                } else {
-                                    let Some(name) = operator_name else {
-                                        return self.fail(
-                                            assignment.span,
-                                            "invalid compound assignment operand type",
-                                        );
-                                    };
-                                    let rhs = hir::Expr {
-                                        kind: hir::ExprKind::Zero,
-                                        ty: *rhs_ty,
-                                        span: assignment.span,
-                                    };
-                                    let Some(call) = self.matching_operator_call(
-                                        name,
-                                        vec![
-                                            hir::Expr {
-                                                kind: hir::ExprKind::Zero,
-                                                ty: element_ty,
-                                                span: assignment.span,
-                                            },
-                                            rhs,
-                                        ],
-                                        assignment.span,
-                                    )?
-                                    else {
-                                        return self.fail(
-                                            assignment.span,
-                                            "invalid compound assignment operand type",
-                                        );
-                                    };
-                                    let [result] = call.signature.returns.as_slice() else {
-                                        return self.fail(
-                                            assignment.span,
-                                            "binary operator must return one value",
-                                        );
-                                    };
-                                    let result = *result;
-                                    overloaded = Some(call);
-                                    result
-                                };
-                                let result = hir::Expr {
-                                    kind: hir::ExprKind::Zero,
-                                    ty: result_ty,
-                                    span: assignment.span,
-                                };
-                                let Some(setter) = self.matching_operator_call(
-                                    ast::OperatorName::IndexSet,
-                                    vec![base.clone(), index.clone(), result],
-                                    assignment.span,
-                                )?
-                                else {
-                                    return self.fail(
-                                    assignment.span,
-                                    "compound index assignment requires a matching []= operator",
-                                );
-                                };
-                                statements.push(hir::Stmt::IndexAssign(Box::new(
-                                    hir::IndexAssignStmt {
-                                        base,
-                                        index,
-                                        getter,
-                                        values,
-                                        op,
-                                        overloaded,
-                                        setter,
-                                        span: assignment.span,
-                                    },
-                                )));
-                                return Some(());
-                            }
+                            )?);
+                            return Some(());
                         }
                         if assignment.op.is_none()
                             && assignment.targets.len() == 1
@@ -366,32 +243,50 @@ impl BodyLowerer<'_> {
                             && let ast::Expr::Index { base, index, .. } = &assignment.targets[0]
                         {
                             let base = self.lower_expr(base, None)?;
+                            let known_index = if super::expressions::contextual_literal(index) {
+                                None
+                            } else {
+                                Some(self.lower_value(index, None)?)
+                            };
+                            let source_value = &assignment.values[0];
+                            let known_value =
+                                if super::expressions::contextual_literal(source_value) {
+                                    None
+                                } else {
+                                    Some(self.lower_value(source_value, None)?)
+                                };
                             let expected = self.unique_operator_parameter_types(
                                 ast::OperatorName::IndexSet,
-                                &[Some(base.ty), None, None],
+                                &base,
+                                &[
+                                    Some(base.ty),
+                                    known_index.as_ref().map(|value| value.ty),
+                                    known_value.as_ref().map(|value| value.ty),
+                                ],
                                 assignment.span,
                             );
-                            let index = self.lower_value(
-                                index,
-                                expected.as_ref().map(|parameters| parameters[1]),
-                            )?;
-                            let value = self.lower_value(
-                                &assignment.values[0],
-                                expected.as_ref().map(|parameters| parameters[2]),
-                            )?;
-                            if let Some(call) = self.matching_operator_call(
-                                ast::OperatorName::IndexSet,
-                                vec![base, index, value],
-                                assignment.span,
-                            )? {
-                                statements.push(hir::Stmt::Call(call));
-                                return Some(());
+                            if let Some(expected) = expected {
+                                let index = if let Some(index) = known_index {
+                                    index
+                                } else {
+                                    self.lower_value(index, Some(expected[1]))?
+                                };
+                                let value = if let Some(value) = known_value {
+                                    value
+                                } else {
+                                    self.lower_value(&assignment.values[0], Some(expected[2]))?
+                                };
+                                if let Some(call) = self.matching_operator_call(
+                                    ast::OperatorName::IndexSet,
+                                    vec![base, index, value],
+                                    assignment.span,
+                                )? {
+                                    statements.push(hir::Stmt::Call(call));
+                                    return Some(());
+                                }
                             }
                         }
                         for target in &assignment.targets {
-                            if self.read_only_target(target) {
-                                return self.fail(target.span(), "cannot assign to a constant");
-                            }
                             if let ast::Expr::Name(path) = target {
                                 if path.segments.len() == 1 && path.segments[0].name == "_" {
                                     continue;
@@ -449,95 +344,9 @@ impl BodyLowerer<'_> {
                                     "compound assignment target cannot be `_`",
                                 );
                             };
-                            let integer = self.types.is_integer(target.ty);
-                            let float = matches!(
-                                self.types.underlying_kind(target.ty),
-                                Some(crate::semantic::TypeKind::F32)
-                            );
-                            let builtin = integer
-                                || float
-                                    && matches!(
-                                        op,
-                                        ast::BinaryOp::Add
-                                            | ast::BinaryOp::Sub
-                                            | ast::BinaryOp::Mul
-                                            | ast::BinaryOp::Div
-                                    );
-                            if assignment.implicit_one {
-                                let kind = if float {
-                                    hir::ExprKind::Float32(1.0f32.to_bits())
-                                } else {
-                                    hir::ExprKind::Integer(1)
-                                };
-                                hir::ValueList::Expressions(vec![hir::Expr {
-                                    kind,
-                                    ty: target.ty,
-                                    span: assignment.span,
-                                }])
-                            } else {
-                                let value_type = if matches!(
-                                    op,
-                                    ast::BinaryOp::ShiftLeft | ast::BinaryOp::ShiftRight
-                                ) {
-                                    crate::semantic::TypeId::U32
-                                } else {
-                                    target.ty
-                                };
-                                let overloaded_rhs = (!builtin)
-                                    .then(|| super::expressions::binary_operator_name(op))
-                                    .flatten()
-                                    .and_then(|name| {
-                                        self.unique_operator_parameter_types(
-                                            name,
-                                            &[Some(target.ty), None],
-                                            assignment.span,
-                                        )
-                                    })
-                                    .map(|parameters| parameters[1]);
-                                let values = self.lower_values(
-                                    &assignment.values,
-                                    &[if builtin {
-                                        Some(value_type)
-                                    } else {
-                                        overloaded_rhs
-                                    }],
-                                    assignment.span,
-                                    "compound assignment",
-                                )?;
-                                if !builtin {
-                                    let Some(name) = super::expressions::binary_operator_name(op)
-                                    else {
-                                        return self.fail(
-                                            assignment.span,
-                                            "invalid compound assignment operand type",
-                                        );
-                                    };
-                                    let value_types = values.types();
-                                    let [rhs_ty] = value_types.as_slice() else {
-                                        return self.fail(
-                                            assignment.span,
-                                            "compound assignment requires one value",
-                                        );
-                                    };
-                                    let rhs = hir::Expr {
-                                        kind: hir::ExprKind::Zero,
-                                        ty: *rhs_ty,
-                                        span: assignment.span,
-                                    };
-                                    overloaded = self.matching_operator_call(
-                                        name,
-                                        vec![target.clone(), rhs],
-                                        assignment.span,
-                                    )?;
-                                    if overloaded.is_none() {
-                                        return self.fail(
-                                            assignment.span,
-                                            "invalid compound assignment operand type",
-                                        );
-                                    }
-                                }
-                                values
-                            }
+                            let (values, call) = self.compound_values(assignment, target, op)?;
+                            overloaded = call;
+                            values
                         } else {
                             self.lower_values(
                                 &assignment.values,

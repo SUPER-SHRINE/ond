@@ -42,7 +42,7 @@ package build_idは次のPackageBuildInputをcanonical JSON化したbytesのSHA-
 | Generation | `instances: Instance[]`, `types: TypeExpr[]`, `nominals: Nominal[]`, `constants: OwnedConstant[]`, `interface: NormalizedInterface` |
 
 manifest_hashは全packageに共通して今回compileするproject rootのond.tomlの全file bytesのSHA-256、SourceHash.content_hashはsource fileの全bytesのSHA-256とする。\
-BOMと改行を含む入力bytesを保持し、pathはpackageを構成するsource directory（追加libraryと依存packageもそのpackage directory）からの相対pathを`/`で区切る。\
+BOMと改行を含む入力bytesを保持し、pathはpackageを構成するsource directory（依存packageもそのpackage directory）からの相対pathを`/`で区切る。\
 sourcesはpathのUnicode scalar辞書順、dependenciesは直接import先の論理package pathからそのbuild_idへのmapとする。\
 modeは通常/test source集合が同じ場合もそれぞれnormal/testを用いる。
 
