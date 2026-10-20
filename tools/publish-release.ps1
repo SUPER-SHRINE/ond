@@ -13,8 +13,7 @@ $repository = 'SUPER-SHRINE/ond'
 & (Join-Path $PSScriptRoot 'release-manifest.ps1') -Mode Verify -Version $Version -Commit $Commit -AssetDirectory $AssetDirectory
 $manifest = Read-ReleaseJson (Join-Path $AssetDirectory "ond-$Version-manifest.json")
 $names = @($manifest.targets | ForEach-Object { $_.archive.name; "$($_.archive.name).sha256" }) + "ond-$Version-manifest.json"
-$notes = Join-Path (Split-Path $PSScriptRoot -Parent) "docs/releases/$Version-notes.md"
-if (-not (Test-Path -LiteralPath $notes -PathType Leaf)) { throw 'Release notes are missing.' }
+$notes = "Specification: https://github.com/SUPER-SHRINE/ond/tree/$Commit/specs/ond"
 
 function Invoke-ReleaseApi {
     param([string]$Endpoint)
@@ -34,7 +33,7 @@ try {
     $lookupExit = $LASTEXITCODE
     if ($lookupExit -ne 0) {
         if ([IO.File]::ReadAllText($errorPath) -notmatch '\(HTTP 404\)') { throw 'Could not inspect existing GitHub Release.' }
-        & gh release create $Version --repo $repository --verify-tag --notes-file $notes --title "Ond $Version"
+        & gh release create $Version --repo $repository --verify-tag --notes $notes --title "Ond $Version"
         if ($LASTEXITCODE -ne 0) { throw 'Could not create GitHub Release.' }
         $release = Invoke-ReleaseApi "repos/$repository/releases/tags/$Version"
     }

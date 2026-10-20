@@ -424,16 +424,6 @@ impl<'a> NameValidator<'a> {
                     self.ty(&field.ty);
                 }
             }
-            ast::Type::Interface { methods, .. } => {
-                for method in methods {
-                    for parameter in &method.signature.params {
-                        self.ty(&parameter.ty);
-                    }
-                    for ty in &method.signature.results {
-                        self.ty(ty);
-                    }
-                }
-            }
             ast::Type::Func { signature, .. } => {
                 for parameter in &signature.params {
                     self.ty(&parameter.ty);

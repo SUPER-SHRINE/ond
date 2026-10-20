@@ -126,7 +126,7 @@ ignore = [".git", ".ond", "target", "generated"]
 
 ## 公開API
 
-packageを跨いで参照できるのは、ASCII大文字で始まるtop-level宣言、field、methodである。公開interfaceのmethodも大文字で始める。
+packageを跨いで参照できるのは、ASCII大文字で始まるtop-level宣言、field、methodである。
 
 ```ond
 package geometry

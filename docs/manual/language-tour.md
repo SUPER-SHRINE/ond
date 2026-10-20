@@ -39,7 +39,9 @@ func example() {
 
 ## 基本型と変換
 
-数値型は`u8`、`u16`、`u32`、`i8`、`i16`、`i32`、`f32`である。論理型は`bool`である。このほかにpointer、固定長array、struct、function pointer、名前付きinterfaceがある。
+数値型は`u8`、`u16`、`u32`、`i8`、`i16`、`i32`、`f32`である。\
+論理型は`bool`である。\
+このほかにpointer、固定長array、struct、function pointerがある。
 
 Ondは異なる数値型を暗黙変換しない。変換は`as`で明示する。
 
@@ -155,11 +157,14 @@ func useCounter() {
 }
 ```
 
-method呼び出しではreceiver型の完全一致、addressableな値の1段のaddress取得、pointerの1段の参照外しの順で候補を選ぶ。value receiverは値をcopyし、pointer receiverはpointerを渡す。この変換はmethod呼び出しだけに適用し、通常のfieldアクセスやinterface変換には適用しない。
+method呼び出しではreceiver型の完全一致、addressableな値の1段のaddress取得、pointerの1段の参照外しの順で候補を選ぶ。\
+value receiverは値をcopyし、pointer receiverはpointerを渡す。\
+この変換はmethod呼び出しだけに適用し、通常のfieldアクセスには適用しない。
 
 ## pointerとheap
 
-`&value`でaddressを取得し、`*pointer`で参照外しする。`nil`はpointer、function pointer、interfaceのzero valueとして使える。
+`&value`でaddressを取得し、`*pointer`で参照外しする。\
+`nil`はpointer、function pointerのzero valueとして使える。
 
 ```ond
 func allocate() -> *u32 {
@@ -215,113 +220,46 @@ generic型のmethodでは、receiverの型argument位置がmethod内の型parame
 
 generic関数、generic method、generic operatorの本体は、型argumentに依存しない値名を宣言時に検査する。そのため、未使用のgeneric宣言内でも未定義名はエラーになる。演算可否など型argumentに依存する検査は具体化時に行う。
 
-## interface
+## Structとfunction pointerによる動的dispatch
 
-interfaceは名前付きのnominal typeである。concrete typeは、必要なsignatureを持つpointer receiver methodによってinterfaceを満たす。`impl`宣言はない。
+異なる型を同じ呼出し方で扱いたい場合は、型消去したpointerと通常のfunction pointerをstructへまとめる。\
+具象型との対応と参照先の寿命は、constructor相当の関数とlibraryの契約で管理する。
 
 ```ond
-type Runner interface {
-    Run() -> i32
+type Abs struct { rawPtr: u32; action: func(u32) }
+func (value: Abs) Action() { value.action(value.rawPtr) }
+type Impl struct { value: u32 }
+func ImplAction(rawPtr: u32) { (rawPtr as *Impl).value += 1 }
+func Init(value: *Impl) -> Abs {
+    return Abs{rawPtr: value as u32, action: ImplAction}
 }
-
-type Task struct {
-    result: i32
-}
-
-func (task: *Task) Run() -> i32 {
-    return task.result
-}
-
-func run(runner: Runner) -> i32 {
-    return runner.Run()
-}
-
-func exampleInterface() -> i32 {
-    var task = Task{result: 7}
-    var runner: Runner = (&task) as Runner
-    return run(runner)
+func useWrapper() {
+    var value = new(Impl)
+    if value == nil { return }
+    var wrapper = Init(value)
+    wrapper.Action()
+    free(value)
 }
 ```
 
-interfaceへの変換は`pointer as InterfaceType`と明示する。boxing、type assertion、reflection、interface間の変換は提供しない。
+wrapperのcopyはpointerとfunction pointerをcopyするだけであり、隠れたboxingや自動解放を行わない。\
+function pointerのsignatureはcompilerが検査するが、消去pointerとwrapper関数の対応は利用側で保証する。
 
-interface methodは常にASCII大文字で始める。interface名が非公開でもprivate methodを要求するinterfaceは宣言できない。
+method valueや`Type.Method`のstatic参照は提供しない。\
+上の`ImplAction`のように通常のtop-level関数を渡す。
 
-interfaceもgeneric型として宣言できる。interface method自身に追加の型parameterは宣言せず、interfaceの型parameterをsignature内で使う。generic型のpointer receiver methodも、具体化後のsignatureが一致すればinterfaceを満たす。
+## Generic operator
 
-次の例は、非公開の具象型を`List[T]`として公開し、index operatorと`len`を公開methodへ委譲する。
+operatorのreceiver型から型argumentを具体化できる。
 
 ```ond
-type List[T] interface {
-    Get(index: u32) -> T
-    Set(index: u32, value: T)
-    Len() -> u32
-    Destroy()
-}
-
-type pairList[T] struct {
-    values: [2]T
-}
-
-func (values: *pairList[T]) Get(index: u32) -> T {
-    return values.values[index]
-}
-
-func (values: *pairList[T]) Set(index: u32, value: T) {
-    values.values[index] = value
-}
-
-func (values: *pairList[T]) Len() -> u32 {
-    return len(values.values)
-}
-
-func (values: *pairList[T]) Destroy() {
-    free(values)
-}
-
-func NewPairList[T](first: T, second: T) -> List[T] {
-    values := new(pairList[T])
-    if values == nil {
-        return nil
-    }
-    values.values[0] = first
-    values.values[1] = second
-    return values as List[T]
-}
-
-operator (values: List[T]) [](index: u32) -> T {
-    return values.Get(index)
-}
-
-operator (values: List[T]) []=(index: u32, value: T) {
-    values.Set(index, value)
-}
-
-operator (values: List[T]) len() -> u32 {
-    return values.Len()
-}
-
-func useList() {
-    values := NewPairList[u32](3, 5)
-    if values == nil {
-        return
-    }
-    defer {
-        values.Destroy()
-    }
-    values[1] = 13
-    _ = values[1]
-    var count: u32 = len(values)
-    _ = count
-}
+type Pair[T] struct { values: [2]T }
+operator (pair: Pair[T]) [](index: u32) -> T { return pair.values[index] }
+operator (pair: Pair[T]) len() -> u32 { return 2 }
 ```
 
-`operator len`は戻り値型に`u32`を1個明示し、結果も単一の`u32`となる。\
-戻り値の省略、別の型、複数戻り値は、generic operatorを含め未使用の宣言でもエラーになる。
-
-`pairList`の実装はpackage外から直接参照できないが、`NewPairList[u32]`が返す`List[u32]`の公開methodとoperatorは利用できる。変換は`values as List[T]`のように明示する必要があり、operator選択も式の静的な型に対して行う。`List[u32]`を満たす具象pointerへ上記operatorを直接適用する暗黙interface変換はない。
-
-interface値は参照先の所有権や寿命を管理しない。この例の`Destroy`のように、確保と解放の契約はlibraryのAPIとして明示する。
+`operator len`は単一の`u32`を返す必要がある。\
+operator選択はoperandの静的な型で行い、暗黙の型変換で候補を増やさない。
 
 ## trapとdebug情報
 

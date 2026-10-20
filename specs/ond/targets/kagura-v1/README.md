@@ -6,6 +6,5 @@
 - [Target Runtime Contract](./machine.md)
 - [ABI](./abi.md)
 - [MIR backend 契約](./mir-backend.md)
-- 適合の証拠・進捗記録は[Compiler適合記録](../../../../docs/compiler/kagura-v1-conformance-record.md)を参照
 
 この profile は Ond に属し、Kagura 規格の一部ではない。

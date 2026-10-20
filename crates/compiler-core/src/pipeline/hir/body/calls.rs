@@ -11,11 +11,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) struct ResolvedMethodCandidate {
     pub(super) package_id: PackageId,
-    pub(super) logical_path: String,
-    pub(super) receiver_name: String,
     pub(super) signature: hir::Signature,
     pub(super) symbol: String,
-    pub(super) span: Span,
 }
 
 impl BodyLowerer<'_> {
@@ -454,9 +451,6 @@ impl BodyLowerer<'_> {
         }
         match callee.as_ref() {
             ast::Expr::Selector { base, field, .. } => {
-                if let Some(call) = self.lower_interface_call(base, &field.name, args, *span) {
-                    return call;
-                }
                 if let Some(call) = self.lower_method_call(base, &field.name, args, *span) {
                     return call;
                 }
@@ -469,9 +463,6 @@ impl BodyLowerer<'_> {
                     span: path.span,
                 });
                 let name = &path.segments.last()?.name;
-                if let Some(call) = self.lower_interface_call(&base, name, args, *span) {
-                    return call;
-                }
                 if let Some(call) = self.lower_method_call(&base, name, args, *span) {
                     return call;
                 }
@@ -954,11 +945,8 @@ impl BodyLowerer<'_> {
         (signature.parameters.first().map(|parameter| parameter.ty) == Some(actual_receiver))
             .then_some(ResolvedMethodCandidate {
                 package_id,
-                logical_path,
-                receiver_name,
                 signature,
                 symbol,
-                span: method.span,
             })
     }
 

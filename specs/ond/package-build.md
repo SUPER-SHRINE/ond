@@ -204,13 +204,13 @@ Objectとは独立したtarget-neutralデータで、本文・機械レイアウ
 generic宣言templateはこの成果物へ保存しない。generic型・関数・method・operatorを利用するpackageはsource宣言から具体化する。具体化済みの型と関数は、通常の非generic成果物と同じ形式で扱う。
 
 - exports: Type、Constant、Global、Function。小文字のbindingは公開しない。
-- types: primitive、Pointer、Array、Function、Struct、Interface、Defined。
+- types: primitive、Pointer、Array、Function、Struct、Defined。
   参照番号はこの成果物のtypes配列内のindexのみ。名前付き型の完全修飾名をnominal identityとして保存する。
 - 公開宣言から到達する型だけを再帰的に保存する。非公開の名前付き型も公開関数の戻り値などから到達する場合は含むが、
   exportsには追加しない。recursive pointerの循環参照を許す。
 - struct fieldには名前、型、private_owner（論理パッケージpathまたはnull）を持たせる。
   非公開フィールドの型同一性・アクセス制限に必要な所有情報を失わない。
-- Interface型は宣言順のmethod名・source-visible signature・private_ownerを持つ。Ond v1のinterface methodは常に公開のため、interface methodのprivate_ownerは常にnullとする。concrete named typeには、到達可能な公開methodの名前・receiverがpointerか・source-visible signature・link symbolを持たせる。receiver自身はsignatureのparameter列へ含めない。
+- concrete named typeには、到達可能な公開methodの名前・receiverがpointerか・source-visible signature・link symbolを持たせる。receiver自身はsignatureのparameter列へ含めない。
 - 関数は引数型列と戻り値型列。引数名は型同一性に関与しないので保存しない。
 - Constantは確定型と評価済み値。Integerはu64 bit値、Float32はu32 IEEE bit値を保持し、
   JSON浮動小数点へ変換しない。Bool、typed Nil、Zero、Composite（index/field→値）にも対応する。

@@ -4,7 +4,7 @@ use crate::{
     semantic::{TypeId, TypeKind},
 };
 use ond_interface::{
-    ConcreteMethod, Export, Field, Interface, Kind, Method, Signature, Type, Value, ValueKind,
+    ConcreteMethod, Export, Field, Interface, Kind, Signature, Type, Value, ValueKind,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -195,31 +195,6 @@ impl Writer<'_> {
                     });
                 }
                 Kind::Struct(fields)
-            }
-            TypeKind::Interface(interface) => {
-                let mut methods = Vec::new();
-                for method in interface.methods {
-                    let owner = method
-                        .private_owner
-                        .map(|id| {
-                            self.project
-                                .packages
-                                .iter()
-                                .find(|package| package.id == id)
-                                .map(|package| package.logical_path.clone())
-                                .ok_or_else(|| "missing method owner package".to_string())
-                        })
-                        .transpose()?;
-                    methods.push(Method {
-                        name: method.name,
-                        signature: self.signature(
-                            method.signature.parameters.into_iter().skip(1),
-                            method.signature.returns.into_iter(),
-                        )?,
-                        private_owner: owner,
-                    });
-                }
-                Kind::Interface(methods)
             }
         };
         self.types[local as usize] = Type {

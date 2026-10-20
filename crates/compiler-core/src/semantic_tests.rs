@@ -155,7 +155,7 @@ func main() {}
 #[test]
 fn generic_definition_and_specialization_errors_are_reported_together() {
     let source = r#"package main
-type List[T] interface { Get(index: u32) -> *T; Set(index: u32, value: T); }
+type List[T] struct { data: *T }
 type listImpl[T] struct { data: *T }
 func (l: *listImpl[T]) Get(index: u32) -> *T { return &list.data[index] }
 func (l: *listImpl[T]) Set(index: u32, item: T) { list.data[index] = value }
@@ -185,9 +185,9 @@ func main() { _ = NewList[u32]() }
         "{diagnostics:?}"
     );
     assert!(
-        diagnostics.iter().any(|diagnostic| diagnostic
-            .message
-            .contains("pointer-to-interface conversion")),
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("return type mismatch")),
         "{diagnostics:?}"
     );
 }

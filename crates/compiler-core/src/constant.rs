@@ -102,9 +102,7 @@ fn eval_inner(expr: &Expr, types: &TypeTable) -> Result<Value, String> {
             Some(TypeKind::Bool) => Value::Bool(false),
             Some(TypeKind::F32) => Value::Float(0.0),
             Some(TypeKind::Pointer(_) | TypeKind::Function(_)) => Value::Nil,
-            Some(TypeKind::Array { .. } | TypeKind::Struct(_) | TypeKind::Interface(_)) => {
-                Value::Aggregate(Vec::new())
-            }
+            Some(TypeKind::Array { .. } | TypeKind::Struct(_)) => Value::Aggregate(Vec::new()),
             _ if types.is_integer(expr.ty) => Value::Int(BigInt::zero()),
             _ => return Err("invalid constant zero type".into()),
         },

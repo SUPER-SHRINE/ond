@@ -31,7 +31,6 @@ pub enum Kind {
     Array { length: u32, element: TypeRef },
     Function(Signature),
     Struct(Vec<Field>),
-    Interface(Vec<Method>),
     Defined(TypeRef),
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -44,13 +43,6 @@ pub struct Field {
     pub name: String,
     pub ty: TypeRef,
     /// Logical package path, not an ephemeral PackageId.
-    pub private_owner: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Method {
-    pub name: String,
-    pub signature: Signature,
     pub private_owner: Option<String>,
 }
 
@@ -114,15 +106,6 @@ impl Interface {
                 Kind::Struct(fields) => {
                     for field in fields {
                         check(field.ty)?;
-                    }
-                }
-                Kind::Interface(methods) => {
-                    let mut names = std::collections::BTreeSet::new();
-                    for method in methods {
-                        if !names.insert(&method.name) {
-                            return Err(format!("duplicate interface method {}", method.name));
-                        }
-                        signature(&method.signature)?;
                     }
                 }
                 _ => {}

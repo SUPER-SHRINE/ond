@@ -18,7 +18,6 @@
 - generic型・関数・method: [Language §3.1](../../specs/ond/v1/language.md#31-型parameter)
 - `nil`とraw pointer: [Language §4](../../specs/ond/v1/language.md#4-nil-とポインタ)
 - array、struct、method: [Language §5](../../specs/ond/v1/language.md#5-配列と-struct)
-- generic interfaceとinterface値: [Language §5.2](../../specs/ond/v1/language.md#52-interface)
 - 式、演算、変換: [Language §6](../../specs/ond/v1/language.md#6-式)
 - 文字列リテラル: [Language §7](../../specs/ond/v1/language.md#7-文字列リテラル)
 
@@ -46,7 +45,7 @@
 - arrayとstructは値copyされる。
 - raw pointerのindex、寿命、二重解放はruntime検査されない。
 - method呼び出しでは、完全一致、addressableな値の1段のaddress取得、pointerの1段の参照外しの順でreceiver候補を選ぶ。
-- interfaceはpointerから明示変換して作り、boxingやtype assertionはない。
+- 動的dispatchは通常のstructとfunction pointerで明示的に構成する。
 - genericの型argumentは明示する。ただしgeneric methodはreceiverから、generic operatorはoperandから型parameterが推論される。
 - package-level initializerから通常の関数は呼べず、自動`init` hookもない。
 - `ond compile`の出力は実行ファイルではなく、link前のmanifestである。

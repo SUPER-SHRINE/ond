@@ -62,8 +62,10 @@ try {
         $suffix = if ($linux) { '' } else { '.exe' }
         $extension = if ($linux) { 'tar.gz' } else { 'zip' }
         $legacyPaths = @("ond$suffix", "ond-lsp$suffix", 'README.md', 'CHANGELOG.md', 'LICENSE.md')
-        $paths = $legacyPaths + @($noticePath, $copyrightPath)
-        foreach ($name in $paths + @('unexpected.md', 'machine-roadmap.md', 'docs/design/extra.md', 'docs/design/README.md')) {
+        $legacyNoticePaths = $legacyPaths + @($noticePath, $copyrightPath)
+        $paths = @(Get-ReleaseArchivePaths $target $version)
+        if ('CHANGELOG.md' -cin $paths) { throw 'New release archives must exclude CHANGELOG.' }
+        foreach ($name in $paths + @('CHANGELOG.md', 'unexpected.md', 'machine-roadmap.md', 'docs/design/extra.md', 'docs/design/README.md')) {
             $file = Join-Path $staging $name
             New-Item -ItemType Directory -Force -Path (Split-Path $file -Parent) | Out-Null
             if ($name -ceq $noticePath -or $name -ceq $copyrightPath) {
@@ -77,6 +79,16 @@ try {
         if ($legacyHash -cne (Get-FileHash (Join-Path $staging "ond-lsp$suffix") -Algorithm SHA256).Hash.ToLowerInvariant()) { throw 'Legacy LSP hash mismatch.' }
         $script:testCount++
         Assert-Rejected "$target new release without third-party notices" { Get-ArchiveBinaryHash $badArchive $target "ond-lsp$suffix" $version }
+        New-FixtureArchive $badArchive $target $legacyNoticePaths
+        $legacyNoticeHash = Get-ArchiveBinaryHash $badArchive $target "ond-lsp$suffix" '0.1.3'
+        if ($legacyNoticeHash -cne $legacyHash) { throw 'Legacy archive with notices has a different LSP hash.' }
+        $script:testCount++
+        New-FixtureArchive $badArchive $target ($legacyNoticePaths | Where-Object { $_ -cne 'CHANGELOG.md' })
+        Assert-Rejected "$target legacy release missing CHANGELOG" { Get-ArchiveBinaryHash $badArchive $target "ond-lsp$suffix" '0.1.3' }
+        New-FixtureArchive $badArchive $target ($paths | Where-Object { $_ -cne 'README.md' })
+        Assert-Rejected "$target new release missing README" { Get-ArchiveBinaryHash $badArchive $target "ond-lsp$suffix" $version }
+        New-FixtureArchive $badArchive $target ($paths + 'CHANGELOG.md')
+        Assert-Rejected "$target new release with extra CHANGELOG" { Get-ArchiveBinaryHash $badArchive $target "ond-lsp$suffix" $version }
         New-FixtureArchive $badArchive $target ($paths | Where-Object { $_ -cne $noticePath })
         Assert-Rejected "$target new release missing one third-party notice" { Get-ArchiveBinaryHash $badArchive $target "ond-lsp$suffix" $version }
         New-FixtureArchive $badArchive $target ($paths | Where-Object { $_ -cne $copyrightPath })
@@ -152,6 +164,7 @@ try {
     $global:OndReleaseMock = @{
         assets = $assets; names = @((Read-ReleaseJson $manifestPath).targets | ForEach-Object { $_.archive.name; "$($_.archive.name).sha256" }) + "ond-$version-manifest.json"
         version = $version; commit = $commit; uploads = [Collections.Generic.List[string]]::new(); missing = @(); corrupt = $false
+        exists = $true; creates = 0
     }
     function global:gh {
         param([Parameter(ValueFromRemainingArguments)] [string[]]$Arguments)
@@ -159,7 +172,23 @@ try {
         $mock = $global:OndReleaseMock
         if ($Arguments[0] -eq 'api') {
             if ($Arguments[1] -match '/git/ref/tags/') { return (@{ object = @{ type = 'commit'; sha = $mock.commit } } | ConvertTo-Json -Depth 4 -Compress) }
+            if (-not $mock.exists) {
+                $global:LASTEXITCODE = 1
+                Write-Error 'gh: Not Found (HTTP 404)' -ErrorAction Continue
+                return
+            }
             return (@{ tag_name = $mock.version; assets = @($mock.names | Where-Object { $_ -cnotin $mock.missing } | ForEach-Object { @{ name = $_ } }) } | ConvertTo-Json -Depth 4 -Compress)
+        }
+        if ($Arguments[0] -eq 'release' -and $Arguments[1] -eq 'create') {
+            $notesIndex = [array]::IndexOf($Arguments, '--notes')
+            if ($mock.exists -or $Arguments[2] -cne $mock.version -or $notesIndex -lt 0 -or
+                $Arguments[$notesIndex + 1] -cne "Specification: https://github.com/SUPER-SHRINE/ond/tree/$($mock.commit)/specs/ond" -or
+                '--generate-notes' -cin $Arguments -or '--notes-file' -cin $Arguments) {
+                throw 'Release creation must use only the fixed specification link.'
+            }
+            $mock.exists = $true
+            $mock.creates++
+            return
         }
         if ($Arguments[0] -eq 'release' -and $Arguments[1] -eq 'download') {
             $name = $Arguments[([array]::IndexOf($Arguments, '--pattern') + 1)]
@@ -182,6 +211,14 @@ try {
         $global:OndReleaseMock.missing = @("ond-$version-manifest.json")
         & (Join-Path $PSScriptRoot 'publish-release.ps1') -Version $version -Commit $commit -AssetDirectory $assets
         if ($global:OndReleaseMock.uploads.Count -ne 1 -or $global:OndReleaseMock.uploads[0] -cne "ond-$version-manifest.json") { throw 'Only missing assets may be uploaded.' }
+        $script:testCount++
+        $global:OndReleaseMock.uploads.Clear()
+        $global:OndReleaseMock.exists = $false
+        $global:OndReleaseMock.missing = $global:OndReleaseMock.names
+        & (Join-Path $PSScriptRoot 'publish-release.ps1') -Version $version -Commit $commit -AssetDirectory $assets
+        if ($global:OndReleaseMock.creates -ne 1 -or $global:OndReleaseMock.uploads.Count -ne $global:OndReleaseMock.names.Count) {
+            throw 'A new release must be created once and receive every candidate asset.'
+        }
         $script:testCount++
     }
     finally { Remove-Item Function:/gh; Remove-Variable OndReleaseMock -Scope Global }

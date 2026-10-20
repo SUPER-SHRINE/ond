@@ -21,5 +21,3 @@ Abs32 uses checked address-plus-addend arithmetic. Call16/Jump16 require their s
 ## SDK boundary
 
 ProgramMetadata obtains initializer order and main from validated MIR. The shared program_startup helper emits runtime ABI glue with caller-supplied termination instructions. Enbu SDK supplies RAM policy, loader, ROM banks, asset directory and raw ROM output; the compiler does not depend on Enbu SDK.
-
-Compiler tests use test_support to load LinkedImage directly into a synthetic bus. This harness is cfg(test)-only and does not define a public machine or distribution format.

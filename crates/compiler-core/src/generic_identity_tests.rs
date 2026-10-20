@@ -60,7 +60,7 @@ fn generic_identity_is_stable_and_preserves_type_distinctions() {
         "func()->u32",
     ];
     let mut source = String::from(
-        "package shared\ntype A u32\ntype B u32\ntype Node struct { Next:*Node; Wrapped:*Box[*Node] }\ntype Box[T] struct { Value:T }\ntype Pair[T,U] struct { Left:T; Right:U }\ntype Reader[T] interface { Get()->T; Next()->Reader[T] }\n",
+        "package shared\ntype A u32\ntype B u32\ntype Node struct { Next:*Node; Wrapped:*Box[*Node] }\ntype Box[T] struct { Value:T }\ntype Pair[T,U] struct { Left:T; Right:U }\ntype Reader[T] struct { Value:T; Next:*Reader[T] }\n",
     );
     for (index, shape) in shapes.iter().enumerate() {
         source.push_str(&format!(
