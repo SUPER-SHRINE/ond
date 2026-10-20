@@ -94,6 +94,15 @@ box := Box[u32]{value: Identity[u32](7)}
   - 同じ宣言と同じ型argument列は同じdefined typeを表し、異なる型argument列は異なるdefined typeを表す
 - generic関数も型argument列ごとに具体化し、通常の静的関数callとして実行する
   - function pointer値に使うgeneric関数は型argumentを明示して具体化する
+- 各generic型・関数・method・operatorの使用を根とする具体化の経路で、同じsource宣言を再び要求する型argument列が、その経路で最初に要求した列と同一であることを成立条件とする
+  - methodとoperatorでは具体的なreceiver型から定まる型argument列を比較する
+  - 直接再帰と相互再帰に同じ条件を適用し、不成立な要求はcompile errorとする
+  - 異なる使用を根とする経路はそれぞれ検査し、独立した型argument列の具体化を受理する
+- 経路内の新たな要求は、具体化した宣言のunderlying type・signature・本体に明記されたgeneric型適用・generic関数適用、または具体的なreceiverから選択されるgeneric method・operatorの使用へ型argumentを代入して生じる要求である
+  - 呼出しを伴わないgeneric関数値の型適用も含める
+  - 明記された型適用が別の型適用の型argument内にある場合も、要求元の経路で成立条件を検査する
+  - 成立した型argumentの構成型と、使用側から渡された型argumentの構成型は通常の型条件で検査し、その構成型のgeneric型定義の検査は独立した要求を根とする
+  - 型parameterを型として参照するfield・parameter・resultは、使用側から渡された構成型を検査する経路として扱う
 - 宣言名と型parameter listの間には空白を入れない
   - `type Box[T] ...` はgeneric型宣言、`type Buffer [N]u8` は長さ`N`の配列をunderlying typeとする通常の型宣言である
 - packageを跨ぐ参照には通常の公開規則を適用する
@@ -123,7 +132,7 @@ box := Box[u32]{value: Identity[u32](7)}
   - 比較する各構成型に宣言固有identityを適用する
 
 整数リテラルの既定型は `i32` とする。\
-整数型が文脈から決まる場合、その型で表現できるリテラルだけを受理する。\
+整数型が文脈から決まる場合、[整数定数の値要求境界](./expressions.md#integer-constant-arithmetic)で正確値の範囲を検査する。\
 浮動小数点リテラルの既定型は `f32` とする。\
 字句は[字句章](./lexical.md#source形式)に従い、compile-time に `f32` で表現できない値は compile error とする。
 

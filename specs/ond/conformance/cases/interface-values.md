@@ -83,3 +83,55 @@ Box[U8]のnameは`p/lib.Box["U8"]`、Box[Box[U8]]のnameは次のstringと完全
 ```text
 p/lib.Box[{"Defined":{"arguments":["U8"],"name":"Box","package":"p/lib"}}]
 ```
+
+## Generic具体化の経路
+<!-- ond-spec-id: conformance/interface-values/generic-expansion-paths -->
+
+要件は`TYPE-05`とし、[型parameterの成立条件](../../language/v1/types.md#型parameter)から期待を導く。\
+各行は独立projectの`main.ond`全文であり、共通manifestを用いてCoreで検査する。\
+受理行はcompile成功、拒否行は該当する型適用または使用箇所とgeneric宣言に対応する[関連位置](./README.md#入力と期待結果の読み方)を比較する。
+
+| Case ID | main.ond全文 | Core期待 |
+| --- | --- | --- |
+| TYPE-05.direct-function | <code>package main<br>func F[T](){F[T]()}<br>func main(){F[u8]()}<br></code> | 受理。F[u8]の再要求は同じ型argument列 |
+| TYPE-05.independent-functions | <code>package main<br>func F[T](){F[T]()}<br>func main(){F[u8]();F[u16]()}<br></code> | 受理。独立したF[u8]とF[u16]の2具体化 |
+| TYPE-05.finite-function-chain | <code>package main<br>func F[T](){G[*T]()}<br>func G[T](){}<br>func main(){F[u8]()}<br></code> | 受理。F[u8]からG[*u8]へ到達 |
+| TYPE-05.growing-function | <code>package main<br>func Grow[T](){Grow[*T]()}<br>func main(){Grow[u8]()}<br></code> | compile error。Grow[u8]からGrow[*u8]を要求 |
+| TYPE-05.mutual-function | <code>package main<br>func F[T](){G[*T]()}<br>func G[T](){F[T]()}<br>func main(){F[u8]()}<br></code> | compile error。F[u8]からG[*u8]を経てF[*u8]を要求 |
+| TYPE-05.flipped-function | <code>package main<br>func Flip[A,B](){Flip[B,A]()}<br>func main(){Flip[u8,u16]()}<br></code> | compile error。Flip[u8,u16]からFlip[u16,u8]を要求 |
+| TYPE-05.finite-nominal | <code>package main<br>type Box[T] struct{value:T}<br>var B:Box[Box[u8]]<br>func main(){}<br></code> | 受理。Bの型はBox[Box[u8]] |
+| TYPE-05.pointer-nominal | <code>package main<br>type Node[T] struct{next:*Node[T]}<br>var N:Node[u8]<br>func main(){}<br></code> | 受理。Node[u8]の再要求は同じ型argument列 |
+| TYPE-05.growing-nominal | <code>package main<br>type Grow[T] struct{next:*Grow[*T]}<br>var G:Grow[u8]<br>func main(){}<br></code> | compile error。Grow[u8]からGrow[*u8]を要求 |
+| TYPE-05.growing-method | <code>package main<br>type Box[T] struct{}<br>func (b:Box[T]) Grow(){var next:Box[*T];next.Grow()}<br>func main(){var b:Box[u8];b.Grow()}<br></code> | compile error。Growのreceiver型argumentがu8から*u8へ変わる |
+| TYPE-05.growing-operator | <code>package main<br>type Box[T] struct{}<br>operator (b:Box[T]) +(rhs:Box[T])-&gt;u8{var next:Box[*T];return next+next}<br>func main(){var b:Box[u8];_=b+b}<br></code> | compile error。operator +のreceiver型argumentがu8から*u8へ変わる |
+| TYPE-05.nested-growing-nominal | <code>package main<br>type Relay[U] U<br>type Grow[T] struct{next:*Relay[Grow[*T]]}<br>var G:Grow[u8]<br>func main(){}<br></code> | compile error。Grow定義内のRelay型argumentに明記されたGrow[*u8]を要求 |
+
+## 実行rootの論理package所属
+<!-- ond-spec-id: conformance/interface-values/executable-root-package -->
+
+要件は`PKG-01`、`ART-01`、`HASH-01`とし、[実行rootの論理path](../../language/v1/names-and-scopes.md#packageとimport)、[成果物schema](../../artifacts.md#packageartifactとcompilationmanifest)、[具体化identity](../../build/cache.md#意味型具体化定数の正規化)、[test metadata](../../build/test-build.md#buildと起動入口)を適用する。\
+独立projectのmanifest全文は`[project]`、`name = "p"`の2行をLFで連結し、末尾LFを付ける。\
+追加library、依存project、既存cacheは持たず、次の2fileをUTF-8、LF、各末尾LFありで置く。\
+test側は`ond compile --test . -o target/test.ondbuild`に続けて`ond link target/test.ondbuild --ram 0x10002000:0x03ffe000 --stack 1MiB --return-to 0x10000000 -o target/test.ondimage`を実行してsidecarを読む。
+
+`main.ond`:
+
+```ond
+package main
+type Root struct{secret:u8}
+var Global:u8
+func Id[T](x:T)->T{return x}
+func main(){Global=Id[u8](1)}
+```
+
+`root_test.ond`:
+
+```ond
+package main
+func TestRoot(){var r:Root;_=r.secret}
+```
+
+| Case ID | 操作と比較対象 | 期待 |
+| --- | --- | --- |
+| PKG-01.root-logical-normal | 通常compileし、rootのPackageArtifact、Interface、DebugObject、CompilationManifest.ArtifactRef、PackageBuildInput、Generation.interfaceのpackage、NominalIdと非公開fieldのprivate_owner、Id[u8]のDeclarationId.package、Objectの通常非generic function/global symbol、ProgramMetadata.entry_symbolを比較 | 論理package fieldはすべてp、nominal名はp.Root、Root.secretのprivate_ownerはp、IdのDeclarationId.packageはp、通常symbolはmain.mainとmain.Global、entry_symbolはmain.main |
+| PKG-01.root-logical-test | test compileとlink後、rootのPackageArtifact、Interface、DebugObject、CompilationManifest.ArtifactRef、PackageBuildInput、Generation.interfaceのpackage、TestMetadataのTestCase、test sidecarのTestEntryを比較 | 論理package fieldとTestCase.package、TestEntry.packageはp、TestCase.nameとTestEntry.nameはTestRoot、TestCase.symbolはmain.TestRoot |

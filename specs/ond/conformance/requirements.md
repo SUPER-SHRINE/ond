@@ -15,8 +15,8 @@
 | --- | --- | --- | --- |
 | SYN-01 | Unicode Letter/Nd識別子、ASCII限定公開判定、BOM/NUL | [SYN-01の定義元](../language/v1/lexical.md#source形式) | [unicode_identifiers_use_letter_and_decimal_digit_categoriesの入力・期待](./implementation-index.md#既存回帰と要件) |
 | SYN-02 | UTF-8ファイル、LF/CRLF、空白、コメント | [SYN-02の定義元](../language/v1/lexical.md#source形式) | [eof_comments_bom_and_source_offsetsの入力・期待](./implementation-index.md#既存回帰と要件) |
-| SYN-03 | 2/8/10/16進整数とunderscore制約 | [SYN-03の定義元](../language/v1/lexical.md#source形式) | [integer_spellings_and_radicesの入力・期待](./implementation-index.md#既存回帰と要件) |
-| SYN-04 | decimal/hex float字句、直接binary32丸め | [SYN-04の定義元](../language/v1/lexical.md#source形式) | [float_forms_and_exponent_boundariesの入力・期待](./implementation-index.md#既存回帰と要件) |
+| SYN-03 | 数値候補の最大長走査、2/8/10/16進整数とunderscore制約 | [SYN-03の定義元](../language/v1/lexical.md#source形式) | [integer_spellings_and_radicesの入力・期待](./implementation-index.md#既存回帰と要件)、[lexical-observations](./cases/lexical-observations.md) |
+| SYN-04 | 数値候補の全体検査、decimal/hex float字句、直接binary32丸め | [SYN-04の定義元](../language/v1/lexical.md#source形式) | [float_forms_and_exponent_boundariesの入力・期待](./implementation-index.md#既存回帰と要件)、[lexical-observations](./cases/lexical-observations.md) |
 | SYN-05 | quoted/raw string、escape範囲、CR・LF | [SYN-05の定義元](../language/v1/lexical.md#source形式) | [strings_are_validated_even_without_hir_loweringの入力・期待](./implementation-index.md#既存回帰と要件) |
 | SYN-06 | semicolon挿入・EOF・閉じ括弧前省略 | [SYN-06の定義元](../language/v1/lexical.md#semicolonと改行) | [eof_comments_bom_and_source_offsetsの入力・期待](./implementation-index.md#既存回帰と要件) |
 | SYN-07 | 演算子優先順位7段階、同順位左結合、postfix as | [SYN-07の定義元](../language/v1/expressions.md#演算子の優先順位) | [static-precedence](./cases/static-precedence.md) |
@@ -33,7 +33,7 @@
 
 | ID | 要件の要約 | 規範定義元 | 対応するcase入力・期待 |
 | --- | --- | --- | --- |
-| PKG-01 | 全projectでmanifestの有効なnameが必須、実行compileではmain.ondとfunc mainが必須、directoryとpackage名一致 | [PKG-01の定義元](../language/v1/names-and-scopes.md#packageとimport) | [static-scope](./cases/static-scope.md)、[static-seed](./cases/static-seed.md) |
+| PKG-01 | 全projectでmanifestの有効なnameが必須、実行rootの論理path、main.ondとfunc main、directoryとpackage名一致 | [PKG-01の定義元](../language/v1/names-and-scopes.md#packageとimport) | [static-scope](./cases/static-scope.md)、[static-seed](./cases/static-seed.md)、[interface-values](./cases/interface-values.md) |
 | PKG-02 | 相対import、root import禁止、存在しないimport、循環 | [PKG-02の定義元](../language/v1/names-and-scopes.md#packageとimport) | [static-scope](./cases/static-scope.md) |
 | PKG-03 | import名のfile scope・同path重複・fileごとのalias | [PKG-03の定義元](../language/v1/names-and-scopes.md#scopeとshadowing) | [static-scope](./cases/static-scope.md)、[static-seed](./cases/static-seed.md) |
 | PKG-04 | 公開/非公開のtype・const・global・function | [PKG-04の定義元](../language/v1/names-and-scopes.md#packageとimport) | [constants_resolve_across_packages_and_lexical_scopesの入力・期待](./implementation-index.md#既存回帰と要件) |
@@ -56,6 +56,7 @@
 | TYPE-02 | defined型の区別、同じunderlyingへの明示変換 | [TYPE-02の定義元](../language/v1/types.md#型同一性) | [defined_structs_stay_distinct_but_matching_underlying_casts_workの入力・期待](./implementation-index.md#既存回帰と要件) |
 | TYPE-03 | 配列長・参照先・関数parameter/result列の一致 | [TYPE-03の定義元](../language/v1/types.md#型同一性) | [nested_arrays_pointers_and_function_parameter_names_are_structuralの入力・期待](./implementation-index.md#既存回帰と要件) |
 | TYPE-04 | 直接再帰拒否、pointer経由再帰受理 | [TYPE-04の定義元](../language/v1/types.md#型) | [recursive_pointer_elements_are_checked_after_resolutionの入力・期待](./implementation-index.md#既存回帰と要件) |
+| TYPE-05 | generic具体化経路で同じ宣言へ戻る型argument列 | [TYPE-05の定義元](../language/v1/types.md#型parameter) | [interface-values](./cases/interface-values.md) |
 | CAST-01 | 型不一致の暗黙変換拒否 | [CAST-01の定義元](../language/v1/types.md#型同一性) | [boundaries-conversions](./cases/boundaries-conversions.md) |
 | CAST-02 | 定数整数変換・実行時wrap変換 | [CAST-02の定義元](../language/v1/types.md#型同一性) | [numeric-casts](./cases/numeric-casts.md) |
 | CAST-03 | int↔f32、ties-even/trunc、NaN/Inf/範囲外 | [CAST-03の定義元](../language/v1/types.md#型同一性) | [numeric-casts](./cases/numeric-casts.md) |
@@ -70,7 +71,7 @@
 | ID | 要件の要約 | 規範定義元 | 対応するcase入力・期待 |
 | --- | --- | --- | --- |
 | NUM-01 | literal既定型/型文脈と整数6型の範囲 | [NUM-01の定義元](../language/v1/types.md#型) | [numeric-integers](./cases/numeric-integers.md) |
-| NUM-02 | 定数算術の正確値、bitwiseのN-bit射影、値要求境界のrange check | [NUM-02の定義元](../language/v1/expressions.md#integer-constant-arithmetic) | [numeric-integers](./cases/numeric-integers.md)、[static-seed](./cases/static-seed.md) |
+| NUM-02 | 定数算術の正確値、bitwiseのN-bit射影、値要求境界とruntime operandへのrange check | [NUM-02の定義元](../language/v1/expressions.md#integer-constant-arithmetic) | [numeric-integers](./cases/numeric-integers.md)、[static-seed](./cases/static-seed.md) |
 | NUM-03 | 定数shiftのu32 count、k mod N、左shift非wrap | [NUM-03の定義元](../language/v1/expressions.md#integer-constant-arithmetic) | [numeric-integers](./cases/numeric-integers.md) |
 | NUM-04 | 定数/動的div・rem、符号、0、min/-1 | [NUM-04の定義元](../language/v1/expressions.md#integer-arithmetic) | [numeric-integers](./cases/numeric-integers.md) |
 | NUM-05 | runtime wrap・bitwise・signed/unsigned比較 | [NUM-05の定義元](../language/v1/expressions.md#integer-arithmetic) | [numeric-integers](./cases/numeric-integers.md) |

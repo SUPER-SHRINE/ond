@@ -75,10 +75,8 @@ getterは[operator解決](./expressions.md#user-defined-operator)で選んだind
   - getter、二項演算、setterがすべて静的に成立し、二項演算結果型がsetterの要求するvalue型と完全一致することを要求する
   - builtin setterのvalue型は配列/raw pointerの要素型とする
   - builtin配列getterのbounds checkは読取り時、builtin配列setterのbounds checkは書込み時に行う
-- 未注釈literalを含むindexの文脈型付けは単純代入ではsetter、compoundではgetterとsetterのcustom parameterから同じindexへ課される文脈を照合する
-  - 文脈が同じ型を要求する場合、その型で1回型付けし、異なる型を要求する場合はcompile errorとなる
-  - customの文脈がない場合は通常の式の型付けを行い、確定した1個のindex値を選択済みの各操作に照合する
-  - 変数や明示変換で型が確定したindexは、その型でgetter/setterを独立に解決する
+- index式の型は[operatorの型決定順](./expressions.md#user-defined-operator)で確定し、単純代入ではsetter、compoundではgetterとsetterへ同じindex値を適用する
+  - 残る未確定のliteralとliteralからなる式には、必要なcustom parameter文脈を照合する
 - 各代入段階でfaultした場合は後続段階を実行せず、完了済みwriteと他のeffectを保持して停止する
 - `++`と`--`は後置statementの構文である
 - 戻り値を持つ関数で本体末尾へ構文上到達できる入力はcompile errorとなる

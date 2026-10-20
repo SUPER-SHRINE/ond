@@ -15,7 +15,7 @@ token間のspace、tab、CR、LFを空白として扱い、LFとCRLFを改行と
 閉じる`*/`がないblock commentはcompile errorとなる。\
 block comment内にLFがある場合、semicolon insertionでは一つの改行として扱う。
 
-tokenはidentifier、keyword、literal、operator、punctuationからなり、現在位置から最長の有効tokenを取る。\
+tokenはidentifier、keyword、literal、operator、punctuationからなり、数値の開始位置では以下の候補規則で走査し、その他の位置では現在位置から最長の有効tokenを取る。\
 identifierの開始文字はUnicode 16.0.0のGeneral_Category `Lu`, `Ll`, `Lt`, `Lm`, `Lo`および`_`であり、継続文字には`Nd`も加わる。\
 identifierの同一性はsourceの符号位置列で決まり、公開判定は先頭byteがASCII大文字`A`〜`Z`であることを条件とする。
 
@@ -40,6 +40,13 @@ integer literalは10進、`0b`/`0B` prefixの2進、先頭`0`または`0o`/`0O`�
 どちらもunderscoreの直後に当該基数の数字が必要である。\
 `0_600`も8進literalとして成立する。\
 数字の範囲違反、連続underscore、末尾underscoreはcompile errorとなる。
+
+数値tokenの候補はASCII digit、または直後にASCII digitを持つ`.`から始まり、次に定める文字を最大長で走査する。\
+先頭`0`とそれに続くunderscore列の直後に`b`/`B`、`o`/`O`、`x`/`X`があれば、その文字を基数prefix候補として取り込み、`x`/`X`ではhex候補とする。\
+hex候補はASCIIの16進数字、`_`、`.`、`p`/`P`を取り込み、`p`/`P`の直後だけ`+`/`-`を取り込む。\
+その他の候補はASCII digit、`_`、`.`、`e`/`E`、`p`/`P`を取り込み、指数記号`e`/`E`/`p`/`P`の直後だけ`+`/`-`を取り込む。\
+走査した候補全体を本節のinteger literalまたはfloat literalの成立条件で検査し、不成立なら字句のcompile errorとする。\
+候補に属さない次の文字は後続tokenの開始として扱う。
 
 decimal floatは小数点または`e`/`E` exponentを持つ。\
 小数点前後の少なくとも一方に数字が必要であり、`.5`、`1.`、`1.e2`、`1e-2`が成立する。\

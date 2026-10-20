@@ -15,7 +15,7 @@
 | numeric-casts | 264 | [numeric-casts](./numeric-casts.md) |
 | numeric-float-vectors | 25 | [numeric-float-vectors](./numeric-float-vectors.md) |
 | numeric-floats | 69 | [numeric-floats](./numeric-floats.md) |
-| numeric-integers | 397 | [numeric-integers](./numeric-integers.md) |
+| numeric-integers | 405 | [numeric-integers](./numeric-integers.md) |
 | static-constant-contexts | 25 | [static-constant-contexts](./static-constant-contexts.md) |
 | static-control-headers | 26 | [static-control-headers](./static-control-headers.md) |
 | static-diagnostics | 6 | [static-diagnostics](./static-diagnostics.md) |

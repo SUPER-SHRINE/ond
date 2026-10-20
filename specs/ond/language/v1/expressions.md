@@ -144,7 +144,11 @@ literal既定型、型文脈とoperand型一致は[型規則](./types.md#型同�
 
 定数のbitwise演算も[整数演算の射影とbit関数](#integer-arithmetic)を適用し、その演算結果を後続の定数算術の正確値として用いる。
 
+整数literal、括弧、単項`+`/`-`と定数算術は式の正確値を計算し、次の値要求境界で検査する。\
 宣言・代入・argument・return・明示cast等の値要求境界で、正確値が要求整数型の範囲に入ることを検査し、範囲外ならcompile errorを返す。\
+runtime operandへ整数定数部分式を渡すときは、渡される最大の定数部分式の正確値をそのoperandの整数型に対して検査する。\
+定数部分式の適格性は[constの成立条件](./declarations.md#宣言)に従い、最適化によるruntime式の定数畳み込みは値要求境界を変えない。\
+定数だけで構成するbitwise式のoperandには[整数演算の射影](#integer-arithmetic)を適用し、runtime bitwise式へ渡す定数operandには先にこの範囲検査を適用する。\
 配列lengthとindexは[配列規則](./types.md#配列とstruct)、shift countは`u32`の成立条件で検査する。\
 定数shiftの実効countは左operandの幅`N`に対する`k mod N`であり、left shiftは数学的に左移動した結果を値要求境界で検査する。\
 right shiftの符号規則はruntimeと同じで、zero divisionとsigned division overflowはcompile errorとなる。
@@ -272,10 +276,12 @@ receiverは同じpackageで宣言した名前付き型またはそのpointerと�
 演算構文は、operandの静的型に適合するcustom operatorを先に選び、適合するcustom宣言がない場合にunderlying型が継承するbuiltin演算を適用する。\
 この順序は算術、index読取り、index書込み、lenの各kindに適用する。\
 receiverの調整は下記method同等の1段規則、残りのoperandは型の完全一致を成立条件とする。\
-custom候補のoperandへ対応するparameter型の文脈を与え、未注釈literalは括弧の有無によらず、その文脈下で通常の型検査とliteral範囲検査を行う。\
+index式を含むoperandの変数、型付き定数、call結果、明示変換、および既に型が確定した値や演算固有条件から定まる通常の演算結果型を、custom候補の選択前に通常の型規則で決める。\
+残る未確定のliteralとliteralからなる式には、custom候補の対応parameter型の文脈で通常の型検査を適用し、整数定数には[値要求境界](#integer-constant-arithmetic)で範囲を検査する。\
+対応する文脈を得ない未確定のliteralには[既定型](./types.md#型同一性)を適用する。\
+同じindex式のread/writeに異なるparameter型の文脈が必要で、式内から型が確定しない場合はcompile errorとする。\
 文脈に対する型不適合と範囲外はcompile errorとなる。\
-注釈または明示変換で型が確定したoperandはその型で一致を検査する。\
-receiver、kind、operand数と他の型で定まるcustom候補のliteral型・範囲または結果型が不成立なら、その候補のerrorとして扱い、builtinへ再試行しない。\
+receiver、kind、operand数と他の型で定まるcustom候補のliteral型・範囲または結果型が不成立なら、その候補のerrorとしてcompileを失敗させる。\
 要求result型は候補選択に用いず、選んだcustom宣言のresult型を通常の要求型と照合し、不一致ならcompile errorとなる。
 
 `[]`が返すpointerへの後続selectorは、通常のpointer field access規則に従う。\

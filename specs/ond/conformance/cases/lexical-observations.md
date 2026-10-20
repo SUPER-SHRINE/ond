@@ -132,6 +132,21 @@ float tokenの受理入力は次の列とする。
 
 `0x1p128`、`0x1.ffffffp127`、`0x1p9999999999999999999999`、`1e100`はCoreでliteral範囲外のcompile errorとする。
 
+### 数値候補の境界
+<!-- ond-spec-id: conformance/lexical/numeric-candidate-boundaries -->
+
+要件は`SYN-03`と`SYN-04`、定義元は[数値候補と成立字句](../../language/v1/lexical.md#source形式)である。\
+字句操作は各入力欄のASCII bytesを単独の`main.ond`としてtoken化し、semicolon挿入前のtoken種別・綴り・半開byte範囲を比較する。\
+Core操作は[数値tokenと定数値](#数値tokenと定数値)で定めたCore templateのLに入力を置き、Tを表の型として検査する。
+
+| Case ID | 入力 | 字句期待 | Core期待 |
+| --- | --- | --- | --- |
+| SYN-03.hex-exponent-letter-as-digit | <code>0x1e+2</code> | integer `0x1e` [0,4)、`+` [4,5)、integer `2` [5,6) | T=u32、X=32 |
+| SYN-04.decimal-signed-exponent | <code>1e+2</code> | float `1e+2` [0,4) | T=f32、X bits=`0x42c80000` |
+
+字句拒否表の`1p2`、`0b1.0`、`08`、`0_x1`は候補全体の不成立を検査する。\
+Parse入力`1i`はinteger `1`とidentifier `i`への分離に続くseparator欠落を検査する。
+
 ## Stringとsource byte
 <!-- ond-spec-id: conformance/lexical/strings-source-bytes -->
 

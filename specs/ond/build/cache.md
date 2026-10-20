@@ -91,7 +91,7 @@ Global/Constantとnongeneric Functionは両argument列を空arrayとする。\
 signature.parametersはreceiverを除くsource-visible列である。
 
 Generation.instancesは今回compileに含まれる全source packageの、静的検査対象となる全nongeneric宣言内のsource使用を根とする。\
-generic function/method/operatorの使用から具体化し、その本体内の使用へ推移閉包を取り、宣言owner packageごとに各InstanceIdを1個収録する。\
+generic function/method/operatorの使用から[型parameterの具体化経路の成立条件](../language/v1/types.md#型parameter)に従って本体内の使用へ推移閉包を取り、宣言owner packageごとに各InstanceIdを1個収録する。\
 Generation.typesの母集団は当該packageの全nongeneric宣言とinstancesの全具体化とし、その宣言型、function signature自体のFunction型、parameter/result、receiver、field、local宣言、各source式に確定した型を集合として収録する。\
 この集合をPointerの参照先、Arrayの要素、Functionのparameter/result、Structのfield、Definedの型argumentとunderlyingの構成型へ再帰的に閉じる。\
 言語の明示変換とreceiver調整後の型も含める。型構文内の配列長式は確定したArray.lengthにだけ反映し、その式のoperand/演算結果型は独立したtypes要素へ加えない。\

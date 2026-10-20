@@ -30,6 +30,9 @@ project manifestとsource探索は[package build](../../build/packages.md)、通
 - project root、manifestの名前、source探索は[Manifestとsource探索](../../build/packages.md#manifestとsource探索)に従う
 - 実行projectのrootは`main` packageであり、`main.ond`と`func main`を含む
 root直下の全`.ond` fileは`package main`を宣言する。\
+実行projectのroot packageの論理package pathは、そのprojectの`[project].name`を`p`とすると`p`である。\
+この`p`をrootのpackage成果物・公開interface・debug metadata・具体化identity・test metadataの所属に用いる。\
+通常の非generic関数とglobalのlink symbolのnamespaceは[Link symbol規則](../../artifacts.md#link-symbolの名前と所属)に従う。\
 library projectはrootの`main.ond`と`func main`がなくても編集・依存として利用できる。\
 library rootにsourceがある場合、そのpackage名はproject名と一致する。
 - 1 directory を 1 package とし、directory 内の全 `.ond` file は同じ package 名を宣言しなければならない
@@ -38,7 +41,7 @@ library rootにsourceがある場合、そのpackage名はproject名と一致す
 library root packageのimport pathはproject名そのものとする。\
 import pathの先頭にproject名がない入力はcompile errorとなる\
 実装が提供する追加library rootのpackageは、そのroot内の論理pathで参照する。\
-実行project rootの`main`をimport対象とする入力はcompile errorとなる
+実行projectのroot packageをimport対象とする入力はcompile errorとなる
 - `import alias "path"`はidentifierのimport aliasを宣言する
   - 構文は本章のImportDeclに従う
 - alias を省略した import は、その package の宣言名で参照する

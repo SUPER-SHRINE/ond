@@ -36,6 +36,8 @@ func main(){}
 | --- | --- | --- | --- | --- |
 | OP-01.literal-parameter | u8 | bool | n+1 | MemoryVm: [1] |
 | OP-01.literal-parenthesized | u8 | bool | n+(1) | MemoryVm: [1] |
+| OP-01.literal-expression-context | u8 | bool | n+(1+2) | MemoryVm: [1] |
+| OP-01.nil-parameter-context | *u8 | bool | n+nil | MemoryVm: [1] |
 | OP-01.literal-overflow | u8 | bool | n+256 | Core: literalのu8範囲error |
 | OP-01.literal-negative | u8 | bool | n+(-1) | Core: literalのu8範囲error |
 | OP-01.literal-result-context | u8 | N | n+1 | Core: custom結果boolと要求Nの不一致 |
@@ -69,3 +71,23 @@ func main(){}
 | --- | --- | --- |
 | OP-01.shared-index-context-reject | 0 | Core: u8/u16の文脈競合でcompile error |
 | OP-01.typed-index-independent | 0 as u8 | MemoryVm: main.observe([]) -> [101]。custom getterとbuiltin setterを選択 |
+
+次のtemplateのINDEXを行ごとに置換した独立projectは、確定した部分式の型と残る未確定literalへの文脈を同じindex式で比較する。\
+manifestとMemoryVmのfresh状態は共通case契約に従い、要件は`OP-01`、`EVAL-02`とする。
+
+```ond
+package main
+type Buffer [1]u32
+operator (self:*Buffer) [](i:u8)->u32{return 100}
+operator (self:*Buffer) []=(i:u16,value:u32){(self as u32 as *u32)[i as u32]=value+10}
+func index()->u8{return 0}
+func observe()->u32{var b:Buffer;var i:u8=0;b[INDEX]+=1;return ((&b) as u32 as *u32)[0]}
+func main(){}
+```
+
+| Case ID | INDEX | 操作・期待 |
+| --- | --- | --- |
+| OP-01.typed-index-expression | i+0 | MemoryVm: main.observe([]) -> [101]。u8のcustom getterとbuiltin setterを選択 |
+| OP-01.call-index-expression | index()+0 | MemoryVm: main.observe([]) -> [101]。call結果u8からindex式の型を確定 |
+| OP-01.untyped-index-expression | 0+0 | Core: u8/u16の文脈競合でcompile error |
+| OP-01.cast-index-expression | (i+0) as u8 | MemoryVm: main.observe([]) -> [101] |
