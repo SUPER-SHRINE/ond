@@ -1,0 +1,411 @@
+# numeric-integersの入力と期待値
+<!-- ond-spec-id: conformance/cases/numeric-integers -->
+
+各整数型の最小値・最大値、数学的な正確値、値要求境界、商の0方向丸め、剰余符号と実効shift countから各値または範囲errorを導く。\
+signed値は64-bitへ符号拡張したtwo's-complement bitsで記す。
+
+規範定義元: [NUM-01の定義元](../../language/v1/types.md#型同一性)、[NUM-02の定義元](../../language/v1/expressions.md#integer-constant-arithmetic)、[NUM-03の定義元](../../language/v1/expressions.md#integer-constant-arithmetic)、[NUM-04の定義元](../../language/v1/expressions.md#integer-arithmetic)、[NUM-05の定義元](../../language/v1/expressions.md#integer-arithmetic)。\
+要件索引は[requirements](../requirements.md)、既存fixture宣言は[registry](../../../../crates/compiler-core/src/conformance/numeric/integers.rs)を参照する。
+
+共通のproject入力は`ond.toml`の`[project]`に`name = "test"`を置いた実行projectである。\
+generated numeric/型境界のsourceはすべて`main.ond`の内容として読み、static表は各file名を入力欄に記す。
+
+以下は移行時の既存case宣言に含まれる入力と仕様由来Expectedデータを記録したものであり、compilerを実行して得た結果の転記ではない。\
+`accept`単独は受理を期待し、値の記載がある行はその型・値まで照合する。\
+`implementation AST/MIR`は外部の受理・値期待と区分した実装回帰検査である。\
+診断の原文は照合対象を示し、規範上の失敗結果はcompile errorとして読む。
+
+| Case ID | 要件ID | 入力 | 仕様由来の期待結果と内部検査 |
+| --- | --- | --- | --- |
+| <code>NUM-01.u8.below</code> | `NUM-01` | <code>package main<br><br>const X: u8 = -1<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-01.u8.min</code> | `NUM-01` | <code>package main<br><br>const X: u8 = 0<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000000</code> |
+| <code>NUM-01.u8.zero</code> | `NUM-01` | <code>package main<br><br>const X: u8 = 0<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000000</code> |
+| <code>NUM-01.u8.max</code> | `NUM-01` | <code>package main<br><br>const X: u8 = 255<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x00000000000000ff</code> |
+| <code>NUM-01.u8.above</code> | `NUM-01` | <code>package main<br><br>const X: u8 = 256<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-01.u8.plus</code> | `NUM-01` | <code>package main<br><br>const X: u8 = +15<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x000000000000000f</code> |
+| <code>NUM-01.u8.hex</code> | `NUM-01` | <code>package main<br><br>const X: u8 = 0xf<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x000000000000000f</code> |
+| <code>NUM-01.u8.binary</code> | `NUM-01` | <code>package main<br><br>const X: u8 = 0b1111<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x000000000000000f</code> |
+| <code>NUM-01.u8.octal</code> | `NUM-01` | <code>package main<br><br>const X: u8 = 0o17<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x000000000000000f</code> |
+| <code>NUM-01.u8.hexmax</code> | `NUM-01` | <code>package main<br><br>const X: u8 = 0xff<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x00000000000000ff</code> |
+| <code>NUM-01.u8.negative_zero</code> | `NUM-01` | <code>package main<br><br>const X: u8 = -0<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000000</code> |
+| <code>NUM-01.u8.hex_min</code> | `NUM-01` | <code>package main<br><br>const X: u8 = 0x0<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000000</code> |
+| <code>NUM-05.u8.add</code> | `NUM-05` | <code>package main<br><br>const X: u8 = 6 + 3<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000009</code> |
+| <code>NUM-05.u8.sub</code> | `NUM-05` | <code>package main<br><br>const X: u8 = 6 - 3<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000003</code> |
+| <code>NUM-05.u8.mul</code> | `NUM-05` | <code>package main<br><br>const X: u8 = 6 * 3<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000012</code> |
+| <code>NUM-05.u8.div</code> | `NUM-05` | <code>package main<br><br>const X: u8 = 6 / 3<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000002</code> |
+| <code>NUM-05.u8.rem</code> | `NUM-05` | <code>package main<br><br>const X: u8 = 6 % 3<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000000</code> |
+| <code>NUM-05.u8.and</code> | `NUM-05` | <code>package main<br><br>const X: u8 = 6 &amp; 3<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000002</code> |
+| <code>NUM-05.u8.or</code> | `NUM-05` | <code>package main<br><br>const X: u8 = 6 &#124; 3<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000007</code> |
+| <code>NUM-05.u8.xor</code> | `NUM-05` | <code>package main<br><br>const X: u8 = 6 ^ 3<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000005</code> |
+| <code>NUM-05.u8.andnot</code> | `NUM-05` | <code>package main<br><br>const X: u8 = 6 &amp;^ 3<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000004</code> |
+| <code>NUM-05.u8.shl</code> | `NUM-05` | <code>package main<br><br>const X: u8 = 6 &lt;&lt; 1<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x000000000000000c</code> |
+| <code>NUM-05.u8.shr</code> | `NUM-05` | <code>package main<br><br>const X: u8 = 6 &gt;&gt; 1<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000003</code> |
+| <code>NUM-05.u8.plus</code> | `NUM-05` | <code>package main<br><br>const X: u8 = +6<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000006</code> |
+| <code>NUM-05.u8.not</code> | `NUM-05` | <code>package main<br><br>const X: u8 = ^6<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x00000000000000f9</code> |
+| <code>NUM-05.u8.neg</code> | `NUM-05` | <code>package main<br><br>const X: u8 = -6<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-05.u8.eq</code> | `NUM-05` | <code>package main<br>const A: u8 = 0<br>const B: u8 = 255<br>const X = A == B<br>func main() {}<br></code> | <code>accept; X: bool = false</code> |
+| <code>NUM-05.u8.ne</code> | `NUM-05` | <code>package main<br>const A: u8 = 0<br>const B: u8 = 255<br>const X = A != B<br>func main() {}<br></code> | <code>accept; X: bool = true</code> |
+| <code>NUM-05.u8.lt</code> | `NUM-05` | <code>package main<br>const A: u8 = 0<br>const B: u8 = 255<br>const X = A &lt; B<br>func main() {}<br></code> | <code>accept; X: bool = true</code> |
+| <code>NUM-05.u8.le</code> | `NUM-05` | <code>package main<br>const A: u8 = 0<br>const B: u8 = 255<br>const X = A &lt;= B<br>func main() {}<br></code> | <code>accept; X: bool = true</code> |
+| <code>NUM-05.u8.gt</code> | `NUM-05` | <code>package main<br>const A: u8 = 0<br>const B: u8 = 255<br>const X = A &gt; B<br>func main() {}<br></code> | <code>accept; X: bool = false</code> |
+| <code>NUM-05.u8.ge</code> | `NUM-05` | <code>package main<br>const A: u8 = 0<br>const B: u8 = 255<br>const X = A &gt;= B<br>func main() {}<br></code> | <code>accept; X: bool = false</code> |
+| <code>NUM-05.u8.add_overflow</code> | `NUM-05`, `NUM-02` | <code>package main<br><br>const X: u8 = 255 + 1<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-05.u8.sub_overflow</code> | `NUM-05`, `NUM-02` | <code>package main<br><br>const X: u8 = 0 - 1<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-05.u8.mul_overflow</code> | `NUM-05`, `NUM-02` | <code>package main<br><br>const X: u8 = 255 * 2<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-03.u8.left.0</code> | `NUM-03` | <code>package main<br>const A: u8 = 1<br>const X = A &lt;&lt; 0<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000001</code> |
+| <code>NUM-03.u8.right_max.0</code> | `NUM-03` | <code>package main<br>const A: u8 = 255<br>const X = A &gt;&gt; 0<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x00000000000000ff</code> |
+| <code>NUM-03.u8.right_min.0</code> | `NUM-03` | <code>package main<br>const A: u8 = 0<br>const X = A &gt;&gt; 0<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000000</code> |
+| <code>NUM-03.u8.left.7</code> | `NUM-03` | <code>package main<br>const A: u8 = 1<br>const X = A &lt;&lt; 7<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000080</code> |
+| <code>NUM-03.u8.right_max.7</code> | `NUM-03` | <code>package main<br>const A: u8 = 255<br>const X = A &gt;&gt; 7<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000001</code> |
+| <code>NUM-03.u8.right_min.7</code> | `NUM-03` | <code>package main<br>const A: u8 = 0<br>const X = A &gt;&gt; 7<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000000</code> |
+| <code>NUM-03.u8.left.8</code> | `NUM-03` | <code>package main<br>const A: u8 = 1<br>const X = A &lt;&lt; 8<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000001</code> |
+| <code>NUM-03.u8.right_max.8</code> | `NUM-03` | <code>package main<br>const A: u8 = 255<br>const X = A &gt;&gt; 8<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x00000000000000ff</code> |
+| <code>NUM-03.u8.right_min.8</code> | `NUM-03` | <code>package main<br>const A: u8 = 0<br>const X = A &gt;&gt; 8<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000000</code> |
+| <code>NUM-03.u8.left.9</code> | `NUM-03` | <code>package main<br>const A: u8 = 1<br>const X = A &lt;&lt; 9<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000002</code> |
+| <code>NUM-03.u8.right_max.9</code> | `NUM-03` | <code>package main<br>const A: u8 = 255<br>const X = A &gt;&gt; 9<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x000000000000007f</code> |
+| <code>NUM-03.u8.right_min.9</code> | `NUM-03` | <code>package main<br>const A: u8 = 0<br>const X = A &gt;&gt; 9<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000000</code> |
+| <code>NUM-03.u8.left.4294967295</code> | `NUM-03` | <code>package main<br>const A: u8 = 1<br>const X = A &lt;&lt; 4294967295<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000080</code> |
+| <code>NUM-03.u8.right_max.4294967295</code> | `NUM-03` | <code>package main<br>const A: u8 = 255<br>const X = A &gt;&gt; 4294967295<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000001</code> |
+| <code>NUM-03.u8.right_min.4294967295</code> | `NUM-03` | <code>package main<br>const A: u8 = 0<br>const X = A &gt;&gt; 4294967295<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000000</code> |
+| <code>NUM-03.u8.negative_count</code> | `NUM-03` | <code>package main<br>const A: u8 = 2<br>const X = A &lt;&lt; -1<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-03.u8.large_count</code> | `NUM-03` | <code>package main<br>const A: u8 = 2<br>const X = A &lt;&lt; 4294967296<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-03.u8.typed_count</code> | `NUM-03` | <code>package main<br>const A: u8 = 2<br>const K: i32 = 1<br>const X = A &lt;&lt; K<br>func main() {}<br></code> | <code>compile error; type mismatch</code> |
+| <code>NUM-04.u8.pp.div</code> | `NUM-04` | <code>package main<br>const A: u8 = 7<br>const B: u8 = 3<br>const X = A / B<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000002</code> |
+| <code>NUM-04.u8.pp.rem</code> | `NUM-04` | <code>package main<br>const A: u8 = 7<br>const B: u8 = 3<br>const X = A % B<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000001</code> |
+| <code>NUM-04.u8.div_zero</code> | `NUM-04` | <code>package main<br>const A: u8 = 1<br>const X = A / 0<br>func main() {}<br></code> | <code>compile error; zero</code> |
+| <code>NUM-04.u8.rem_zero</code> | `NUM-04` | <code>package main<br>const A: u8 = 1<br>const X = A % 0<br>func main() {}<br></code> | <code>compile error; zero</code> |
+| <code>NUM-04.u8.min_div_one</code> | `NUM-04` | <code>package main<br>const A: u8 = 0<br>const X = A / 1<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000000</code> |
+| <code>NUM-04.u8.min_rem_one</code> | `NUM-04` | <code>package main<br>const A: u8 = 0<br>const X = A % 1<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000000</code> |
+| <code>NUM-04.u8.max_div_one</code> | `NUM-04` | <code>package main<br>const A: u8 = 255<br>const X = A / 1<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x00000000000000ff</code> |
+| <code>NUM-04.u8.max_rem_one</code> | `NUM-04` | <code>package main<br>const A: u8 = 255<br>const X = A % 1<br>func main() {}<br></code> | <code>accept; X: u8 = integer bits 0x0000000000000000</code> |
+| <code>NUM-01.i8.below</code> | `NUM-01` | <code>package main<br><br>const X: i8 = -129<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-01.i8.min</code> | `NUM-01` | <code>package main<br><br>const X: i8 = -128<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0xffffffffffffff80</code> |
+| <code>NUM-01.i8.zero</code> | `NUM-01` | <code>package main<br><br>const X: i8 = 0<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x0000000000000000</code> |
+| <code>NUM-01.i8.max</code> | `NUM-01` | <code>package main<br><br>const X: i8 = 127<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x000000000000007f</code> |
+| <code>NUM-01.i8.above</code> | `NUM-01` | <code>package main<br><br>const X: i8 = 128<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-01.i8.plus</code> | `NUM-01` | <code>package main<br><br>const X: i8 = +15<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x000000000000000f</code> |
+| <code>NUM-01.i8.hex</code> | `NUM-01` | <code>package main<br><br>const X: i8 = 0xf<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x000000000000000f</code> |
+| <code>NUM-01.i8.binary</code> | `NUM-01` | <code>package main<br><br>const X: i8 = 0b1111<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x000000000000000f</code> |
+| <code>NUM-01.i8.octal</code> | `NUM-01` | <code>package main<br><br>const X: i8 = 0o17<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x000000000000000f</code> |
+| <code>NUM-01.i8.hexmax</code> | `NUM-01` | <code>package main<br><br>const X: i8 = 0x7f<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x000000000000007f</code> |
+| <code>NUM-01.i8.negative_zero</code> | `NUM-01` | <code>package main<br><br>const X: i8 = -0<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x0000000000000000</code> |
+| <code>NUM-01.i8.hex_min</code> | `NUM-01` | <code>package main<br><br>const X: i8 = -0x80<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0xffffffffffffff80</code> |
+| <code>NUM-05.i8.add</code> | `NUM-05` | <code>package main<br><br>const X: i8 = 6 + 3<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x0000000000000009</code> |
+| <code>NUM-05.i8.sub</code> | `NUM-05` | <code>package main<br><br>const X: i8 = 6 - 3<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x0000000000000003</code> |
+| <code>NUM-05.i8.mul</code> | `NUM-05` | <code>package main<br><br>const X: i8 = 6 * 3<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x0000000000000012</code> |
+| <code>NUM-05.i8.div</code> | `NUM-05` | <code>package main<br><br>const X: i8 = 6 / 3<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x0000000000000002</code> |
+| <code>NUM-05.i8.rem</code> | `NUM-05` | <code>package main<br><br>const X: i8 = 6 % 3<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x0000000000000000</code> |
+| <code>NUM-05.i8.and</code> | `NUM-05` | <code>package main<br><br>const X: i8 = 6 &amp; 3<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x0000000000000002</code> |
+| <code>NUM-05.i8.or</code> | `NUM-05` | <code>package main<br><br>const X: i8 = 6 &#124; 3<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x0000000000000007</code> |
+| <code>NUM-05.i8.xor</code> | `NUM-05` | <code>package main<br><br>const X: i8 = 6 ^ 3<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x0000000000000005</code> |
+| <code>NUM-05.i8.andnot</code> | `NUM-05` | <code>package main<br><br>const X: i8 = 6 &amp;^ 3<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x0000000000000004</code> |
+| <code>NUM-05.i8.shl</code> | `NUM-05` | <code>package main<br><br>const X: i8 = 6 &lt;&lt; 1<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x000000000000000c</code> |
+| <code>NUM-05.i8.shr</code> | `NUM-05` | <code>package main<br><br>const X: i8 = 6 &gt;&gt; 1<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x0000000000000003</code> |
+| <code>NUM-05.i8.plus</code> | `NUM-05` | <code>package main<br><br>const X: i8 = +6<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x0000000000000006</code> |
+| <code>NUM-05.i8.not</code> | `NUM-05` | <code>package main<br><br>const X: i8 = ^6<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0xfffffffffffffff9</code> |
+| <code>NUM-05.i8.neg</code> | `NUM-05` | <code>package main<br><br>const X: i8 = -6<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0xfffffffffffffffa</code> |
+| <code>NUM-05.i8.eq</code> | `NUM-05` | <code>package main<br>const A: i8 = -128<br>const B: i8 = 127<br>const X = A == B<br>func main() {}<br></code> | <code>accept; X: bool = false</code> |
+| <code>NUM-05.i8.ne</code> | `NUM-05` | <code>package main<br>const A: i8 = -128<br>const B: i8 = 127<br>const X = A != B<br>func main() {}<br></code> | <code>accept; X: bool = true</code> |
+| <code>NUM-05.i8.lt</code> | `NUM-05` | <code>package main<br>const A: i8 = -128<br>const B: i8 = 127<br>const X = A &lt; B<br>func main() {}<br></code> | <code>accept; X: bool = true</code> |
+| <code>NUM-05.i8.le</code> | `NUM-05` | <code>package main<br>const A: i8 = -128<br>const B: i8 = 127<br>const X = A &lt;= B<br>func main() {}<br></code> | <code>accept; X: bool = true</code> |
+| <code>NUM-05.i8.gt</code> | `NUM-05` | <code>package main<br>const A: i8 = -128<br>const B: i8 = 127<br>const X = A &gt; B<br>func main() {}<br></code> | <code>accept; X: bool = false</code> |
+| <code>NUM-05.i8.ge</code> | `NUM-05` | <code>package main<br>const A: i8 = -128<br>const B: i8 = 127<br>const X = A &gt;= B<br>func main() {}<br></code> | <code>accept; X: bool = false</code> |
+| <code>NUM-05.i8.add_overflow</code> | `NUM-05`, `NUM-02` | <code>package main<br><br>const X: i8 = 127 + 1<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-05.i8.sub_overflow</code> | `NUM-05`, `NUM-02` | <code>package main<br><br>const X: i8 = -128 - 1<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-05.i8.mul_overflow</code> | `NUM-05`, `NUM-02` | <code>package main<br><br>const X: i8 = 127 * 2<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-03.i8.left.0</code> | `NUM-03` | <code>package main<br>const A: i8 = 1<br>const X = A &lt;&lt; 0<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x0000000000000001</code> |
+| <code>NUM-03.i8.right_max.0</code> | `NUM-03` | <code>package main<br>const A: i8 = 127<br>const X = A &gt;&gt; 0<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x000000000000007f</code> |
+| <code>NUM-03.i8.right_min.0</code> | `NUM-03` | <code>package main<br>const A: i8 = -128<br>const X = A &gt;&gt; 0<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0xffffffffffffff80</code> |
+| <code>NUM-03.i8.left.7</code> | `NUM-03` | <code>package main<br>const A: i8 = 1<br>const X = A &lt;&lt; 7<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-03.i8.right_max.7</code> | `NUM-03` | <code>package main<br>const A: i8 = 127<br>const X = A &gt;&gt; 7<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x0000000000000000</code> |
+| <code>NUM-03.i8.right_min.7</code> | `NUM-03` | <code>package main<br>const A: i8 = -128<br>const X = A &gt;&gt; 7<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0xffffffffffffffff</code> |
+| <code>NUM-03.i8.left.8</code> | `NUM-03` | <code>package main<br>const A: i8 = 1<br>const X = A &lt;&lt; 8<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x0000000000000001</code> |
+| <code>NUM-03.i8.right_max.8</code> | `NUM-03` | <code>package main<br>const A: i8 = 127<br>const X = A &gt;&gt; 8<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x000000000000007f</code> |
+| <code>NUM-03.i8.right_min.8</code> | `NUM-03` | <code>package main<br>const A: i8 = -128<br>const X = A &gt;&gt; 8<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0xffffffffffffff80</code> |
+| <code>NUM-03.i8.left.9</code> | `NUM-03` | <code>package main<br>const A: i8 = 1<br>const X = A &lt;&lt; 9<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x0000000000000002</code> |
+| <code>NUM-03.i8.right_max.9</code> | `NUM-03` | <code>package main<br>const A: i8 = 127<br>const X = A &gt;&gt; 9<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x000000000000003f</code> |
+| <code>NUM-03.i8.right_min.9</code> | `NUM-03` | <code>package main<br>const A: i8 = -128<br>const X = A &gt;&gt; 9<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0xffffffffffffffc0</code> |
+| <code>NUM-03.i8.left.4294967295</code> | `NUM-03` | <code>package main<br>const A: i8 = 1<br>const X = A &lt;&lt; 4294967295<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-03.i8.right_max.4294967295</code> | `NUM-03` | <code>package main<br>const A: i8 = 127<br>const X = A &gt;&gt; 4294967295<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x0000000000000000</code> |
+| <code>NUM-03.i8.right_min.4294967295</code> | `NUM-03` | <code>package main<br>const A: i8 = -128<br>const X = A &gt;&gt; 4294967295<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0xffffffffffffffff</code> |
+| <code>NUM-03.i8.negative_count</code> | `NUM-03` | <code>package main<br>const A: i8 = 2<br>const X = A &lt;&lt; -1<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-03.i8.large_count</code> | `NUM-03` | <code>package main<br>const A: i8 = 2<br>const X = A &lt;&lt; 4294967296<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-03.i8.typed_count</code> | `NUM-03` | <code>package main<br>const A: i8 = 2<br>const K: i32 = 1<br>const X = A &lt;&lt; K<br>func main() {}<br></code> | <code>compile error; type mismatch</code> |
+| <code>NUM-04.i8.pp.div</code> | `NUM-04` | <code>package main<br>const A: i8 = 7<br>const B: i8 = 3<br>const X = A / B<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x0000000000000002</code> |
+| <code>NUM-04.i8.pp.rem</code> | `NUM-04` | <code>package main<br>const A: i8 = 7<br>const B: i8 = 3<br>const X = A % B<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x0000000000000001</code> |
+| <code>NUM-04.i8.np.div</code> | `NUM-04` | <code>package main<br>const A: i8 = -7<br>const B: i8 = 3<br>const X = A / B<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0xfffffffffffffffe</code> |
+| <code>NUM-04.i8.np.rem</code> | `NUM-04` | <code>package main<br>const A: i8 = -7<br>const B: i8 = 3<br>const X = A % B<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0xffffffffffffffff</code> |
+| <code>NUM-04.i8.pn.div</code> | `NUM-04` | <code>package main<br>const A: i8 = 7<br>const B: i8 = -3<br>const X = A / B<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0xfffffffffffffffe</code> |
+| <code>NUM-04.i8.pn.rem</code> | `NUM-04` | <code>package main<br>const A: i8 = 7<br>const B: i8 = -3<br>const X = A % B<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x0000000000000001</code> |
+| <code>NUM-04.i8.nn.div</code> | `NUM-04` | <code>package main<br>const A: i8 = -7<br>const B: i8 = -3<br>const X = A / B<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x0000000000000002</code> |
+| <code>NUM-04.i8.nn.rem</code> | `NUM-04` | <code>package main<br>const A: i8 = -7<br>const B: i8 = -3<br>const X = A % B<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0xffffffffffffffff</code> |
+| <code>NUM-04.i8.div_zero</code> | `NUM-04` | <code>package main<br>const A: i8 = 1<br>const X = A / 0<br>func main() {}<br></code> | <code>compile error; zero</code> |
+| <code>NUM-04.i8.rem_zero</code> | `NUM-04` | <code>package main<br>const A: i8 = 1<br>const X = A % 0<br>func main() {}<br></code> | <code>compile error; zero</code> |
+| <code>NUM-04.i8.min_div_one</code> | `NUM-04` | <code>package main<br>const A: i8 = -128<br>const X = A / 1<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0xffffffffffffff80</code> |
+| <code>NUM-04.i8.min_rem_one</code> | `NUM-04` | <code>package main<br>const A: i8 = -128<br>const X = A % 1<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x0000000000000000</code> |
+| <code>NUM-04.i8.max_div_one</code> | `NUM-04` | <code>package main<br>const A: i8 = 127<br>const X = A / 1<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x000000000000007f</code> |
+| <code>NUM-04.i8.max_rem_one</code> | `NUM-04` | <code>package main<br>const A: i8 = 127<br>const X = A % 1<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x0000000000000000</code> |
+| <code>NUM-04.i8.min_div_neg_one</code> | `NUM-04` | <code>package main<br>const A: i8 = -128<br>const X = A / -1<br>func main() {}<br></code> | <code>compile error; overflow</code> |
+| <code>NUM-04.i8.min_rem_neg_one</code> | `NUM-04` | <code>package main<br>const A: i8 = -128<br>const X = A % -1<br>func main() {}<br></code> | <code>accept; X: i8 = integer bits 0x0000000000000000</code> |
+| <code>NUM-01.u16.below</code> | `NUM-01` | <code>package main<br><br>const X: u16 = -1<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-01.u16.min</code> | `NUM-01` | <code>package main<br><br>const X: u16 = 0<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000000</code> |
+| <code>NUM-01.u16.zero</code> | `NUM-01` | <code>package main<br><br>const X: u16 = 0<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000000</code> |
+| <code>NUM-01.u16.max</code> | `NUM-01` | <code>package main<br><br>const X: u16 = 65535<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x000000000000ffff</code> |
+| <code>NUM-01.u16.above</code> | `NUM-01` | <code>package main<br><br>const X: u16 = 65536<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-01.u16.plus</code> | `NUM-01` | <code>package main<br><br>const X: u16 = +15<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x000000000000000f</code> |
+| <code>NUM-01.u16.hex</code> | `NUM-01` | <code>package main<br><br>const X: u16 = 0xf<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x000000000000000f</code> |
+| <code>NUM-01.u16.binary</code> | `NUM-01` | <code>package main<br><br>const X: u16 = 0b1111<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x000000000000000f</code> |
+| <code>NUM-01.u16.octal</code> | `NUM-01` | <code>package main<br><br>const X: u16 = 0o17<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x000000000000000f</code> |
+| <code>NUM-01.u16.hexmax</code> | `NUM-01` | <code>package main<br><br>const X: u16 = 0xffff<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x000000000000ffff</code> |
+| <code>NUM-01.u16.negative_zero</code> | `NUM-01` | <code>package main<br><br>const X: u16 = -0<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000000</code> |
+| <code>NUM-01.u16.hex_min</code> | `NUM-01` | <code>package main<br><br>const X: u16 = 0x0<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000000</code> |
+| <code>NUM-05.u16.add</code> | `NUM-05` | <code>package main<br><br>const X: u16 = 6 + 3<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000009</code> |
+| <code>NUM-05.u16.sub</code> | `NUM-05` | <code>package main<br><br>const X: u16 = 6 - 3<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000003</code> |
+| <code>NUM-05.u16.mul</code> | `NUM-05` | <code>package main<br><br>const X: u16 = 6 * 3<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000012</code> |
+| <code>NUM-05.u16.div</code> | `NUM-05` | <code>package main<br><br>const X: u16 = 6 / 3<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000002</code> |
+| <code>NUM-05.u16.rem</code> | `NUM-05` | <code>package main<br><br>const X: u16 = 6 % 3<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000000</code> |
+| <code>NUM-05.u16.and</code> | `NUM-05` | <code>package main<br><br>const X: u16 = 6 &amp; 3<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000002</code> |
+| <code>NUM-05.u16.or</code> | `NUM-05` | <code>package main<br><br>const X: u16 = 6 &#124; 3<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000007</code> |
+| <code>NUM-05.u16.xor</code> | `NUM-05` | <code>package main<br><br>const X: u16 = 6 ^ 3<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000005</code> |
+| <code>NUM-05.u16.andnot</code> | `NUM-05` | <code>package main<br><br>const X: u16 = 6 &amp;^ 3<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000004</code> |
+| <code>NUM-05.u16.shl</code> | `NUM-05` | <code>package main<br><br>const X: u16 = 6 &lt;&lt; 1<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x000000000000000c</code> |
+| <code>NUM-05.u16.shr</code> | `NUM-05` | <code>package main<br><br>const X: u16 = 6 &gt;&gt; 1<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000003</code> |
+| <code>NUM-05.u16.plus</code> | `NUM-05` | <code>package main<br><br>const X: u16 = +6<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000006</code> |
+| <code>NUM-05.u16.not</code> | `NUM-05` | <code>package main<br><br>const X: u16 = ^6<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x000000000000fff9</code> |
+| <code>NUM-05.u16.neg</code> | `NUM-05` | <code>package main<br><br>const X: u16 = -6<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-05.u16.eq</code> | `NUM-05` | <code>package main<br>const A: u16 = 0<br>const B: u16 = 65535<br>const X = A == B<br>func main() {}<br></code> | <code>accept; X: bool = false</code> |
+| <code>NUM-05.u16.ne</code> | `NUM-05` | <code>package main<br>const A: u16 = 0<br>const B: u16 = 65535<br>const X = A != B<br>func main() {}<br></code> | <code>accept; X: bool = true</code> |
+| <code>NUM-05.u16.lt</code> | `NUM-05` | <code>package main<br>const A: u16 = 0<br>const B: u16 = 65535<br>const X = A &lt; B<br>func main() {}<br></code> | <code>accept; X: bool = true</code> |
+| <code>NUM-05.u16.le</code> | `NUM-05` | <code>package main<br>const A: u16 = 0<br>const B: u16 = 65535<br>const X = A &lt;= B<br>func main() {}<br></code> | <code>accept; X: bool = true</code> |
+| <code>NUM-05.u16.gt</code> | `NUM-05` | <code>package main<br>const A: u16 = 0<br>const B: u16 = 65535<br>const X = A &gt; B<br>func main() {}<br></code> | <code>accept; X: bool = false</code> |
+| <code>NUM-05.u16.ge</code> | `NUM-05` | <code>package main<br>const A: u16 = 0<br>const B: u16 = 65535<br>const X = A &gt;= B<br>func main() {}<br></code> | <code>accept; X: bool = false</code> |
+| <code>NUM-05.u16.add_overflow</code> | `NUM-05`, `NUM-02` | <code>package main<br><br>const X: u16 = 65535 + 1<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-05.u16.sub_overflow</code> | `NUM-05`, `NUM-02` | <code>package main<br><br>const X: u16 = 0 - 1<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-05.u16.mul_overflow</code> | `NUM-05`, `NUM-02` | <code>package main<br><br>const X: u16 = 65535 * 2<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-03.u16.left.0</code> | `NUM-03` | <code>package main<br>const A: u16 = 1<br>const X = A &lt;&lt; 0<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000001</code> |
+| <code>NUM-03.u16.right_max.0</code> | `NUM-03` | <code>package main<br>const A: u16 = 65535<br>const X = A &gt;&gt; 0<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x000000000000ffff</code> |
+| <code>NUM-03.u16.right_min.0</code> | `NUM-03` | <code>package main<br>const A: u16 = 0<br>const X = A &gt;&gt; 0<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000000</code> |
+| <code>NUM-03.u16.left.15</code> | `NUM-03` | <code>package main<br>const A: u16 = 1<br>const X = A &lt;&lt; 15<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000008000</code> |
+| <code>NUM-03.u16.right_max.15</code> | `NUM-03` | <code>package main<br>const A: u16 = 65535<br>const X = A &gt;&gt; 15<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000001</code> |
+| <code>NUM-03.u16.right_min.15</code> | `NUM-03` | <code>package main<br>const A: u16 = 0<br>const X = A &gt;&gt; 15<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000000</code> |
+| <code>NUM-03.u16.left.16</code> | `NUM-03` | <code>package main<br>const A: u16 = 1<br>const X = A &lt;&lt; 16<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000001</code> |
+| <code>NUM-03.u16.right_max.16</code> | `NUM-03` | <code>package main<br>const A: u16 = 65535<br>const X = A &gt;&gt; 16<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x000000000000ffff</code> |
+| <code>NUM-03.u16.right_min.16</code> | `NUM-03` | <code>package main<br>const A: u16 = 0<br>const X = A &gt;&gt; 16<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000000</code> |
+| <code>NUM-03.u16.left.17</code> | `NUM-03` | <code>package main<br>const A: u16 = 1<br>const X = A &lt;&lt; 17<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000002</code> |
+| <code>NUM-03.u16.right_max.17</code> | `NUM-03` | <code>package main<br>const A: u16 = 65535<br>const X = A &gt;&gt; 17<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000007fff</code> |
+| <code>NUM-03.u16.right_min.17</code> | `NUM-03` | <code>package main<br>const A: u16 = 0<br>const X = A &gt;&gt; 17<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000000</code> |
+| <code>NUM-03.u16.left.4294967295</code> | `NUM-03` | <code>package main<br>const A: u16 = 1<br>const X = A &lt;&lt; 4294967295<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000008000</code> |
+| <code>NUM-03.u16.right_max.4294967295</code> | `NUM-03` | <code>package main<br>const A: u16 = 65535<br>const X = A &gt;&gt; 4294967295<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000001</code> |
+| <code>NUM-03.u16.right_min.4294967295</code> | `NUM-03` | <code>package main<br>const A: u16 = 0<br>const X = A &gt;&gt; 4294967295<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000000</code> |
+| <code>NUM-03.u16.negative_count</code> | `NUM-03` | <code>package main<br>const A: u16 = 2<br>const X = A &lt;&lt; -1<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-03.u16.large_count</code> | `NUM-03` | <code>package main<br>const A: u16 = 2<br>const X = A &lt;&lt; 4294967296<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-03.u16.typed_count</code> | `NUM-03` | <code>package main<br>const A: u16 = 2<br>const K: i32 = 1<br>const X = A &lt;&lt; K<br>func main() {}<br></code> | <code>compile error; type mismatch</code> |
+| <code>NUM-04.u16.pp.div</code> | `NUM-04` | <code>package main<br>const A: u16 = 7<br>const B: u16 = 3<br>const X = A / B<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000002</code> |
+| <code>NUM-04.u16.pp.rem</code> | `NUM-04` | <code>package main<br>const A: u16 = 7<br>const B: u16 = 3<br>const X = A % B<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000001</code> |
+| <code>NUM-04.u16.div_zero</code> | `NUM-04` | <code>package main<br>const A: u16 = 1<br>const X = A / 0<br>func main() {}<br></code> | <code>compile error; zero</code> |
+| <code>NUM-04.u16.rem_zero</code> | `NUM-04` | <code>package main<br>const A: u16 = 1<br>const X = A % 0<br>func main() {}<br></code> | <code>compile error; zero</code> |
+| <code>NUM-04.u16.min_div_one</code> | `NUM-04` | <code>package main<br>const A: u16 = 0<br>const X = A / 1<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000000</code> |
+| <code>NUM-04.u16.min_rem_one</code> | `NUM-04` | <code>package main<br>const A: u16 = 0<br>const X = A % 1<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000000</code> |
+| <code>NUM-04.u16.max_div_one</code> | `NUM-04` | <code>package main<br>const A: u16 = 65535<br>const X = A / 1<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x000000000000ffff</code> |
+| <code>NUM-04.u16.max_rem_one</code> | `NUM-04` | <code>package main<br>const A: u16 = 65535<br>const X = A % 1<br>func main() {}<br></code> | <code>accept; X: u16 = integer bits 0x0000000000000000</code> |
+| <code>NUM-01.i16.below</code> | `NUM-01` | <code>package main<br><br>const X: i16 = -32769<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-01.i16.min</code> | `NUM-01` | <code>package main<br><br>const X: i16 = -32768<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0xffffffffffff8000</code> |
+| <code>NUM-01.i16.zero</code> | `NUM-01` | <code>package main<br><br>const X: i16 = 0<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000000000</code> |
+| <code>NUM-01.i16.max</code> | `NUM-01` | <code>package main<br><br>const X: i16 = 32767<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000007fff</code> |
+| <code>NUM-01.i16.above</code> | `NUM-01` | <code>package main<br><br>const X: i16 = 32768<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-01.i16.plus</code> | `NUM-01` | <code>package main<br><br>const X: i16 = +15<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x000000000000000f</code> |
+| <code>NUM-01.i16.hex</code> | `NUM-01` | <code>package main<br><br>const X: i16 = 0xf<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x000000000000000f</code> |
+| <code>NUM-01.i16.binary</code> | `NUM-01` | <code>package main<br><br>const X: i16 = 0b1111<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x000000000000000f</code> |
+| <code>NUM-01.i16.octal</code> | `NUM-01` | <code>package main<br><br>const X: i16 = 0o17<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x000000000000000f</code> |
+| <code>NUM-01.i16.hexmax</code> | `NUM-01` | <code>package main<br><br>const X: i16 = 0x7fff<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000007fff</code> |
+| <code>NUM-01.i16.negative_zero</code> | `NUM-01` | <code>package main<br><br>const X: i16 = -0<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000000000</code> |
+| <code>NUM-01.i16.hex_min</code> | `NUM-01` | <code>package main<br><br>const X: i16 = -0x8000<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0xffffffffffff8000</code> |
+| <code>NUM-05.i16.add</code> | `NUM-05` | <code>package main<br><br>const X: i16 = 6 + 3<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000000009</code> |
+| <code>NUM-05.i16.sub</code> | `NUM-05` | <code>package main<br><br>const X: i16 = 6 - 3<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000000003</code> |
+| <code>NUM-05.i16.mul</code> | `NUM-05` | <code>package main<br><br>const X: i16 = 6 * 3<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000000012</code> |
+| <code>NUM-05.i16.div</code> | `NUM-05` | <code>package main<br><br>const X: i16 = 6 / 3<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000000002</code> |
+| <code>NUM-05.i16.rem</code> | `NUM-05` | <code>package main<br><br>const X: i16 = 6 % 3<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000000000</code> |
+| <code>NUM-05.i16.and</code> | `NUM-05` | <code>package main<br><br>const X: i16 = 6 &amp; 3<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000000002</code> |
+| <code>NUM-05.i16.or</code> | `NUM-05` | <code>package main<br><br>const X: i16 = 6 &#124; 3<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000000007</code> |
+| <code>NUM-05.i16.xor</code> | `NUM-05` | <code>package main<br><br>const X: i16 = 6 ^ 3<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000000005</code> |
+| <code>NUM-05.i16.andnot</code> | `NUM-05` | <code>package main<br><br>const X: i16 = 6 &amp;^ 3<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000000004</code> |
+| <code>NUM-05.i16.shl</code> | `NUM-05` | <code>package main<br><br>const X: i16 = 6 &lt;&lt; 1<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x000000000000000c</code> |
+| <code>NUM-05.i16.shr</code> | `NUM-05` | <code>package main<br><br>const X: i16 = 6 &gt;&gt; 1<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000000003</code> |
+| <code>NUM-05.i16.plus</code> | `NUM-05` | <code>package main<br><br>const X: i16 = +6<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000000006</code> |
+| <code>NUM-05.i16.not</code> | `NUM-05` | <code>package main<br><br>const X: i16 = ^6<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0xfffffffffffffff9</code> |
+| <code>NUM-05.i16.neg</code> | `NUM-05` | <code>package main<br><br>const X: i16 = -6<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0xfffffffffffffffa</code> |
+| <code>NUM-05.i16.eq</code> | `NUM-05` | <code>package main<br>const A: i16 = -32768<br>const B: i16 = 32767<br>const X = A == B<br>func main() {}<br></code> | <code>accept; X: bool = false</code> |
+| <code>NUM-05.i16.ne</code> | `NUM-05` | <code>package main<br>const A: i16 = -32768<br>const B: i16 = 32767<br>const X = A != B<br>func main() {}<br></code> | <code>accept; X: bool = true</code> |
+| <code>NUM-05.i16.lt</code> | `NUM-05` | <code>package main<br>const A: i16 = -32768<br>const B: i16 = 32767<br>const X = A &lt; B<br>func main() {}<br></code> | <code>accept; X: bool = true</code> |
+| <code>NUM-05.i16.le</code> | `NUM-05` | <code>package main<br>const A: i16 = -32768<br>const B: i16 = 32767<br>const X = A &lt;= B<br>func main() {}<br></code> | <code>accept; X: bool = true</code> |
+| <code>NUM-05.i16.gt</code> | `NUM-05` | <code>package main<br>const A: i16 = -32768<br>const B: i16 = 32767<br>const X = A &gt; B<br>func main() {}<br></code> | <code>accept; X: bool = false</code> |
+| <code>NUM-05.i16.ge</code> | `NUM-05` | <code>package main<br>const A: i16 = -32768<br>const B: i16 = 32767<br>const X = A &gt;= B<br>func main() {}<br></code> | <code>accept; X: bool = false</code> |
+| <code>NUM-05.i16.add_overflow</code> | `NUM-05`, `NUM-02` | <code>package main<br><br>const X: i16 = 32767 + 1<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-05.i16.sub_overflow</code> | `NUM-05`, `NUM-02` | <code>package main<br><br>const X: i16 = -32768 - 1<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-05.i16.mul_overflow</code> | `NUM-05`, `NUM-02` | <code>package main<br><br>const X: i16 = 32767 * 2<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-03.i16.left.0</code> | `NUM-03` | <code>package main<br>const A: i16 = 1<br>const X = A &lt;&lt; 0<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000000001</code> |
+| <code>NUM-03.i16.right_max.0</code> | `NUM-03` | <code>package main<br>const A: i16 = 32767<br>const X = A &gt;&gt; 0<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000007fff</code> |
+| <code>NUM-03.i16.right_min.0</code> | `NUM-03` | <code>package main<br>const A: i16 = -32768<br>const X = A &gt;&gt; 0<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0xffffffffffff8000</code> |
+| <code>NUM-03.i16.left.15</code> | `NUM-03` | <code>package main<br>const A: i16 = 1<br>const X = A &lt;&lt; 15<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-03.i16.right_max.15</code> | `NUM-03` | <code>package main<br>const A: i16 = 32767<br>const X = A &gt;&gt; 15<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000000000</code> |
+| <code>NUM-03.i16.right_min.15</code> | `NUM-03` | <code>package main<br>const A: i16 = -32768<br>const X = A &gt;&gt; 15<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0xffffffffffffffff</code> |
+| <code>NUM-03.i16.left.16</code> | `NUM-03` | <code>package main<br>const A: i16 = 1<br>const X = A &lt;&lt; 16<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000000001</code> |
+| <code>NUM-03.i16.right_max.16</code> | `NUM-03` | <code>package main<br>const A: i16 = 32767<br>const X = A &gt;&gt; 16<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000007fff</code> |
+| <code>NUM-03.i16.right_min.16</code> | `NUM-03` | <code>package main<br>const A: i16 = -32768<br>const X = A &gt;&gt; 16<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0xffffffffffff8000</code> |
+| <code>NUM-03.i16.left.17</code> | `NUM-03` | <code>package main<br>const A: i16 = 1<br>const X = A &lt;&lt; 17<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000000002</code> |
+| <code>NUM-03.i16.right_max.17</code> | `NUM-03` | <code>package main<br>const A: i16 = 32767<br>const X = A &gt;&gt; 17<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000003fff</code> |
+| <code>NUM-03.i16.right_min.17</code> | `NUM-03` | <code>package main<br>const A: i16 = -32768<br>const X = A &gt;&gt; 17<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0xffffffffffffc000</code> |
+| <code>NUM-03.i16.left.4294967295</code> | `NUM-03` | <code>package main<br>const A: i16 = 1<br>const X = A &lt;&lt; 4294967295<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-03.i16.right_max.4294967295</code> | `NUM-03` | <code>package main<br>const A: i16 = 32767<br>const X = A &gt;&gt; 4294967295<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000000000</code> |
+| <code>NUM-03.i16.right_min.4294967295</code> | `NUM-03` | <code>package main<br>const A: i16 = -32768<br>const X = A &gt;&gt; 4294967295<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0xffffffffffffffff</code> |
+| <code>NUM-03.i16.negative_count</code> | `NUM-03` | <code>package main<br>const A: i16 = 2<br>const X = A &lt;&lt; -1<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-03.i16.large_count</code> | `NUM-03` | <code>package main<br>const A: i16 = 2<br>const X = A &lt;&lt; 4294967296<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-03.i16.typed_count</code> | `NUM-03` | <code>package main<br>const A: i16 = 2<br>const K: i32 = 1<br>const X = A &lt;&lt; K<br>func main() {}<br></code> | <code>compile error; type mismatch</code> |
+| <code>NUM-04.i16.pp.div</code> | `NUM-04` | <code>package main<br>const A: i16 = 7<br>const B: i16 = 3<br>const X = A / B<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000000002</code> |
+| <code>NUM-04.i16.pp.rem</code> | `NUM-04` | <code>package main<br>const A: i16 = 7<br>const B: i16 = 3<br>const X = A % B<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000000001</code> |
+| <code>NUM-04.i16.np.div</code> | `NUM-04` | <code>package main<br>const A: i16 = -7<br>const B: i16 = 3<br>const X = A / B<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0xfffffffffffffffe</code> |
+| <code>NUM-04.i16.np.rem</code> | `NUM-04` | <code>package main<br>const A: i16 = -7<br>const B: i16 = 3<br>const X = A % B<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0xffffffffffffffff</code> |
+| <code>NUM-04.i16.pn.div</code> | `NUM-04` | <code>package main<br>const A: i16 = 7<br>const B: i16 = -3<br>const X = A / B<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0xfffffffffffffffe</code> |
+| <code>NUM-04.i16.pn.rem</code> | `NUM-04` | <code>package main<br>const A: i16 = 7<br>const B: i16 = -3<br>const X = A % B<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000000001</code> |
+| <code>NUM-04.i16.nn.div</code> | `NUM-04` | <code>package main<br>const A: i16 = -7<br>const B: i16 = -3<br>const X = A / B<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000000002</code> |
+| <code>NUM-04.i16.nn.rem</code> | `NUM-04` | <code>package main<br>const A: i16 = -7<br>const B: i16 = -3<br>const X = A % B<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0xffffffffffffffff</code> |
+| <code>NUM-04.i16.div_zero</code> | `NUM-04` | <code>package main<br>const A: i16 = 1<br>const X = A / 0<br>func main() {}<br></code> | <code>compile error; zero</code> |
+| <code>NUM-04.i16.rem_zero</code> | `NUM-04` | <code>package main<br>const A: i16 = 1<br>const X = A % 0<br>func main() {}<br></code> | <code>compile error; zero</code> |
+| <code>NUM-04.i16.min_div_one</code> | `NUM-04` | <code>package main<br>const A: i16 = -32768<br>const X = A / 1<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0xffffffffffff8000</code> |
+| <code>NUM-04.i16.min_rem_one</code> | `NUM-04` | <code>package main<br>const A: i16 = -32768<br>const X = A % 1<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000000000</code> |
+| <code>NUM-04.i16.max_div_one</code> | `NUM-04` | <code>package main<br>const A: i16 = 32767<br>const X = A / 1<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000007fff</code> |
+| <code>NUM-04.i16.max_rem_one</code> | `NUM-04` | <code>package main<br>const A: i16 = 32767<br>const X = A % 1<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000000000</code> |
+| <code>NUM-04.i16.min_div_neg_one</code> | `NUM-04` | <code>package main<br>const A: i16 = -32768<br>const X = A / -1<br>func main() {}<br></code> | <code>compile error; overflow</code> |
+| <code>NUM-04.i16.min_rem_neg_one</code> | `NUM-04` | <code>package main<br>const A: i16 = -32768<br>const X = A % -1<br>func main() {}<br></code> | <code>accept; X: i16 = integer bits 0x0000000000000000</code> |
+| <code>NUM-01.u32.below</code> | `NUM-01` | <code>package main<br><br>const X: u32 = -1<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-01.u32.min</code> | `NUM-01` | <code>package main<br><br>const X: u32 = 0<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000000</code> |
+| <code>NUM-01.u32.zero</code> | `NUM-01` | <code>package main<br><br>const X: u32 = 0<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000000</code> |
+| <code>NUM-01.u32.max</code> | `NUM-01` | <code>package main<br><br>const X: u32 = 4294967295<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x00000000ffffffff</code> |
+| <code>NUM-01.u32.above</code> | `NUM-01` | <code>package main<br><br>const X: u32 = 4294967296<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-01.u32.plus</code> | `NUM-01` | <code>package main<br><br>const X: u32 = +15<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x000000000000000f</code> |
+| <code>NUM-01.u32.hex</code> | `NUM-01` | <code>package main<br><br>const X: u32 = 0xf<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x000000000000000f</code> |
+| <code>NUM-01.u32.binary</code> | `NUM-01` | <code>package main<br><br>const X: u32 = 0b1111<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x000000000000000f</code> |
+| <code>NUM-01.u32.octal</code> | `NUM-01` | <code>package main<br><br>const X: u32 = 0o17<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x000000000000000f</code> |
+| <code>NUM-01.u32.hexmax</code> | `NUM-01` | <code>package main<br><br>const X: u32 = 0xffffffff<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x00000000ffffffff</code> |
+| <code>NUM-01.u32.negative_zero</code> | `NUM-01` | <code>package main<br><br>const X: u32 = -0<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000000</code> |
+| <code>NUM-01.u32.hex_min</code> | `NUM-01` | <code>package main<br><br>const X: u32 = 0x0<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000000</code> |
+| <code>NUM-05.u32.add</code> | `NUM-05` | <code>package main<br><br>const X: u32 = 6 + 3<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000009</code> |
+| <code>NUM-05.u32.sub</code> | `NUM-05` | <code>package main<br><br>const X: u32 = 6 - 3<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000003</code> |
+| <code>NUM-05.u32.mul</code> | `NUM-05` | <code>package main<br><br>const X: u32 = 6 * 3<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000012</code> |
+| <code>NUM-05.u32.div</code> | `NUM-05` | <code>package main<br><br>const X: u32 = 6 / 3<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000002</code> |
+| <code>NUM-05.u32.rem</code> | `NUM-05` | <code>package main<br><br>const X: u32 = 6 % 3<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000000</code> |
+| <code>NUM-05.u32.and</code> | `NUM-05` | <code>package main<br><br>const X: u32 = 6 &amp; 3<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000002</code> |
+| <code>NUM-05.u32.or</code> | `NUM-05` | <code>package main<br><br>const X: u32 = 6 &#124; 3<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000007</code> |
+| <code>NUM-05.u32.xor</code> | `NUM-05` | <code>package main<br><br>const X: u32 = 6 ^ 3<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000005</code> |
+| <code>NUM-05.u32.andnot</code> | `NUM-05` | <code>package main<br><br>const X: u32 = 6 &amp;^ 3<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000004</code> |
+| <code>NUM-05.u32.shl</code> | `NUM-05` | <code>package main<br><br>const X: u32 = 6 &lt;&lt; 1<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x000000000000000c</code> |
+| <code>NUM-05.u32.shr</code> | `NUM-05` | <code>package main<br><br>const X: u32 = 6 &gt;&gt; 1<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000003</code> |
+| <code>NUM-05.u32.plus</code> | `NUM-05` | <code>package main<br><br>const X: u32 = +6<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000006</code> |
+| <code>NUM-05.u32.not</code> | `NUM-05` | <code>package main<br><br>const X: u32 = ^6<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x00000000fffffff9</code> |
+| <code>NUM-05.u32.neg</code> | `NUM-05` | <code>package main<br><br>const X: u32 = -6<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-05.u32.eq</code> | `NUM-05` | <code>package main<br>const A: u32 = 0<br>const B: u32 = 4294967295<br>const X = A == B<br>func main() {}<br></code> | <code>accept; X: bool = false</code> |
+| <code>NUM-05.u32.ne</code> | `NUM-05` | <code>package main<br>const A: u32 = 0<br>const B: u32 = 4294967295<br>const X = A != B<br>func main() {}<br></code> | <code>accept; X: bool = true</code> |
+| <code>NUM-05.u32.lt</code> | `NUM-05` | <code>package main<br>const A: u32 = 0<br>const B: u32 = 4294967295<br>const X = A &lt; B<br>func main() {}<br></code> | <code>accept; X: bool = true</code> |
+| <code>NUM-05.u32.le</code> | `NUM-05` | <code>package main<br>const A: u32 = 0<br>const B: u32 = 4294967295<br>const X = A &lt;= B<br>func main() {}<br></code> | <code>accept; X: bool = true</code> |
+| <code>NUM-05.u32.gt</code> | `NUM-05` | <code>package main<br>const A: u32 = 0<br>const B: u32 = 4294967295<br>const X = A &gt; B<br>func main() {}<br></code> | <code>accept; X: bool = false</code> |
+| <code>NUM-05.u32.ge</code> | `NUM-05` | <code>package main<br>const A: u32 = 0<br>const B: u32 = 4294967295<br>const X = A &gt;= B<br>func main() {}<br></code> | <code>accept; X: bool = false</code> |
+| <code>NUM-05.u32.add_overflow</code> | `NUM-05`, `NUM-02` | <code>package main<br><br>const X: u32 = 4294967295 + 1<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-05.u32.sub_overflow</code> | `NUM-05`, `NUM-02` | <code>package main<br><br>const X: u32 = 0 - 1<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-05.u32.mul_overflow</code> | `NUM-05`, `NUM-02` | <code>package main<br><br>const X: u32 = 4294967295 * 2<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-03.u32.left.0</code> | `NUM-03` | <code>package main<br>const A: u32 = 1<br>const X = A &lt;&lt; 0<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000001</code> |
+| <code>NUM-03.u32.right_max.0</code> | `NUM-03` | <code>package main<br>const A: u32 = 4294967295<br>const X = A &gt;&gt; 0<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x00000000ffffffff</code> |
+| <code>NUM-03.u32.right_min.0</code> | `NUM-03` | <code>package main<br>const A: u32 = 0<br>const X = A &gt;&gt; 0<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000000</code> |
+| <code>NUM-03.u32.left.31</code> | `NUM-03` | <code>package main<br>const A: u32 = 1<br>const X = A &lt;&lt; 31<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000080000000</code> |
+| <code>NUM-03.u32.right_max.31</code> | `NUM-03` | <code>package main<br>const A: u32 = 4294967295<br>const X = A &gt;&gt; 31<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000001</code> |
+| <code>NUM-03.u32.right_min.31</code> | `NUM-03` | <code>package main<br>const A: u32 = 0<br>const X = A &gt;&gt; 31<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000000</code> |
+| <code>NUM-03.u32.left.32</code> | `NUM-03` | <code>package main<br>const A: u32 = 1<br>const X = A &lt;&lt; 32<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000001</code> |
+| <code>NUM-03.u32.right_max.32</code> | `NUM-03` | <code>package main<br>const A: u32 = 4294967295<br>const X = A &gt;&gt; 32<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x00000000ffffffff</code> |
+| <code>NUM-03.u32.right_min.32</code> | `NUM-03` | <code>package main<br>const A: u32 = 0<br>const X = A &gt;&gt; 32<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000000</code> |
+| <code>NUM-03.u32.left.33</code> | `NUM-03` | <code>package main<br>const A: u32 = 1<br>const X = A &lt;&lt; 33<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000002</code> |
+| <code>NUM-03.u32.right_max.33</code> | `NUM-03` | <code>package main<br>const A: u32 = 4294967295<br>const X = A &gt;&gt; 33<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x000000007fffffff</code> |
+| <code>NUM-03.u32.right_min.33</code> | `NUM-03` | <code>package main<br>const A: u32 = 0<br>const X = A &gt;&gt; 33<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000000</code> |
+| <code>NUM-03.u32.left.4294967295</code> | `NUM-03` | <code>package main<br>const A: u32 = 1<br>const X = A &lt;&lt; 4294967295<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000080000000</code> |
+| <code>NUM-03.u32.right_max.4294967295</code> | `NUM-03` | <code>package main<br>const A: u32 = 4294967295<br>const X = A &gt;&gt; 4294967295<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000001</code> |
+| <code>NUM-03.u32.right_min.4294967295</code> | `NUM-03` | <code>package main<br>const A: u32 = 0<br>const X = A &gt;&gt; 4294967295<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000000</code> |
+| <code>NUM-03.u32.negative_count</code> | `NUM-03` | <code>package main<br>const A: u32 = 2<br>const X = A &lt;&lt; -1<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-03.u32.large_count</code> | `NUM-03` | <code>package main<br>const A: u32 = 2<br>const X = A &lt;&lt; 4294967296<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-03.u32.typed_count</code> | `NUM-03` | <code>package main<br>const A: u32 = 2<br>const K: i32 = 1<br>const X = A &lt;&lt; K<br>func main() {}<br></code> | <code>compile error; type mismatch</code> |
+| <code>NUM-04.u32.pp.div</code> | `NUM-04` | <code>package main<br>const A: u32 = 7<br>const B: u32 = 3<br>const X = A / B<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000002</code> |
+| <code>NUM-04.u32.pp.rem</code> | `NUM-04` | <code>package main<br>const A: u32 = 7<br>const B: u32 = 3<br>const X = A % B<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000001</code> |
+| <code>NUM-04.u32.div_zero</code> | `NUM-04` | <code>package main<br>const A: u32 = 1<br>const X = A / 0<br>func main() {}<br></code> | <code>compile error; zero</code> |
+| <code>NUM-04.u32.rem_zero</code> | `NUM-04` | <code>package main<br>const A: u32 = 1<br>const X = A % 0<br>func main() {}<br></code> | <code>compile error; zero</code> |
+| <code>NUM-04.u32.min_div_one</code> | `NUM-04` | <code>package main<br>const A: u32 = 0<br>const X = A / 1<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000000</code> |
+| <code>NUM-04.u32.min_rem_one</code> | `NUM-04` | <code>package main<br>const A: u32 = 0<br>const X = A % 1<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000000</code> |
+| <code>NUM-04.u32.max_div_one</code> | `NUM-04` | <code>package main<br>const A: u32 = 4294967295<br>const X = A / 1<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x00000000ffffffff</code> |
+| <code>NUM-04.u32.max_rem_one</code> | `NUM-04` | <code>package main<br>const A: u32 = 4294967295<br>const X = A % 1<br>func main() {}<br></code> | <code>accept; X: u32 = integer bits 0x0000000000000000</code> |
+| <code>NUM-01.i32.below</code> | `NUM-01` | <code>package main<br><br>const X: i32 = -2147483649<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-01.i32.min</code> | `NUM-01` | <code>package main<br><br>const X: i32 = -2147483648<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0xffffffff80000000</code> |
+| <code>NUM-01.i32.zero</code> | `NUM-01` | <code>package main<br><br>const X: i32 = 0<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x0000000000000000</code> |
+| <code>NUM-01.i32.max</code> | `NUM-01` | <code>package main<br><br>const X: i32 = 2147483647<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x000000007fffffff</code> |
+| <code>NUM-01.i32.above</code> | `NUM-01` | <code>package main<br><br>const X: i32 = 2147483648<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-01.i32.plus</code> | `NUM-01` | <code>package main<br><br>const X: i32 = +15<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x000000000000000f</code> |
+| <code>NUM-01.i32.hex</code> | `NUM-01` | <code>package main<br><br>const X: i32 = 0xf<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x000000000000000f</code> |
+| <code>NUM-01.i32.binary</code> | `NUM-01` | <code>package main<br><br>const X: i32 = 0b1111<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x000000000000000f</code> |
+| <code>NUM-01.i32.octal</code> | `NUM-01` | <code>package main<br><br>const X: i32 = 0o17<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x000000000000000f</code> |
+| <code>NUM-01.i32.hexmax</code> | `NUM-01` | <code>package main<br><br>const X: i32 = 0x7fffffff<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x000000007fffffff</code> |
+| <code>NUM-01.i32.negative_zero</code> | `NUM-01` | <code>package main<br><br>const X: i32 = -0<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x0000000000000000</code> |
+| <code>NUM-01.i32.hex_min</code> | `NUM-01` | <code>package main<br><br>const X: i32 = -0x80000000<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0xffffffff80000000</code> |
+| <code>NUM-05.i32.add</code> | `NUM-05` | <code>package main<br><br>const X: i32 = 6 + 3<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x0000000000000009</code> |
+| <code>NUM-05.i32.sub</code> | `NUM-05` | <code>package main<br><br>const X: i32 = 6 - 3<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x0000000000000003</code> |
+| <code>NUM-05.i32.mul</code> | `NUM-05` | <code>package main<br><br>const X: i32 = 6 * 3<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x0000000000000012</code> |
+| <code>NUM-05.i32.div</code> | `NUM-05` | <code>package main<br><br>const X: i32 = 6 / 3<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x0000000000000002</code> |
+| <code>NUM-05.i32.rem</code> | `NUM-05` | <code>package main<br><br>const X: i32 = 6 % 3<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x0000000000000000</code> |
+| <code>NUM-05.i32.and</code> | `NUM-05` | <code>package main<br><br>const X: i32 = 6 &amp; 3<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x0000000000000002</code> |
+| <code>NUM-05.i32.or</code> | `NUM-05` | <code>package main<br><br>const X: i32 = 6 &#124; 3<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x0000000000000007</code> |
+| <code>NUM-05.i32.xor</code> | `NUM-05` | <code>package main<br><br>const X: i32 = 6 ^ 3<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x0000000000000005</code> |
+| <code>NUM-05.i32.andnot</code> | `NUM-05` | <code>package main<br><br>const X: i32 = 6 &amp;^ 3<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x0000000000000004</code> |
+| <code>NUM-05.i32.shl</code> | `NUM-05` | <code>package main<br><br>const X: i32 = 6 &lt;&lt; 1<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x000000000000000c</code> |
+| <code>NUM-05.i32.shr</code> | `NUM-05` | <code>package main<br><br>const X: i32 = 6 &gt;&gt; 1<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x0000000000000003</code> |
+| <code>NUM-05.i32.plus</code> | `NUM-05` | <code>package main<br><br>const X: i32 = +6<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x0000000000000006</code> |
+| <code>NUM-05.i32.not</code> | `NUM-05` | <code>package main<br><br>const X: i32 = ^6<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0xfffffffffffffff9</code> |
+| <code>NUM-05.i32.neg</code> | `NUM-05` | <code>package main<br><br>const X: i32 = -6<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0xfffffffffffffffa</code> |
+| <code>NUM-05.i32.eq</code> | `NUM-05` | <code>package main<br>const A: i32 = -2147483648<br>const B: i32 = 2147483647<br>const X = A == B<br>func main() {}<br></code> | <code>accept; X: bool = false</code> |
+| <code>NUM-05.i32.ne</code> | `NUM-05` | <code>package main<br>const A: i32 = -2147483648<br>const B: i32 = 2147483647<br>const X = A != B<br>func main() {}<br></code> | <code>accept; X: bool = true</code> |
+| <code>NUM-05.i32.lt</code> | `NUM-05` | <code>package main<br>const A: i32 = -2147483648<br>const B: i32 = 2147483647<br>const X = A &lt; B<br>func main() {}<br></code> | <code>accept; X: bool = true</code> |
+| <code>NUM-05.i32.le</code> | `NUM-05` | <code>package main<br>const A: i32 = -2147483648<br>const B: i32 = 2147483647<br>const X = A &lt;= B<br>func main() {}<br></code> | <code>accept; X: bool = true</code> |
+| <code>NUM-05.i32.gt</code> | `NUM-05` | <code>package main<br>const A: i32 = -2147483648<br>const B: i32 = 2147483647<br>const X = A &gt; B<br>func main() {}<br></code> | <code>accept; X: bool = false</code> |
+| <code>NUM-05.i32.ge</code> | `NUM-05` | <code>package main<br>const A: i32 = -2147483648<br>const B: i32 = 2147483647<br>const X = A &gt;= B<br>func main() {}<br></code> | <code>accept; X: bool = false</code> |
+| <code>NUM-05.i32.add_overflow</code> | `NUM-05`, `NUM-02` | <code>package main<br><br>const X: i32 = 2147483647 + 1<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-05.i32.sub_overflow</code> | `NUM-05`, `NUM-02` | <code>package main<br><br>const X: i32 = -2147483648 - 1<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-05.i32.mul_overflow</code> | `NUM-05`, `NUM-02` | <code>package main<br><br>const X: i32 = 2147483647 * 2<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-03.i32.left.0</code> | `NUM-03` | <code>package main<br>const A: i32 = 1<br>const X = A &lt;&lt; 0<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x0000000000000001</code> |
+| <code>NUM-03.i32.right_max.0</code> | `NUM-03` | <code>package main<br>const A: i32 = 2147483647<br>const X = A &gt;&gt; 0<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x000000007fffffff</code> |
+| <code>NUM-03.i32.right_min.0</code> | `NUM-03` | <code>package main<br>const A: i32 = -2147483648<br>const X = A &gt;&gt; 0<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0xffffffff80000000</code> |
+| <code>NUM-03.i32.left.31</code> | `NUM-03` | <code>package main<br>const A: i32 = 1<br>const X = A &lt;&lt; 31<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-03.i32.right_max.31</code> | `NUM-03` | <code>package main<br>const A: i32 = 2147483647<br>const X = A &gt;&gt; 31<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x0000000000000000</code> |
+| <code>NUM-03.i32.right_min.31</code> | `NUM-03` | <code>package main<br>const A: i32 = -2147483648<br>const X = A &gt;&gt; 31<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0xffffffffffffffff</code> |
+| <code>NUM-03.i32.left.32</code> | `NUM-03` | <code>package main<br>const A: i32 = 1<br>const X = A &lt;&lt; 32<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x0000000000000001</code> |
+| <code>NUM-03.i32.right_max.32</code> | `NUM-03` | <code>package main<br>const A: i32 = 2147483647<br>const X = A &gt;&gt; 32<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x000000007fffffff</code> |
+| <code>NUM-03.i32.right_min.32</code> | `NUM-03` | <code>package main<br>const A: i32 = -2147483648<br>const X = A &gt;&gt; 32<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0xffffffff80000000</code> |
+| <code>NUM-03.i32.left.33</code> | `NUM-03` | <code>package main<br>const A: i32 = 1<br>const X = A &lt;&lt; 33<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x0000000000000002</code> |
+| <code>NUM-03.i32.right_max.33</code> | `NUM-03` | <code>package main<br>const A: i32 = 2147483647<br>const X = A &gt;&gt; 33<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x000000003fffffff</code> |
+| <code>NUM-03.i32.right_min.33</code> | `NUM-03` | <code>package main<br>const A: i32 = -2147483648<br>const X = A &gt;&gt; 33<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0xffffffffc0000000</code> |
+| <code>NUM-03.i32.left.4294967295</code> | `NUM-03` | <code>package main<br>const A: i32 = 1<br>const X = A &lt;&lt; 4294967295<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-03.i32.right_max.4294967295</code> | `NUM-03` | <code>package main<br>const A: i32 = 2147483647<br>const X = A &gt;&gt; 4294967295<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x0000000000000000</code> |
+| <code>NUM-03.i32.right_min.4294967295</code> | `NUM-03` | <code>package main<br>const A: i32 = -2147483648<br>const X = A &gt;&gt; 4294967295<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0xffffffffffffffff</code> |
+| <code>NUM-03.i32.negative_count</code> | `NUM-03` | <code>package main<br>const A: i32 = 2<br>const X = A &lt;&lt; -1<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-03.i32.large_count</code> | `NUM-03` | <code>package main<br>const A: i32 = 2<br>const X = A &lt;&lt; 4294967296<br>func main() {}<br></code> | <code>compile error; out of range</code> |
+| <code>NUM-03.i32.typed_count</code> | `NUM-03` | <code>package main<br>const A: i32 = 2<br>const K: i32 = 1<br>const X = A &lt;&lt; K<br>func main() {}<br></code> | <code>compile error; type mismatch</code> |
+| <code>NUM-04.i32.pp.div</code> | `NUM-04` | <code>package main<br>const A: i32 = 7<br>const B: i32 = 3<br>const X = A / B<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x0000000000000002</code> |
+| <code>NUM-04.i32.pp.rem</code> | `NUM-04` | <code>package main<br>const A: i32 = 7<br>const B: i32 = 3<br>const X = A % B<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x0000000000000001</code> |
+| <code>NUM-04.i32.np.div</code> | `NUM-04` | <code>package main<br>const A: i32 = -7<br>const B: i32 = 3<br>const X = A / B<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0xfffffffffffffffe</code> |
+| <code>NUM-04.i32.np.rem</code> | `NUM-04` | <code>package main<br>const A: i32 = -7<br>const B: i32 = 3<br>const X = A % B<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0xffffffffffffffff</code> |
+| <code>NUM-04.i32.pn.div</code> | `NUM-04` | <code>package main<br>const A: i32 = 7<br>const B: i32 = -3<br>const X = A / B<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0xfffffffffffffffe</code> |
+| <code>NUM-04.i32.pn.rem</code> | `NUM-04` | <code>package main<br>const A: i32 = 7<br>const B: i32 = -3<br>const X = A % B<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x0000000000000001</code> |
+| <code>NUM-04.i32.nn.div</code> | `NUM-04` | <code>package main<br>const A: i32 = -7<br>const B: i32 = -3<br>const X = A / B<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x0000000000000002</code> |
+| <code>NUM-04.i32.nn.rem</code> | `NUM-04` | <code>package main<br>const A: i32 = -7<br>const B: i32 = -3<br>const X = A % B<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0xffffffffffffffff</code> |
+| <code>NUM-04.i32.div_zero</code> | `NUM-04` | <code>package main<br>const A: i32 = 1<br>const X = A / 0<br>func main() {}<br></code> | <code>compile error; zero</code> |
+| <code>NUM-04.i32.rem_zero</code> | `NUM-04` | <code>package main<br>const A: i32 = 1<br>const X = A % 0<br>func main() {}<br></code> | <code>compile error; zero</code> |
+| <code>NUM-04.i32.min_div_one</code> | `NUM-04` | <code>package main<br>const A: i32 = -2147483648<br>const X = A / 1<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0xffffffff80000000</code> |
+| <code>NUM-04.i32.min_rem_one</code> | `NUM-04` | <code>package main<br>const A: i32 = -2147483648<br>const X = A % 1<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x0000000000000000</code> |
+| <code>NUM-04.i32.max_div_one</code> | `NUM-04` | <code>package main<br>const A: i32 = 2147483647<br>const X = A / 1<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x000000007fffffff</code> |
+| <code>NUM-04.i32.max_rem_one</code> | `NUM-04` | <code>package main<br>const A: i32 = 2147483647<br>const X = A % 1<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x0000000000000000</code> |
+| <code>NUM-04.i32.min_div_neg_one</code> | `NUM-04` | <code>package main<br>const A: i32 = -2147483648<br>const X = A / -1<br>func main() {}<br></code> | <code>compile error; overflow</code> |
+| <code>NUM-04.i32.min_rem_neg_one</code> | `NUM-04` | <code>package main<br>const A: i32 = -2147483648<br>const X = A % -1<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x0000000000000000</code> |
+| <code>NUM-01.default_i32</code> | `NUM-01` | <code>package main<br><br>const X = 2147483647<br>func main() {}<br></code> | <code>accept; X: i32 = integer bits 0x000000007fffffff</code> |
+| <code>NUM-01.default_overflow</code> | `NUM-01` | <code>package main<br><br>const X = 2147483648<br>func main() {}<br></code> | <code>compile error; out of range</code> |

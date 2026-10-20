@@ -1,0 +1,85 @@
+# boundaries-builtinsの入力と期待値
+<!-- ond-spec-id: conformance/cases/boundaries-builtins -->
+
+builtinの型argument、引数個数と型、戻り値型の規則を各入力へ適用する。
+
+規範定義元: [BI-01の定義元](../../language/v1/builtins.md#1-一覧)、[BI-02の定義元](../../language/v1/builtins.md#4-len)、[BI-03の定義元](../../language/v1/builtins.md#6-thisfile)。\
+要件索引は[requirements](../requirements.md)、既存fixture宣言は[registry](../../../../crates/compiler-core/src/conformance/boundaries/builtins.rs)を参照する。
+
+共通のproject入力は`ond.toml`の`[project]`に`name = "test"`を置いた実行projectである。\
+generated numeric/型境界のsourceはすべて`main.ond`の内容として読み、static表は各file名を入力欄に記す。
+
+以下は移行時の既存case宣言に含まれる入力と仕様由来Expectedデータを記録したものであり、compilerを実行して得た結果の転記ではない。\
+`accept`単独は受理を期待し、値の記載がある行はその型・値まで照合する。\
+`implementation AST/MIR`は外部の受理・値期待と区分した実装回帰検査である。\
+診断の原文は照合対象を示し、規範上の失敗結果はcompile errorとして読む。
+
+| Case ID | 要件ID | 入力 | 仕様由来の期待結果と内部検査 |
+| --- | --- | --- | --- |
+| <code>BI-01.new-empty</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>var allocated = new()<br>func main() {}<br></code> | <code>compile error; expected type</code> |
+| <code>BI-01.new-extra</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>var allocated = new(i32, u8)<br>func main() {}<br></code> | <code>compile error; expected `)`</code> |
+| <code>BI-01.void-result.free(nil)</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test() { var x = free(nil) }<br>func main() {}<br></code> | <code>compile error; declaration value count mismatch: expected 1, found 0</code> |
+| <code>free.arity.0</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test() { free() }<br>func main() {}<br></code> | <code>compile error; free expects 1 argument</code> |
+| <code>free.arity.2</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test() { free(0, 0) }<br>func main() {}<br></code> | <code>compile error; free expects 1 argument</code> |
+| <code>free.arity.3</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test() { free(0, 0, 0) }<br>func main() {}<br></code> | <code>compile error; free expects 1 argument</code> |
+| <code>len.arity.0</code> | `BI-02` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test() { len() }<br>func main() {}<br></code> | <code>compile error; len expects 1 argument</code> |
+| <code>len.arity.2</code> | `BI-02` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test() { len(0, 0) }<br>func main() {}<br></code> | <code>compile error; len expects 1 argument</code> |
+| <code>len.arity.3</code> | `BI-02` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test() { len(0, 0, 0) }<br>func main() {}<br></code> | <code>compile error; len expects 1 argument</code> |
+| <code>thisFile.arity.1</code> | `BI-03` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test() { thisFile(0) }<br>func main() {}<br></code> | <code>compile error; thisFile expects 0 arguments</code> |
+| <code>thisFile.arity.2</code> | `BI-03` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test() { thisFile(0, 0) }<br>func main() {}<br></code> | <code>compile error; thisFile expects 0 arguments</code> |
+| <code>thisFile.arity.3</code> | `BI-03` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test() { thisFile(0, 0, 0) }<br>func main() {}<br></code> | <code>compile error; thisFile expects 0 arguments</code> |
+| <code>thisLine.arity.1</code> | `BI-03` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test() { thisLine(0) }<br>func main() {}<br></code> | <code>compile error; thisLine expects 0 arguments</code> |
+| <code>thisLine.arity.2</code> | `BI-03` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test() { thisLine(0, 0) }<br>func main() {}<br></code> | <code>compile error; thisLine expects 0 arguments</code> |
+| <code>thisLine.arity.3</code> | `BI-03` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test() { thisLine(0, 0, 0) }<br>func main() {}<br></code> | <code>compile error; thisLine expects 0 arguments</code> |
+| <code>builtin.alloc.type.0</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: u8) { alloc[u8](src) }<br>func main() {}<br></code> | <code>compile error; type mismatch</code> |
+| <code>builtin.free.type.0</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: u8) { free(src) }<br>func main() {}<br></code> | <code>compile error; free requires a pointer</code> |
+| <code>builtin.len.type.0</code> | `BI-02` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: u8) { len(src) }<br>func main() {}<br></code> | <code>compile error; len requires an array</code> |
+| <code>builtin.alloc.type.1</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: i8) { alloc[u8](src) }<br>func main() {}<br></code> | <code>compile error; type mismatch</code> |
+| <code>builtin.free.type.1</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: i8) { free(src) }<br>func main() {}<br></code> | <code>compile error; free requires a pointer</code> |
+| <code>builtin.len.type.1</code> | `BI-02` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: i8) { len(src) }<br>func main() {}<br></code> | <code>compile error; len requires an array</code> |
+| <code>builtin.alloc.type.2</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: u16) { alloc[u8](src) }<br>func main() {}<br></code> | <code>compile error; type mismatch</code> |
+| <code>builtin.free.type.2</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: u16) { free(src) }<br>func main() {}<br></code> | <code>compile error; free requires a pointer</code> |
+| <code>builtin.len.type.2</code> | `BI-02` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: u16) { len(src) }<br>func main() {}<br></code> | <code>compile error; len requires an array</code> |
+| <code>builtin.alloc.type.3</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: i16) { alloc[u8](src) }<br>func main() {}<br></code> | <code>compile error; type mismatch</code> |
+| <code>builtin.free.type.3</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: i16) { free(src) }<br>func main() {}<br></code> | <code>compile error; free requires a pointer</code> |
+| <code>builtin.len.type.3</code> | `BI-02` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: i16) { len(src) }<br>func main() {}<br></code> | <code>compile error; len requires an array</code> |
+| <code>builtin.alloc.type.4</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: u32) { alloc[u8](src) }<br>func main() {}<br></code> | <code>accept; </code> |
+| <code>builtin.free.type.4</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: u32) { free(src) }<br>func main() {}<br></code> | <code>compile error; free requires a pointer</code> |
+| <code>builtin.len.type.4</code> | `BI-02` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: u32) { len(src) }<br>func main() {}<br></code> | <code>compile error; len requires an array</code> |
+| <code>builtin.alloc.type.5</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: i32) { alloc[u8](src) }<br>func main() {}<br></code> | <code>compile error; type mismatch</code> |
+| <code>builtin.free.type.5</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: i32) { free(src) }<br>func main() {}<br></code> | <code>compile error; free requires a pointer</code> |
+| <code>builtin.len.type.5</code> | `BI-02` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: i32) { len(src) }<br>func main() {}<br></code> | <code>compile error; len requires an array</code> |
+| <code>builtin.alloc.type.6</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: f32) { alloc[u8](src) }<br>func main() {}<br></code> | <code>compile error; type mismatch</code> |
+| <code>builtin.free.type.6</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: f32) { free(src) }<br>func main() {}<br></code> | <code>compile error; free requires a pointer</code> |
+| <code>builtin.len.type.6</code> | `BI-02` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: f32) { len(src) }<br>func main() {}<br></code> | <code>compile error; len requires an array</code> |
+| <code>builtin.alloc.type.7</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: bool) { alloc[u8](src) }<br>func main() {}<br></code> | <code>compile error; type mismatch</code> |
+| <code>builtin.free.type.7</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: bool) { free(src) }<br>func main() {}<br></code> | <code>compile error; free requires a pointer</code> |
+| <code>builtin.len.type.7</code> | `BI-02` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: bool) { len(src) }<br>func main() {}<br></code> | <code>compile error; len requires an array</code> |
+| <code>builtin.alloc.type.8</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: *u8) { alloc[u8](src) }<br>func main() {}<br></code> | <code>compile error; type mismatch</code> |
+| <code>builtin.free.type.8</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: *u8) { free(src) }<br>func main() {}<br></code> | <code>accept; </code> |
+| <code>builtin.len.type.8</code> | `BI-02` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: *u8) { len(src) }<br>func main() {}<br></code> | <code>compile error; len requires an array</code> |
+| <code>builtin.alloc.type.9</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: *i32) { alloc[u8](src) }<br>func main() {}<br></code> | <code>compile error; type mismatch</code> |
+| <code>builtin.free.type.9</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: *i32) { free(src) }<br>func main() {}<br></code> | <code>accept; </code> |
+| <code>builtin.len.type.9</code> | `BI-02` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: *i32) { len(src) }<br>func main() {}<br></code> | <code>compile error; len requires an array</code> |
+| <code>builtin.alloc.type.10</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: func()) { alloc[u8](src) }<br>func main() {}<br></code> | <code>compile error; type mismatch</code> |
+| <code>builtin.free.type.10</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: func()) { free(src) }<br>func main() {}<br></code> | <code>compile error; free requires a pointer</code> |
+| <code>builtin.len.type.10</code> | `BI-02` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: func()) { len(src) }<br>func main() {}<br></code> | <code>compile error; len requires an array</code> |
+| <code>builtin.alloc.type.11</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: [2]i32) { alloc[u8](src) }<br>func main() {}<br></code> | <code>compile error; type mismatch</code> |
+| <code>builtin.free.type.11</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: [2]i32) { free(src) }<br>func main() {}<br></code> | <code>compile error; free requires a pointer</code> |
+| <code>builtin.len.type.11</code> | `BI-02` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: [2]i32) { len(src) }<br>func main() {}<br></code> | <code>accept; </code> |
+| <code>builtin.alloc.type.12</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: S) { alloc[u8](src) }<br>func main() {}<br></code> | <code>compile error; type mismatch</code> |
+| <code>builtin.free.type.12</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: S) { free(src) }<br>func main() {}<br></code> | <code>compile error; free requires a pointer</code> |
+| <code>builtin.len.type.12</code> | `BI-02` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: S) { len(src) }<br>func main() {}<br></code> | <code>compile error; len requires an array</code> |
+| <code>builtin.alloc.type.13</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: Count) { alloc[u8](src) }<br>func main() {}<br></code> | <code>compile error; type mismatch</code> |
+| <code>builtin.free.type.13</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: Count) { free(src) }<br>func main() {}<br></code> | <code>compile error; free requires a pointer</code> |
+| <code>builtin.len.type.13</code> | `BI-02` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(src: Count) { len(src) }<br>func main() {}<br></code> | <code>compile error; len requires an array</code> |
+| <code>BI-01.alloc-result</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test() -&gt; *u8 { return alloc[u8](4) }<br>func main() {}<br></code> | <code>accept; </code> |
+| <code>BI-01.alloc-typed-result</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test() -&gt; *S { return alloc[S](4) }<br>func main() {}<br></code> | <code>accept; </code> |
+| <code>BI-01.free-nil</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test() { free(nil) }<br>func main() {}<br></code> | <code>accept; </code> |
+| <code>BI-01.new-array</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test() -&gt; *[4]u8 { return new([4]u8) }<br>func main() {}<br></code> | <code>accept; </code> |
+| <code>BI-01.new-defined</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test() -&gt; *S { return new(S) }<br>func main() {}<br></code> | <code>accept; </code> |
+| <code>BI-01.new-not-element-pointer</code> | `BI-01` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test() { var p: *u8 = new([4]u8) }<br>func main() {}<br></code> | <code>compile error; type mismatch</code> |
+| <code>BI-02.len-result</code> | `BI-02` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test(s: [2]u8) -&gt; u32 { return len(s) }<br>func main() {}<br></code> | <code>accept; </code> |
+| <code>BI-02.defined-array</code> | `BI-02` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>type Array [2]i32<br>func test(s: Array) -&gt; u32 { return len(s) }<br>func main() {}<br></code> | <code>accept; </code> |
+| <code>BI-03.this-file-result</code> | `BI-03` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test() -&gt; *u8 { return thisFile() }<br>func main() {}<br></code> | <code>accept; </code> |
+| <code>BI-03.this-line-result</code> | `BI-03` | <code>package main<br>type S struct { x: i32 }<br>type Count i32<br>func test() -&gt; u32 { return thisLine() }<br>func main() {}<br></code> | <code>accept; </code> |

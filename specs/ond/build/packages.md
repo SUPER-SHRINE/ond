@@ -1,0 +1,74 @@
+# Packageとコンパイル単位
+<!-- ond-spec-id: build/packages -->
+
+## 責務
+<!-- ond-spec-id: build/responsibilities -->
+
+compilerはprojectのsourceを検査してpackage成果物を生成し、linkerは成果物と呼出側が指定する[LinkPlan](../artifacts.md#linkplanとlinkedimage)からLinkedImageを生成する。
+
+| 役割 | 責務 |
+| --- | --- |
+| caller（呼出側） | 利用者またはビルドツールとしてcompiler/linkerを呼び出し、入力、配置値、正常終了後の制御経路を指定する |
+| build tool（ビルドツール） | compiler/linkerを呼び出す。該当機能を提供する場合は追加sourceの生成、asset discovery、resource IDの管理を行う |
+| loader（ローダー） | LinkedImageのsectionをloadし、data末尾から各sectionのmemory_sizeまでをzero初期化し、SPを設定して通常runtime entryへ制御を渡す。test wrapperの起動契約は[test build](./test-build.md)に従う |
+| 実行ツール | 通常programを実行する。test時はcaseを選択し、machine state、命令上限、case結果を管理する |
+| 配布ツール | LinkedImageとassetsを配布形式またはROMへまとめる |
+| 実行環境 | 実機またはVMとしてmemory map、device、正常終了後の制御経路などを構成する |
+
+SDK（Software Development Kit）は、特定の実行環境向けにライブラリ・ツール・文書をまとめた開発キットである。\
+各SDKが含める機能は、そのkitの文書が定める。\
+上記の役割は同じtoolが複数を兼ねられる。\
+OndはCLI/APIから直接利用できる。\
+sourceのpackage/import/公開名は[言語規則](../language/v1/names-and-scopes.md)、成果物fieldは[artifact契約](../artifacts.md)を定義元とする。
+
+## Manifestとsource探索
+<!-- ond-spec-id: build/manifest-and-source-discovery -->
+
+`ond.toml`があるdirectoryをproject rootとし、全projectが`[project].name`へOndの有効なidentifierを宣言する。\
+実行projectのroot packageとentryは[言語規則](../language/v1/execution.md#初期化とエントリ)に従う。\
+library rootにsourceがある場合はproject名をpackage名とし、libraryの編集・依存利用とtest compileはこのpackageを扱う。
+
+`[dependencies]`のkeyはmanifest内の登録名であり、import pathの先頭には依存先`[project].name`を使う。\
+root packageの論理pathはproject名、子packageは`project名/相対directory`である。\
+依存先を異なる登録名で参照した場合も、解決先directoryが同じなら同じ依存とする。\
+同じproject名が異なるdirectoryを指す入力とsymlink依存はerrorとなる。
+
+| Dependency値 | 解決 |
+| --- | --- |
+| `{ path = "../library" }` | manifest directory基準の相対pathまたは絶対path。解決先にond.tomlが必要 |
+| `{ git = "https://github.com/owner/repository.git", rev = "..." }` | Git repositoryと任意のrev |
+| 文字列 | URL形式ならGit、それ以外はpath |
+
+Git checkoutは`project/.ond/dependencies`、解決commitは`ond.lock`に保存する。\
+既存lockは同じcommitを選択し、lockを削除した再解決で更新する。\
+依存先manifestも再帰的に解決する。
+
+source探索はproject境界とignore設定に従う。\
+`[resolve].ignore`はmanifest directoryからの相対directory列であり、既定値は`[".git", ".ond", "target"]`である。\
+absolute path、`..`、globを含むignore入力はerrorとなる。\
+`.ond/`は常にsource探索から除き、子directoryの別のond.tomlで探索を区切る。\
+依存先は自身のignore設定に従う。
+
+追加library rootは[compile option](./commands.md#ond-compile)で指定する。\
+root配下の`DIR/platform/assets/ids.ond`は`platform/assets` packageとなる。\
+追加libraryはimport到達packageを採用し、import文字列をdecodeして依存を解決する。\
+library root直下の`.ond`、symlink、project root自身をlibrary rootとする入力はerrorとなる。\
+project内の追加library directoryは独立したlibrary探索範囲として収集する。\
+同名packageが複数の探索元に存在する場合、source相対名の集合と内容がすべて一致すれば受理し、不一致ならerrorとなる。
+
+## コンパイル単位と成果物
+<!-- ond-spec-id: build/implemented-units-and-constraints -->
+
+1 packageにつき1個のUTF-8 JSON `.ondpkg`を生成し、CompilationManifestが各fileを参照する。\
+section dataはBase64文字列、他のfieldは通常のJSONである。\
+依存sourceを含むproject全体で型と名前を検査し、具体化したgeneric宣言も通常の型・関数成果物に含める。\
+公開interfaceは成果物local型番号とnominal名を使い、[interface schema](../artifacts.md#公開interface旧revision-3の主題)に従う。\
+通常/test compileでsource集合とcache entryを区別する。
+
+cache再利用と`frontend_ran`の意味は[cache契約](./cache.md)、実行入口とtest metadataは[test build](./test-build.md)に従う。
+
+## Package成果物・独立compiler契約
+<!-- ond-spec-id: build/package-artifact-contract -->
+
+各package成果物、manifest、ObjectとLinkedImageの[版識別・schema](../artifacts.md#版識別と互換条件)を入力境界とする。\
+[compile/link command](./commands.md)は明示した入出力と終了codeで成否を返し、[linking](../linking.md)は検証済み成果物から解決済みimageを作る。

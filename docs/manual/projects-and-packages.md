@@ -99,11 +99,11 @@ Git依存も宣言できる。
 common = { git = "https://github.com/example/shared.git", rev = "0123456789abcdef" }
 ```
 
-Git依存は`.ond/dependencies`へ取得され、解決したcommitは`ond.lock`へ固定される。lock更新の運用や厳密な解決規則は[パッケージビルド契約](../../specs/ond/package-build.md)を参照する。
+Git依存は`.ond/dependencies`へ取得され、解決したcommitは`ond.lock`へ固定される。lock更新の運用や厳密な解決規則は[パッケージビルド契約](../../specs/ond/build/packages.md)を参照する。
 
 ## 追加library root
 
-project依存ではなく、SDKなどが生成したpackageを一時的に追加する場合は`--library-dir`を使う。
+build toolが生成したpackageを一時的に追加するときは`--library-dir`を使う。
 
 ```console
 ond compile ./game --library-dir ./generated

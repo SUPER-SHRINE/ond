@@ -8,9 +8,10 @@ executable format, or cartridge format. Target backends consume its MIR and are
 responsible for code generation and object emission.
 
 The `ond-compiler` crate provides the Kagura backend and linker on top of this
-crate. Cartridge layout and asset packaging belong to a machine SDK such as Enbu.
+crate. Ond's CLI/API and build role definitions are described in the
+[build and package specification](../../specs/ond/build/packages.md).
 
-The target-neutral MIR contract is documented in [docs/mir.md](docs/mir.md).
+Internal MIR structures are maintained in [src/mir.rs](src/mir.rs); external language rules are defined in [the specification](../../specs/ond/language/v1/README.md).
 
 Successful compilation returns fully lowered HIR/MIR and automatically runs the
 MIR validator. Unsupported source constructs produce diagnostics; compilation

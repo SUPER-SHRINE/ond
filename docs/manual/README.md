@@ -2,7 +2,7 @@
 
 このマニュアルは、Ondでプログラムを書く人のための利用者向けガイドである。最初のプロジェクト作成から、言語機能、パッケージ構成、詳しい仕様の探し方までを、実用例を中心に説明する。
 
-Ond v1の厳密な定義は[`specs/ond/v1`](../../specs/ond/v1/README.md)にある。このマニュアルと規範仕様に差がある場合は、規範仕様を正とする。
+Ond v1の厳密な定義は[`specs/ond/language/v1`](../../specs/ond/language/v1/README.md)にある。このマニュアルと規範仕様に差がある場合は、規範仕様を正とする。
 
 ## 読み方
 
@@ -24,10 +24,12 @@ method receiverだけは1段の暗黙address取得・参照外しを行える。
 | 文書 | 主な読者 | 役割 |
 | --- | --- | --- |
 | このマニュアル | Ondでプログラムを書く人 | 学習順、例、日常的な使い方 |
-| [Ond v1仕様](../../specs/ond/v1/README.md) | 実装者、厳密な挙動を確認したい人 | 構文、意味論、組み込み機能の規範 |
-| [Kagura v1 target仕様](../../specs/ond/targets/kagura-v1/README.md) | SDK・runtime・低レベルコードの実装者 | ABI、メモリ配置、実行形式 |
-| [パッケージビルド契約](../../specs/ond/package-build.md) | build tool・SDKの実装者 | CLI、依存解決、成果物、cacheの厳密な契約 |
+| [Ond v1仕様](../../specs/ond/language/v1/README.md) | 実装者、厳密な挙動を確認したい人 | 構文、意味論、組み込み機能の規範 |
+| [Kagura v1 target仕様](../../specs/ond/targets/kagura-v1/README.md) | 実行環境・loader・低レベルコードの実装者 | ABI、メモリ配置、実行形式 |
+| [パッケージビルド契約](../../specs/ond/build/packages.md) | build tool・library提供toolの実装者 | CLI、依存解決、成果物、cacheの厳密な契約 |
 
 ## 対象バージョン
 
-このマニュアルはリポジトリ内のOnd v1と言語コンパイラを対象とする。機種固有の起動、asset同梱、ROM生成は言語機能ではなく、Enbuなどの機種SDKが担当する。
+このマニュアルはリポジトリ内のOnd v1と言語コンパイラを対象とする。\
+OndはCLI/APIから直接利用できる。\
+SDKの定義と各役割は[責務の定義](../../specs/ond/build/packages.md#責務)に従う。

@@ -81,7 +81,9 @@ func main() {
 
 `_`は値を明示的に捨てるblank identifierである。\
 Ondは標準出力の組み込み関数や標準文字列型を定義しない。\
-画面表示、入力、asset、device APIはtarget向けのlibraryまたはSDKから提供される。
+画面表示、入力、asset、device APIにはtarget向けlibraryのAPIを利用する。\
+SDKは対象実行環境向けのlibraryやtoolをまとめる開発キットであり、具体的な構成は各SDKの文書で確認する。\
+用語と責務の定義は[build/package仕様](../../specs/ond/build/packages.md#責務)を参照する。
 
 変更したpackageを確認したい場合は`-v`を付ける。
 
@@ -91,23 +93,38 @@ ond compile . -v
 
 ## linkと実行
 
-`ond link`はコンパイルmanifestを`LinkedImage`へ変換する。RAM範囲、stack size、正常終了後の戻り先などは機種SDKが決める値であり、Ond共通の既定値はない。通常はEnbuなどのSDKを通してlink・ROM生成・起動を行う。
+`ond link`はコンパイルmanifestを`LinkedImage`へ変換する。\
+呼出側はRAM範囲、stack size、正常終了後の戻り先を必須引数として、対象実行環境に合わせて明示する。\
+各処理の役割は[責務の定義](../../specs/ond/build/packages.md#責務)を参照する。
 
-次の例は、指定したmemory layoutでLinkedImageを生成する。実機では対象機種のSDKが定める値を使用する。
+例として、次の構成を持つマシン向けにlinkする場合を示す。
+
+| 項目 | 値 |
+| --- | --- |
+| RAM開始address | `0x1000`（4096） |
+| RAM容量 | 64 KiB（65536） |
+| RAM内のstack予約量 | 8 KiB（8192） |
+| 正常終了後の戻り先 | `0x0`（0） |
+
+この例では、`0x0`に実行環境の終了処理入口があると仮定する。\
+実際の値は利用する実行環境に合わせて指定する。
 
 ```console
 ond link target/build.ondbuild --ram 4096:65536 --stack 8192 --return-to 0 -o hello.ondimage
 ```
 
-成功すると`hello.ondimage`と`hello.onddebug`が作られる。後者にはsource位置、trap理由、stack trace用のunwind情報が入り、対応するVMが任意で利用する。実際のcartridgeを作る場合は、対象機種のSDKが指定する値を使用する。
+成功すると`hello.ondimage`と`hello.onddebug`が作られる。\
+後者にはsource位置、trap理由、stack trace用のunwind情報が入り、対応するVMが任意で利用する。\
+`ond link`はLinkedImageを生成し、起動時はloaderが[責務の定義](../../specs/ond/build/packages.md#責務)に従ってruntime entryへ制御を渡す。\
+配布ツールはLinkedImageとassetsを対象形式へまとめる。
 
-低レベルに直接linkする場合の引数は次で確認できる。
+linkの引数一覧は次で確認できる。
 
 ```console
 ond help
 ```
 
-CLIの厳密な入出力とlink設定は[パッケージビルド契約](../../specs/ond/package-build.md)を参照する。
+CLIの厳密な入出力とlink設定は[パッケージビルド契約](../../specs/ond/build/commands.md)を参照する。
 
 ## 次に読む
 

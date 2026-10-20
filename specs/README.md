@@ -1,8 +1,16 @@
 # Ond Specifications
 
-- [Ond v1 language specification](./ond/v1/README.md)
-- [Kagura v1 target specification](./ond/targets/kagura-v1/README.md)
-- [Package build contract](./ond/package-build.md)
-- [テストビルド仕様](./ond/test-build.md)
-- [パッケージ意味解析キャッシュ](./ond/semantic-cache.md)
-- [Ond Debug Metadata v1](./ond/debug-metadata.md)
+- [Ond Language v1](./ond/language/v1/README.md)
+- [Kagura v1 target](./ond/targets/kagura-v1/README.md)
+- [Object and LinkedImage artifacts](./ond/artifacts.md)
+- [Object linking](./ond/linking.md)
+- [Build and package contracts](./ond/build/packages.md), including [role definitions and SDK terminology](./ond/build/packages.md#責務)
+- [Compile and link commands](./ond/build/commands.md)
+- [Test build](./ond/build/test-build.md)
+- [Build cache](./ond/build/cache.md)
+- [Debug metadata v1](./ond/debug-metadata/v1.md)
+- [Conformance requirements](./ond/conformance/requirements.md)
+- [Conformance case index](./ond/conformance/cases/README.md)
+- [Approved design decisions](../docs/decisions/specification-migration.md)
+
+- [仕様書再編の検討資料（非規範）](../docs/specification-revision/editorial-policy.md)
