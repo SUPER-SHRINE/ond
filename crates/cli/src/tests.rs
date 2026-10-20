@@ -3,7 +3,7 @@ use ond_protocol::{Contract, link::LinkPlan};
 use std::{
     collections::BTreeMap,
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
 };
 
@@ -16,8 +16,11 @@ impl Fixture {
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
-        fs::create_dir(&root).unwrap();
-        let f = Self(root);
+        Self::new_in(&root)
+    }
+    fn new_in(root: &Path) -> Self {
+        fs::create_dir(root).unwrap();
+        let f = Self(root.to_path_buf());
         f.put("ond.toml", "[project]\nname = \"test\"\n");
         f.put("main.ond", "package main\nimport \"test/left\"\nimport \"test/right\"\nfunc main(){var _=left.Value()+right.Value()}");
         f.put(
@@ -792,26 +795,20 @@ fn linker_rejects_application_root_imports_from_unreachable_packages() {
 
 #[test]
 fn relative_project_requests_keep_ignore_paths_canonical() {
-    let f = Fixture::new();
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let cwd = std::env::current_dir().unwrap().canonicalize().unwrap();
+    let f = Fixture::new_in(&cwd.join(format!(
+        "ond-cli-relative-test-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    )));
     f.put(
         "ond.toml",
         "[project]\nname=\"test\"\n[resolve]\nignore=[\"generated\"]\n",
     );
     f.put("generated/broken.ond", "invalid source");
     let mut request = f.request();
-    let cwd = std::env::current_dir().unwrap().canonicalize().unwrap();
-    let root = f.0.canonicalize().unwrap();
-    let common = cwd
-        .ancestors()
-        .find(|ancestor| root.starts_with(ancestor))
-        .unwrap();
-    request.project_root = cwd
-        .strip_prefix(common)
-        .unwrap()
-        .components()
-        .map(|_| "..")
-        .collect::<PathBuf>()
-        .join(root.strip_prefix(common).unwrap());
+    request.project_root = f.0.strip_prefix(&cwd).unwrap().to_path_buf();
     compile(request, &compiler_identity().unwrap())
         .expect("relative root uses the same absolute ignore boundary");
 }
