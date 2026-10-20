@@ -71,8 +71,7 @@ const Width: u32 = 320
 - `:=` の左辺には未宣言の名前が少なくとも 1 個必要である
   - 既存の名前には代入する
 - 再代入には `=`、または対応する二項演算と代入をまとめた `+=`、`-=`、`*=`、`/=`、`%=`、`&=`、`|=`、`^=`、`&^=`、`<<=`、`>>=` を使う
-- `x op= y` は `x op y` が有効で、その結果型が `x` の型と一致する場合に使える
-  - `x` は 1 回だけ評価する
+- `x op= y`の成立条件と評価順は[代入先ごとの規則](./statements.md#静的成立条件)に従う
 - `x++` と `x--` はそれぞれ `x += 1` と `x -= 1` に相当する後置 statement であり、integer と `f32` に使える
   - statementとして実行する
 
@@ -113,7 +112,7 @@ var namedCallback: func(value: i32) -> i32 = update
 - 戻り値がない型は arrow を省略し、複数戻り値は `-> (R1, R2)` と書く
 - assignment と引数渡しでは signature が完全に一致しなければならない
 - function pointer は通常の call 式で間接呼び出しできる
-- `nil` function pointer の呼び出しは null address への間接 call となり CPU fault する
+- nil function pointerの呼出しはnull addressへの間接callとなり、観測結果は[targetのfaultとmemory map規則](../../targets/kagura-v1/machine.md#faultと観測結果)に従う
 
 Kagura target の関数呼び出し規約は [Ond ABI for Kagura v1](../../targets/kagura-v1/abi.md) に従う。
 

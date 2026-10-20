@@ -37,11 +37,15 @@ OndのKagura profileはLinkPlanの配置値と実行環境のmemory map・終了
 - segment 間には alignment padding だけを置ける
 - `heap_base = align_up(end_of_bss, 4)` とし、heap は上方向へ成長する
 - `RAM_END = RAM_BASE + ram_size`
+- RAM_ENDは[LinkPlan成立条件](../../linking.md#symbol解決と配置)により8-byte alignedとする
 - `STACK_TOP = RAM_END`
 - `STACK_BOTTOM = STACK_TOP - stack_size`
 - stack は `STACK_TOP` から下方向へ成長する
 - startup segment の末尾は `STACK_BOTTOM` 以下でなければならない
 - heap allocator は `STACK_BOTTOM` 以上を割り当ててはならない
+
+stack_sizeが4 mod 8の場合も予約範囲[STACK_BOTTOM,STACK_TOP)全体を保持し、8-byte単位のframeに使えない下端4byteをheapへ転用しない。\
+初期SPはSTACK_TOPとし、stack_size=4もLinkPlanの成立条件を満たせる。
 
 sectionの保存形式は配布形式が定め、loaderはsectionをloadしてinitialized dataの末尾からmemory_sizeまでをzero初期化する。
 
@@ -98,7 +102,7 @@ test buildでもloaderによるload・zero初期化・SP設定の境界を保ち
 - guest type の最大 alignment は 4 byte とする
 - `bool` は memory 上の `0` を false、非 `0` を true とする
   - compiler は `0` または `1` を store する
-- `f32` は IEEE 754 binary32 の bit pattern を little-endian で配置する
+- f32は[言語のbinary32 bit pattern](../../language/v1/expressions.md#floating-point-arithmetic)をlittle-endianで配置する
 - `*T` は 32-bit bus address で、`nil` は `0x00000000` とする
 - `[N]T` は header のない連続した `N` 要素とし、alignment は `alignof(T)`、size は `N * sizeof(T)` とする
 - 固定長配列の `N * sizeof(T)` が `2^32-1` byte を超える場合は compile error とする
@@ -121,7 +125,7 @@ test buildでもloaderによるload・zero初期化・SP設定の境界を保ち
 <!-- ond-spec-id: targets/kagura-v1/raw-pointer-access -->
 
 - pointerはaddress値であり、対応storageは変数宣言または明示allocationによって確保する
-- `*T` の `pointer[index]` が使う実効 address は `(pointer + index * sizeof(T)) mod 2^32` とする
+- [operator解決](../../language/v1/expressions.md#user-defined-operator)でbuiltin raw pointer indexを選んだ場合、`*T`の`pointer[index]`の実効addressは`(pointer + index * sizeof(T)) mod 2^32`とする
   - `index` は `u32` とする
 - raw indexed accessの有効address、allocation範囲とpointer生存期間は利用側の成立前提とする
 - scalar の参照外しは型幅と同じ 1 回の bus access とする
@@ -140,3 +144,29 @@ test buildでもloaderによるload・zero初期化・SP設定の境界を保ち
 <!-- ond-spec-id: targets/kagura-v1/project-configuration -->
 
 project、manifestとsource探索は[package build](../../build/packages.md#manifestとsource探索)、RAM配置とstack予約量は[linking](../../linking.md)を定義元とする。
+
+## Faultと観測結果
+<!-- ond-spec-id: targets/kagura-v1/fault-observations -->
+
+KaguraのCPU faultは[固定snapshot](./README.md#参照するkagura規範)のcodeとfaulting_pcを保持し、その場でCPUを停止してhostへ制御を返す。\
+faulting_pcは実際にfaultした命令のPCである。\
+debug metadataは次の意味分類を加え、CPU fault codeを変更しない。
+
+| Ondの条件・観測操作 | Kagura CPU fault | debug operation |
+| --- | --- | --- |
+| builtin配列bounds check失敗 | INVALID_INSTRUCTION | BoundsCheck |
+| runtime整数の除数zero | INVALID_INSTRUCTION | DivisionByZero |
+| runtime signed minInt/-1 | INVALID_INSTRUCTION | SignedDivisionOverflow |
+| runtime f32→整数の不正変換 | INVALID_INSTRUCTION | InvalidConversion |
+| stack確保時の容量不足/underflow | INVALID_INSTRUCTION | StackOverflow |
+| explicit trap | INVALID_INSTRUCTION | ExplicitTrap |
+| raw load/storeのalignment違反 | UNALIGNED_ACCESS | MemoryRead/MemoryWrite |
+| fetch/indirect jumpのPC alignment違反 | UNALIGNED_PC | 対応rangeがあればそのoperation |
+| fetch/load/storeでbusがaccessを拒否 | BUS_FAULT | load/storeはMemoryRead/MemoryWrite、fetchは対応rangeのoperation |
+
+nil function pointerのaddressは0であり、call結果は固定CPU規範と実行環境のaddress 0 mappingから定まる。\
+例えばaddress 0がunmappedなら命令fetchがBUS_FAULTとなる。\
+case表の`InvalidInstruction`、`BusFault`はそれぞれINVALID_INSTRUCTION、BUS_FAULTを表す。
+
+faultした命令自身の副作用は固定CPU/bus規範に従い、その前に完了したwriteとMMIO effectは保持する。\
+Ondの後続処理とdeferはそのfaultから実行を再開しない。

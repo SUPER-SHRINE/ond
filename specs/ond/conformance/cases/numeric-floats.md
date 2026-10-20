@@ -1,7 +1,7 @@
 # numeric-floatsの入力と期待値
 <!-- ond-spec-id: conformance/cases/numeric-floats -->
 
-IEEE 754 binary32、roundTiesToEven、canonical NaN 0x7fc00000、signed zeroと比較規則から結果bitsまたはboolを導く。
+[Ond binary32](../../language/v1/expressions.md#floating-point-arithmetic)の丸め、canonical NaN、signed zeroと比較規則から結果bitsまたはboolを導く。
 
 規範定義元: [FP-01の定義元](../../language/v1/expressions.md#floating-point-arithmetic)。\
 要件索引は[requirements](../requirements.md)、既存fixture宣言は[registry](../../../../crates/compiler-core/src/conformance/numeric/floats.rs)を参照する。

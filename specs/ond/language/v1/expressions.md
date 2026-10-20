@@ -104,7 +104,8 @@ const適格性は式全体を検査し、通常callを含むconst initializerは
 ### Integer Arithmetic
 <!-- ond-spec-id: expressions/integer-arithmetic -->
 
-幅 `N` bit の integer に対する runtime 演算は、[ISO/IEC 10967-1:2012](https://www.iso.org/standard/51317.html) の modulo integer model に従う。
+幅N bitのinteger演算は、以下の値・型・bit規則で定める。\
+N-bit表現Bのunsigned値はB、signed値はB<2^(N-1)ならB、それ以外はB-2^Nである。
 
 | 演算群 | operand型 | result型 |
 | --- | --- | --- |
@@ -128,7 +129,7 @@ const適格性は式全体を検査し、通常callを含むconst initializerは
 - left shift は上位 bit を破棄して `N` bit に wrap する
 - unsigned right shift は上位を `0`、signed right shift は元の最上位 bit で埋める
 
-runtime shift は [WebAssembly integer semantics](https://webassembly.github.io/spec/core/exec/numerics.html) と同じ規則とする。
+
 
 ### Integer Constant Arithmetic
 <!-- ond-spec-id: expressions/integer-constant-arithmetic -->
@@ -161,13 +162,55 @@ runtime 式を最適化で定数畳み込みする場合は、元のruntime式�
 ### Floating-Point Arithmetic
 <!-- ond-spec-id: expressions/floating-point-arithmetic -->
 
-- `f32` は IEEE 754 binary32 とする
-- 丸めはroundTiesToEvenに固定する
-- `+0` と `-0`、`+Inf` と `-Inf`、subnormal を保持する
-- 演算結果の `NaN` は canonical quiet NaN `0x7fc00000` へ正規化する
-- `==` はどちらかが `NaN` なら常に `false`、`!=` はどちらかが `NaN` なら常に `true`、`<`, `<=`, `>`, `>=` はどちらかが `NaN` なら常に `false` とする
-- `f32`の`/`はIEEE 754に従い、zero divisionもそのbinary32値を返す
-- compile-time の `f32` 定数評価は runtime と同じ結果 bit pattern を生成しなければならない
+f32は32bitのbinary32値とする。\
+bit pattern Bに対し、s=floor(B/2^31)、E=floor(B/2^23) mod 256、F=B mod 2^23として値を定める。
+
+| 条件 | 値 |
+| --- | --- |
+| E=0かつF=0 | 符号sのzero |
+| E=0かつF>0 | (-1)^s × F × 2^-149 |
+| 1<=E<=254 | (-1)^s × (2^23+F) × 2^(E-150) |
+| E=255かつF=0 | 符号sのInf |
+| E=255かつF>0 | NaN |
+
+raw memoryのload/storeと値copyはbit patternを保持する。\
+演算でNaNを生成する場合は常にcanonical quiet NaN `0x7fc00000`を結果とする。\
+memoryでのbyte順は[target layout](../../targets/kagura-v1/machine.md#5-data-layout)を参照する。
+
+符号s、数学的な正確な非負の大きさmに対する丸めR(s,m)を次のように定義する。\
+m=0は符号sのzero、m>=2^128-2^103は符号sのInfとする。\
+それ以外のm>0は、k=max(-149,floor(log2(m))-23)とし、m/2^kに最も近い整数q（等距離なら偶数）を選び、符号s・大きさq×2^kのbinary32へencodeする。\
+q=0でも符号sを保持する。
+
+各primitive演算は正確結果を1回だけRで丸め、融合や中間精度によって結果bitsを変えない。\
+次の表はNaN入力を最初に判定する。\
+符号xorはoperandの符号bitの排他的論理和を表す。
+
+| 演算 | 成立するoperand条件 | 結果 |
+| --- | --- | --- |
+| 単項+ | NaN以外 | 元のbits |
+| 単項- | NaN以外 | zero/Infを含め符号を反転 |
+| 全算術 | いずれかがNaN | canonical NaN |
+| a+b | 逆符号のInf同士 | canonical NaN |
+| a+b | 上記以外でInfを含む | そのInf |
+| a+b | 有限値同士で正確和vが非zero | R(v<0ならs=1、他はs=0, abs(v)) |
+| a+b | 有限値の正確和がzero | 両operandが-0の場合は-0、他は+0 |
+| a-b | NaN以外 | bの符号を反転した加算と同じ結果、追加の丸めなし |
+| a*b | Infとzeroの組 | canonical NaN |
+| a*b | 上記以外でInfを含む | 符号xorのInf |
+| a*b | 有限値同士 | 符号xorと正確な積の大きさをRへ渡す |
+| a/b | Inf/Infまたはzero/zero | canonical NaN |
+| a/b | Inf/有限値、または非zero有限値/zero | 符号xorのInf |
+| a/b | 有限値/Inf、またはzero/非zero有限値 | 符号xorのzero |
+| a/b | 有限非zero同士 | 符号xorと正確な商の大きさをRへ渡す |
+
+f32のzero divisionは上表のbinary32値を返す。\
+比較はNaNがあれば`==`はfalse、`!=`はtrue、順序比較はすべてfalseとする。\
+それ以外は数値の大小を比較し、-Inf<全有限値<+Inf、+0=-0とする。
+
+f32 literalは正確なliteral値へ同じRを適用し、Infへ丸められるliteralはcompile error、underflowによるzeroは受理する。\
+compile-timeのf32定数評価とruntime演算は同じresult bitsを生成する。\
+整数との変換の成立条件は[型変換](./types.md#型同一性)に従う。
 
 ## 文字列リテラル
 <!-- ond-spec-id: literals/strings -->
@@ -207,18 +250,29 @@ runtime 式を最適化で定数畳み込みする場合は、元のruntime式�
 
 - top-levelの`operator`宣言はreceiver型に属する特殊名methodとして扱い、kindとoperand数により解決する
   - 通常の関数名とmethod名はそれぞれのnamespaceで一意とする
-- 対象は unary `+` / `-`、binary `+` / `-` / `*` / `/` / `%`、`[]`、`[]=`、`len` とする
-  - 宣言のoperator tokenはこの集合に属することを成立条件とする
-- 解決はreceiver型と残りのoperand型で行い、戻り値型は選択後のsignature検査に用い、operatorは以下の演算構文で起動する
-- receiverは同じpackageで宣言された名前付き型またはそのpointerに限る
-- operator候補はoperandの静的な型に完全一致する宣言から選ぶ
-- `[]` は値を 1 個返す
-  - pointer を返すこともでき、その後の `.field` は通常の pointer field access と同様に暗黙 dereference する
-  - operator index結果を直接address取得する`&collection[index]`はcompile errorとなる
-- `[]=` はreceiver、index、valueを受け取り、値を返さない
-- `len` は戻り値型に `u32` を1個明示し、`len(value)` は単一の `u32` を返す
-  - 戻り値の省略、別の型、複数戻り値は未使用の宣言でも compile error とし、generic operatorにも同じ規則を適用する
-- compound assignment は対応する binary operator と代入から導出し、左辺の base と index は一度だけ評価する
+- 宣言kind、receiverを含むoperand数、result型列は次の成立条件を満たす
+  - 使用の有無によらず宣言時に検査し、不成立ならcompile errorとする
+  - generic宣言も型argumentに依存しない個数・signature条件を宣言時に検査し、本体の検査時点は[generic規則](./types.md#型parameter)に従う
+
+| kind | receiverを含むoperand数 | result型列 |
+| --- | ---: | --- |
+| 単項 `+`、`-` | 1 | 任意の型1個 |
+| 二項 `+`、`-`、`*`、`/`、`%` | 2 | 任意の型1個 |
+| `[]` | 2 | 任意の型1個 |
+| `[]=` | 3 | 0個 |
+| `len` | 1 | 明示した`u32`1個 |
+
+receiverは同じpackageで宣言した名前付き型またはそのpointerとする。\
+演算構文は、operandの静的型に適合するcustom operatorを先に選び、適合するcustom宣言がない場合にunderlying型が継承するbuiltin演算を適用する。\
+この順序は算術、index読取り、index書込み、lenの各kindに適用する。\
+receiverの調整は下記method同等の1段規則、残りのoperandは型の完全一致を成立条件とする。\
+要求result型は候補選択に用いず、選んだcustom宣言のresult型を通常の要求型と照合し、不一致ならcompile errorとなる。
+
+`[]`が返すpointerへの後続selectorは、通常のpointer field access規則に従う。\
+operator index結果を直接address取得する`&collection[index]`はcompile errorとなる。\
+custom operatorの起動は通常の関数呼出しとして評価し、custom lenを含め[通常callのconst適格性](./declarations.md#宣言)を適用する。\
+custom indexの代入とcompound assignmentは[代入規則](./statements.md#静的成立条件)に従う。
+
 - 同じreceiver基底型ではoperator kindとoperand数が同じ宣言を重複できない
   - 重複判定はreceiver基底型、kindとoperand数を使い、単項と二項、`[]`と`[]=`を区別する
   - operator は import alias を介した明示参照なしに解決候補となる

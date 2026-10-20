@@ -63,6 +63,8 @@ free(nil)
 var size: u32 = len(buffer)
 ```
 
+`len(value)`は[operator解決](./expressions.md#user-defined-operator)によりcustom宣言を先に選び、builtin配列lenを選んだ場合に以下を適用する。
+
 - `buffer: [N]T` に対して使える
 - 結果は配列長 `N` を表す compile-time constant `u32`
 - 文字列literalも`[N]u8`なので同じ規則を使う
@@ -75,10 +77,8 @@ operandに通常callを含む`len(f())`は、const初期値など定数値を要
 operand 内で評価される定数変換は範囲検査の対象となり、表現範囲外なら compile error とする。\
 `&&` / `||` の短絡評価で未評価となる部分には、通常の短絡規則を適用する。
 
-配列以外ではreceiverに一致する `operator (self: T) len() -> u32` を呼び出す。\
-この宣言では戻り値型に `u32` を1個明示し、戻り値の省略、別の型、複数戻り値は未使用でも compile error とする。\
-generic operatorにも同じ規則を適用し、`len(value)` の結果は常に単一の `u32` となる。\
-一致する宣言がなければ compile error とする。
+custom宣言のsignatureと結果型は[operator宣言](./expressions.md#user-defined-operator)を定義元とする。\
+custom宣言もbuiltin配列lenも成立しない入力はcompile errorとなる。
 
 ## 5. `new`
 <!-- ond-spec-id: builtins/new -->

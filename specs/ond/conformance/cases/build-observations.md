@@ -1,7 +1,7 @@
 # Cacheとlinkの回帰入力
 <!-- ond-spec-id: conformance/cases/build-observations -->
 
-適用版はOnd Language v1、Kagura v1、artifact Contract revision 5とし、[版互換条件](../../artifacts.md#版識別と互換条件)を適用する。\
+適用版はOnd Language v1、Kagura v1、artifact Contract revision 6とし、[版互換条件](../../artifacts.md#版識別と互換条件)を適用する。\
 要件は`INIT-01`であり、操作の規範定義元は[cache](../../build/cache.md)、[compile/link](../../build/commands.md)、[linking](../../linking.md)、[初期化](../../language/v1/execution.md#初期化とエントリ)とする。
 
 ## Project入力と初期状態
@@ -30,8 +30,8 @@ link設定はread_only=null、RAM=`0x1000:0x40000`、stack size=`0x10000`、main
 | cold compile後、manifestと参照artifactを読みlink | compile/link成功 |
 | source・設定・compiler不変でwarm compileしlink | coldと同じLinkedImage |
 | cold manifestのpackagesからtest/leafのArtifactRefを除去してlink | 依存入力不足のlink error、CLI終了code 1 |
-| cold manifestのcontract.revisionを6へ変更してlink | 版不適合のlink error、CLI終了code 1 |
-| cold manifestのcompiler_idをold-compilerへ変更してlink | 生成元不一致のlink error、CLI終了code 1 |
+| cold manifestのcontract.revisionを7へ変更してlink | 版不適合のlink error、CLI終了code 1 |
+| cold manifestのcompiler_idの先頭hex digitだけを別値へ変更（0なら1、他は0）してlink | 生成元不一致のlink error、CLI終了code 1 |
 | leafのSeedだけ9へ変更して再compileし、cold manifestのleaf ArtifactRefだけを新しい参照へ置換してlink | 依存build_id不整合のlink error、CLI終了code 1 |
 
 この入力での観測はcache再利用時のimageと依存整合性である。\

@@ -27,13 +27,15 @@ Objectは[成果物schema](./artifacts.md#object)に従う。\
 Local symbolはそのObject内で解決する。\
 Exported symbolは共有namespaceを形成する。\
 undefined import、重複export、不正symbol range、invalid alignment、overlap patch site、branch slot内部への参照はlink errorを返す。\
-LinkPlanのRAM base/endとstack sizeは4-byte alignedで、`0 < stack_size < memory_size`を満たす。\
+LinkPlanのRAM baseとstack_sizeは4-byte aligned、checked計算したRAM_ENDは8-byte alignedで、`0 < stack_size < memory_size`を満たす。\
 read_onlyは正のsize、4-byte alignedなbase/endを持ち、RAMと分離する。\
 LinkPlanがRAM base/size、stack reservation、optional read-only region、entry/heap/stack境界symbolを指定し、section配置とaddress/offset arithmeticはchecked範囲で行う。\
 容量不足は指定RAM/stack容量に対するlink errorとなる。\
 Text、Rodata、Data、Bssの順で配置し、各Objectのsectionを入力Object順で`max(alignment, 4)`へ揃える。\
 同kindの結合sectionのalignmentは入力の`max(alignment, 4)`の最大値とする。\
 read_only領域を指定した場合はText/Rodataをそこへ、Data/BssをRAMへ配置し、両領域は分離する。\
+entry_symbol、heap_base_symbol、stack_bottom_symbolは非空で互いに異なる。\
+heap/stack境界名と入力ObjectのLocal/Exported定義との衝突はlink errorとなる。\
 entryはExported Functionであり、branch relocationの解決先は実行可能なText内である。\
 reserved runtime symbolとの衝突、不正なimport定義、checked address overflowもlink errorとなる。\
 LinkedImageは最終load address、initialized bytes、section memory size、entry point、heap/stack boundaries、resolved symbolsを記録する。\
@@ -43,8 +45,21 @@ loaderはdataをloadし、各sectionのdata末尾からmemory_sizeまでをzero�
 <!-- ond-spec-id: linking/relocation-slots -->
 
 `Abs32`はsymbol addressにsigned addendを加えたchecked 32-bit値をlittle-endianで書き込む。\
-`Call16`/`Jump16`のdisplacementは`(target - (site + 4)) / 4`で求め、signed-16-bit word範囲に入ることを成立条件とする。\
-範囲外はlink errorとなる。\
+`Call16`と`Jump16`の入力wordは、opcode bits31..28=`1100`のJZ命令であることを要求する。\
+rd=bits27..24、condition=bits23..20、base=bits19..16、immediate=bits15..0とし、次の形を検査する。
+
+| 種別 | 入力形 |
+| --- | --- |
+| Call16 | rd=r15、condition=r0、base=r0、任意のimmediate |
+| Jump16 | rd=r0、condition=r0〜r15の任意register、base=r0、任意のimmediate |
+
+siteはTextの4-byte aligned位置、targetはsymbol addressにsigned addendをchecked加算したu32 addressであり、4-byte alignedなTextを指す。\
+site+4もchecked u32で求め、数学的整数`(target-(site+4))/4`が整数かつ[-32768,32767]に入ることを要求する。\
+負のdの下位16bitはd mod 65536（0〜65535）のtwo's-complement表現とする。\
+dをそのdisplacementとし、`(word & 0xffff0000) | (d & 0xffff)`の4byte little-endian値をpatchする。\
+入力形違反、overflow、距離範囲外はlink errorとなる。\
+この2種は専用slotへ自動拡張しない。
+
 CallSlot/JumpSlotは[固定長slot規範](#固定長slot規範)と[正確なtemplate](#callslotjumpslot-relocation)に従う。
 
 ## 呼出側と実行環境の境界

@@ -56,7 +56,7 @@ Phase列は観測操作を次のように指定する。
 診断文と件数はcase固有の観測であり、一般の言語error規則へ追加する条件ではない。\
 `file:[start,end)`はfile先頭からのUTF-8 byte範囲、`file:EOF`はEOFのzero幅位置、`project`はproject全体に対する診断位置を表す。
 
-argument列と返値列の整数bitsはu64で表し、signed値は符号拡張したtwo's-complement表現、f32値はIEEE binary32のu32 bitsとして比較する。\
+argument列と返値列の整数bitsはu64で表し、signed値は符号拡張したtwo's-complement表現、f32値は[Ond binary32](../../language/v1/expressions.md#floating-point-arithmetic)のu32 bitsとして比較する。\
 argumentの整数はparameter宣言型の幅と符号で解釈し、`18446744073709551615`は`i32`parameterでは`-1`を表す。\
 boolのargumentと返値は0/1、f32はu32 bit patternとし、bytesは要素ごとのbyte列、typed nilは記載型のnil値として照合する。\
 比較はphaseと各caseの型・値・診断・state・停止結果を対象とする。
@@ -71,6 +71,9 @@ boolのargumentと返値は0/1、f32はu32 bit patternとし、bytesは要素ご
 ## 追加の回帰入力
 <!-- ond-spec-id: conformance/cases/additional-observations -->
 
+- [成果物・build・link](./artifact-contracts.md)
+- [debugとfault](./debug-fault-contracts.md)
+- [operator解決と代入](./operator-contracts.md)
 - [字句](./lexical-observations.md)
 - [言語回帰の外部観測](./regression-observations.md)
 - [Kagura回帰の外部観測](./kagura-regression-observations.md)

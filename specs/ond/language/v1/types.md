@@ -59,7 +59,8 @@ v1の型は以下の組み込み型と構成型である。
 
 - `type Name T`は、underlying typeを`T`とする宣言固有のdefined typeを導入する
 - defined type は、同じ underlying type を持つ他の型とも異なる型である
-- defined type は underlying type で使用できる演算、zero value、memory layout を引き継ぐ
+- defined typeはunderlying typeのzero valueとmemory layoutを引き継ぐ
+  - 演算は[custom優先・builtin継承の解決規則](./expressions.md#user-defined-operator)に従う
 - assignment、argument、returnは要求型との同一性を成立条件とする
   - defined typeとunderlying typeの値を渡す場合もこの条件で検査する
 - defined type とその underlying type、または同一の underlying type を持つ defined type の間は `value as T` で明示変換できる
@@ -137,8 +138,9 @@ box := Box[u32]{value: Identity[u32](7)}
 短絡評価により値が評価されない部分では、定数変換の範囲検査も省略する。\
 名前解決と型検査は両辺について行う。\
 実行時の整数変換は変換先の幅の下位 bit を保持し、符号拡張またはゼロ拡張して変換する。\
-`f32` への変換は IEEE 754 binary32 の roundTiesToEven で丸める。\
-`f32` から整数型への変換は 0 方向への丸めとし、`NaN`、無限大、変換先で表現できない値は compile-time なら compile error、実行時なら fault とする。
+整数からf32への変換は整数の数学値nに対し、n<0ならs=1、他はs=0、m=abs(n)として[binary32のR(s,m)](./expressions.md#floating-point-arithmetic)を1回適用する。\
+f32から整数は、有限値を0方向へ切り捨てた整数nを先に求め、そのnが変換先型の範囲内ならnを返す。\
+NaN、Inf、またはnが範囲外の場合はcompile-timeならcompile error、runtimeならtargetのfaultとなる。
 
 Kagura target における型のサイズ、alignment、zero value は [Ond for Kagura Machine Profile v1](../../targets/kagura-v1/machine.md) に従う。
 
@@ -148,7 +150,7 @@ Kagura target における型のサイズ、alignment、zero value は [Ond for 
 - `nil` は任意の `*T`、function pointer に代入できる
 - `nil`はpointerまたはfunction型を与える文脈を成立条件とし、`value := nil`のように型文脈がない入力はcompile errorとなる
 - `*pointer` で参照外しを行う
-- `*T` に対する `pointer[index]` は、`index` を `u32` とする unchecked element access である
+- [operator解決](./expressions.md#user-defined-operator)でbuiltin raw pointer indexを選んだ場合、`*T`の`pointer[index]`はindexをu32とするunchecked element accessである
 - pointerの有効領域と生存期間は利用側が管理し、access結果は[targetのraw pointer規則](../../targets/kagura-v1/machine.md#6-raw-pointer-access)で定まる
 - 配列要素と struct field へのアクセスに必要なアドレス計算はコンパイラが生成する
 
@@ -165,7 +167,8 @@ Kagura target における型のサイズ、alignment、zero value は [Ond for 
   - 推論長配列、defined type、入れ子の配列、generic の具体化結果にも同じ上限を適用する
   - 使用箇所に関係なく型を検査し、要素型の padding とゼロサイズの扱いは [Data Layout](../../targets/kagura-v1/machine.md#5-data-layout) に従う
 - 配列の長さはコンパイル時定数でなければならない
-- 配列アクセスは `array[index]` とする
+- 配列のindex演算は[operator解決](./expressions.md#user-defined-operator)を先に行い、builtinを選んだ場合に以下の配列access規則を適用する
+- builtin配列アクセスは`array[index]`とする
 - index は integer でなければならない
 - 配列長取得は[builtin len](./builtins.md#41-配列に対する-len)に従う
 - 定数 index が `0 <= index < N` を満たさない場合はコンパイルエラーとする

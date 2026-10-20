@@ -58,7 +58,7 @@ schemaは[artifact契約](../artifacts.md#packageartifactとcompilationmanifest)
 - `.onddebug`は`.ondtest`から独立し、file出力では通常/test buildの双方で生成する
   - `.ondtest`のschemaは[テストビルド仕様](./test-build.md)に従う
 - LinkedImageとdebug sidecarは同じ`build_id`を持つ
-  - `build_id`は空の`build_id`を持つLinkedImageのcanonical JSON bytesのSHA-256である
+  - `build_id`は[公開識別子](./cache.md#公開識別子)のimage規則に従う
 - `-o -`ではpipe互換性のためLinkedImageだけをstdoutへ書き、出力を実行imageのJSONに保つ
   - sidecarを利用する実行ツールへ渡す場合はfile出力を選ぶ
 - --ramはRAM領域、--stackはその内側に予約するstack量、--return-toはmain正常終了後の絶対ジャンプ先
@@ -68,7 +68,7 @@ schemaは[artifact契約](../artifacts.md#packageartifactとcompilationmanifest)
 - 数値は10進または0x付き16進
   - KiB/MiB suffixを受理し、u32範囲外を拒否する
 - entry/heap/stackのruntime symbolはOnd規約の名前へ設定する
-- contract/target/ABI/依存関係/初期化順はmanifestとパッケージ成果物から読出・検証する
+- manifest pathの基準、contract、compiler、依存、通常/test起動計画は[参照整合](../artifacts.md#manifest読出しと参照整合)に従い検証する
 - compilerは共通startupを作り、要求されたruntime helperを一度だけ供給してリンクする
 
 ### 入出力と失敗時

@@ -6,41 +6,123 @@
 
 PackageArtifactとmanifestのfieldは[成果物schema](../artifacts.md#packageartifactとcompilationmanifest)に従う。
 
-build_idは次を正規順にJSON化したSHA-256:
+package build_id、content_hash、image build_idは以下の公開識別子規則に従う。\
+再利用の可否はsource、設定、依存、具体化した意味型・定数値と公開interfaceを反映する。
 
-- contractと実行コンパイラの識別子
-- ond.toml全内容のSHA-256（設定変更は保守的に全パッケージを無効化）
-- パッケージの論理パス、ソース相対パスと各内容のSHA-256
-- 直接import先のbuild_id
+### Canonical JSON
+<!-- ond-spec-id: build/canonical-json -->
 
-generic宣言があるprojectでは、owner packageが生成する具体化済みfunction/static symbol、利用される型構造、生成定数の値、公開interfaceもbuild_idへ含める。\
-`sizeof(T)`や`alignof(T)`の評価後も、function・initializer・staticに含まれる確定定数値によって評価結果の変化を検出する。\
-型構造はfield・method・underlying typeとnominal identityを含めて正規化し、内部の採番やsource位置が変化しても同じ構造に同じ識別値を与える。\
-呼出元が新しい特殊化を要求した場合はowner packageのbuild_idが変わり、既存要求だけならowner packageを再利用する。
+公開JSONのwriterは、[wire値型](../artifacts.md#json-wire形式)の値を次の一意なbyte列へ変換する。\
+UTF-8を使い、BOM、値間のwhitespace、末尾LFを付けない。\
+objectはkeyをUnicode scalar値の辞書順に並べ、arrayは各契約が定める順序を保つ。\
+整数はwire形式の最短10進表記、boolとnullは小文字で書く。
 
-project全体のsource相対pathと内容hashは、contract・compiler・manifest設定・import graphとともにprivate project manifest keyへ含める。\
-全artifactの参照先、checksum、package集合、依存関係を検証できた場合だけfrontendを省略する。\
-source状態が変われば型付きfrontendで具体化集合、型構造、生成定数の値を再確認し、package build_idが変わったObjectを生成する。\
-compiler_idは実行ファイル全体のSHA-256。\
-CLIの再ビルドで変化すれば再コンパイルする。\
-内容の同一性はhashで判定する。
+stringでは`"`とbackslashをそれぞれJSONのquote escapeとbackslash escapeで書き、BS、TAB、LF、FF、CRはそれぞれ`\b`、`\t`、`\n`、`\f`、`\r`とする。\
+それ以外のU+0000〜U+001Fは小文字hexの`\u00xx`、`/`とその他のUnicode scalarは元のUTF-8で書く。\
+Unicode正規化は行わない。
 
-成果物は `<build_id>-<content_hash>.ondpkg`、\
-package索引は `<build_id>.json`、project索引は `project-<key>.ondmanifest`。\
-content_hashは成果物bytesのSHA-256。\
-一時ファイルを同じディレクトリに作成し、書込完了後renameで公開する。\
-壊れた索引・checksum不一致・不適合なキャッシュはmissとして再生成する。\
-明示的なlink入力の破損または不一致はlink errorとなる。\
-compile失敗はerrorを返し、以前の成功成果物を保持する。\
-古いcache keyの回収時点は実装裁量とする。
+### 公開識別子
+<!-- ond-spec-id: build/public-identifiers -->
 
-project内の収集済みpackage全体を検査・Object生成の対象とする。\
-startupに含めるinitializerはrootから到達するパッケージだけ。\
-import順・パッケージ内のソース順を保持し、ファイル名の追加・削除・renameもキーへ反映する。
+SHA-256の出力stringは、digestのbyte順に各byteを小文字hex2桁へ変換した64桁とする。\
+`compiler_id`は実行compiler executableの全file bytes、`content_hash`は保存されたPackageArtifact fileの全bytesのSHA-256である。\
+content_hashの照合時は入力file bytesをそのままhashし、再encodeしたJSONのhashへ置き換えない。
 
-revision/target/ABIの受理条件は[版互換表](../artifacts.md#版識別と互換条件)に従う。
+LinkedImageのbuild_idは、当該imageの`build_id`だけ空stringへ置換した全fieldをcanonical JSON化したbytesのSHA-256とする。\
+debug/test sidecarのbuild_idにはこのimage build_idを使い、sidecar bytesはimage hash入力へ加えない。
 
-debug sidecarのrange、fault分類、unwind規則は[Ond Debug Metadata v1](../debug-metadata/v1.md)に従う。
+package build_idは次のPackageBuildInputをcanonical JSON化したbytesのSHA-256とする。\
+以下のobjectも閉schemaで全fieldを必須とし、mapのentry集合は対応する規則に従う。
+
+| 型 | Field |
+| --- | --- |
+| PackageBuildInput | `contract: Contract`, `compiler_id: string`, `manifest_hash: string`, `mode: BuildMode`, `package: string`, `sources: SourceHash[]`, `dependencies: map<string,string>`, `generation: Generation` |
+| BuildMode | `"normal"`または`"test"` |
+| SourceHash | `path: string`, `content_hash: string` |
+| Generation | `instances: Instance[]`, `types: TypeExpr[]`, `nominals: Nominal[]`, `constants: OwnedConstant[]`, `interface: NormalizedInterface` |
+
+manifest_hashは全packageに共通して今回compileするproject rootのond.tomlの全file bytesのSHA-256、SourceHash.content_hashはsource fileの全bytesのSHA-256とする。\
+BOMと改行を含む入力bytesを保持し、pathはpackageを構成するsource directory（追加libraryと依存packageもそのpackage directory）からの相対pathを`/`で区切る。\
+sourcesはpathのUnicode scalar辞書順、dependenciesは直接import先の論理package pathからそのbuild_idへのmapとする。\
+modeは通常/test source集合が同じ場合もそれぞれnormal/testを用いる。
+
+### 意味型・具体化・定数の正規化
+<!-- ond-spec-id: build/normalized-generation -->
+
+TypeExprは次の外部tag表現とし、構成要素の順序を型同一性の規則に対応づける。\
+primitiveは`"Bool"`、`"U8"`、`"I8"`、`"U16"`、`"I16"`、`"U32"`、`"I32"`、`"F32"`とする。
+
+| TypeExpr | 意味 |
+| --- | --- |
+| `{"Pointer":TypeExpr}` | 参照先型 |
+| `{"Array":{"length":u32,"element":TypeExpr}}` | 長さと要素型 |
+| `{"Function":NormalizedSignature}` | source-visible signature |
+| `{"Struct":NormalizedField[]}` | 宣言順field列 |
+| `{"Defined":NominalId}` | sourceで宣言したすべての名前付き型のidentity参照 |
+
+| 型 | Field |
+| --- | --- |
+| NormalizedSignature | `parameters: TypeExpr[]`, `returns: TypeExpr[]` |
+| NormalizedField | `name: string`, `ty: TypeExpr`, `private_owner: string or null` |
+| NominalId | `package: string`, `name: string`, `arguments: TypeExpr[]` |
+| Nominal | `identity: NominalId`, `underlying: TypeExpr`, `methods: NormalizedMethod[]` |
+| NormalizedMethod | `name: string`, `signature: NormalizedSignature`, `pointer_receiver: bool`, `identity: InstanceId` |
+| InstanceId | `declaration: DeclarationId`, `receiver_arguments: TypeExpr[]`, `type_arguments: TypeExpr[]` |
+| Instance | `identity: InstanceId`, `signature: NormalizedSignature` |
+| OwnedConstant | `owner: InstanceId`, `value: NormalizedValue` |
+| NormalizedValue | `ty: TypeExpr`, `kind: NormalizedValueKind` |
+| NormalizedInterface | `package: string`, `exports: map<string,NormalizedExport>` |
+
+DeclarationIdは次の単一keyの外部tag objectである。\
+Pは論理package path、N/M/receiverはsource宣言名とする。
+
+| variant | payload field |
+| --- | --- |
+| Function | `package: string`, `name: string` |
+| Method | `package: string`, `receiver: string`, `name: string`, `pointer_receiver: bool` |
+| Operator | `package: string`, `receiver: string`, `token: string`, `operand_count: u32`, `pointer_receiver: bool` |
+| Global、Constant | `package: string`, `name: string` |
+
+operator tokenとreceiverを含むoperand_countは[operator宣言](../language/v1/expressions.md#user-defined-operator)に従う。\
+NominalId.argumentsとInstanceIdの各argument列は宣言の型parameter順、nongenericの列は空arrayとする。\
+functionのreceiver_argumentsは空、method/operatorのreceiver_argumentsはreceiver基底型の具体的な型argument列とする。\
+signature.parametersはreceiverを除くsource-visible列である。
+
+Generation.instancesは、当該owner packageに要求されるgeneric function/method/operatorの具体化の推移閉包を各InstanceIdにつき1個収録する。\
+Generation.typesの母集団は当該packageの全nongeneric宣言とinstancesの全具体化とし、そのsignatureとsource本体で使う具体的なsource意味型を集合として収録する。\
+NominalIdを参照する位置ではunderlyingを展開せず、Generation.nominalsへsignature、本体型、公開interfaceから到達するnominalの閉包を各identityにつき1個収録する。\
+すべての名前付き型はDefined参照で表し、underlyingはNominal表だけで展開する。\
+nongeneric宣言型それ自体とそこで使う構成型もtypes/nominalsへ収録し、type宣言内の配列長等は型構造に含めてconstantsへ重複収録しない。\
+これによりpointer経由の再帰も有限な参照で表す。\
+nominalのmethodsは、その型の公開nongeneric methodと公開generic methodの収録済み具体化をname順、同名ならidentityのcanonical JSON bytes辞書順に並べ、物理symbol名をNormalizedMethod.identityへ置換する。
+
+Generation.constantsは全nongeneric function/method/operator/global/const宣言とinstancesの具体化を母集団とし、sourceの値要求境界へ渡す最大のcompile-time定数式と静的aggregate/文字列実体の確定値を、ownerと型付き値の組として収録する。\
+大きい定数式に含まれる定数部分式は、その最大式と重複して収録しない。\
+package-level global/constのownerはGlobal/Constant DeclarationIdを持ち両argument列が空のInstanceIdとし、instances列への所属を要求しない。\
+function/method/operator本体の値と静的実体はそのInstanceIdをownerとする。
+
+NormalizedExportは[公開Export](../artifacts.md#公開interface)と同じ外部tagを使い、TypeRefをTypeExpr、ValueをNormalizedValueへ置換する。\
+NormalizedValueKindはwire ValueKindと同じunit/scalar variantを持ち、Compositeだけ`{"Composite":[[u32,NormalizedValue],...]}`として再帰する。\
+Compositeの対はindex昇順、zero valueの要素は省略し、全要素がzeroならkindを`"Zero"`に統一する。\
+整数0、false、typed nil、f32の+0も指定型のzero表現ならZeroへ統一し、f32の-0はFloat32 payload `2147483648`で保持する。\
+Integerのsigned値は64bitへ符号拡張したtwo's-complement bits、Float32はbinary32のu32 bitsである。
+
+Generationの各集合列はelementのcanonical JSON bytesのbyte辞書順に並べ、同一elementを重複収録しない。\
+nominalsはidentityのcanonical bytes順とする。\
+signature、struct fields、配列要素、型argumentの列順はそれぞれの意味順を保つ。\
+内部型番号、source位置、要求回数、物理的なstorage共有、registerやbranch/slot offsetの定数は正規化入力へ加えない。
+
+### 再利用と公開
+<!-- ond-spec-id: build/cache-publication -->
+
+全artifactの参照先、checksum、package集合、依存関係を検証できた場合だけfrontendを省略できる。\
+sourceが変われば具体化集合、型構造、確定値を再確認し、package build_idが変化したObjectを生成する。\
+壊れた索引・checksum不一致・不適合なcacheはmissとして再生成し、明示link入力の破損または不一致はlink errorとなる。\
+compile失敗時は以前の成功成果物を保持し、公開するfileは同じdirectory内の一時fileの書込み完了後renameする。
+
+公開するpackage成果物のfile名は`<build_id>-<content_hash>.ondpkg`とする。\
+private cache keyのbyte表現・hash方式・保存形式・file名・保存範囲・回収時点は実装裁量とする。\
+再利用の観測結果は以下の検証条件を満たす。
 
 ## 検証
 <!-- ond-spec-id: build/verification -->

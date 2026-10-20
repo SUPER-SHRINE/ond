@@ -39,9 +39,38 @@ import pathは[packageとimport](../language/v1/names-and-scopes.md#packageとim
 | `{ git = "https://github.com/owner/repository.git", rev = "..." }` | Git repositoryと任意のrev |
 | 文字列 | URL形式ならGit、それ以外はpath |
 
-Git checkoutは`project/.ond/dependencies`、解決commitは`ond.lock`に保存する。\
-既存lockは同じcommitを選択し、lockを削除した再解決で更新する。\
-依存先manifestも再帰的に解決する。
+Git依存は次節のlock規則で固定し、依存先manifestも再帰的に解決する。
+
+### Git依存lock v2
+<!-- ond-spec-id: build/git-lock-v2 -->
+
+実行対象projectの`ond.lock`はUTF-8 TOMLとし、top-level fieldは`version: integer = 2`と`package: LockedGit[]`だけとする。\
+packageは`[[package]]`のarray of tablesであり、各entryは次のfieldを持つ閉schemaとする。
+
+| Field | 型・成立条件 |
+| --- | --- |
+| owner | string。依存を宣言したprojectの[project].name |
+| name | string。そのmanifestの[dependencies]登録名 |
+| git | string。manifestのGit URLをdecodeした文字列と完全一致 |
+| rev | 省略可能な非空string。指定時はmanifestの要求revと完全一致 |
+| commit | 完全な小文字hexのcommit object ID。SHA-1 repositoryは40桁、SHA-256 repositoryは64桁 |
+
+rev以外は必須で、rev省略はmanifestのrev省略に対応する。\
+URLとrevの比較で文字列正規化を行わず、entryのidentityは(owner,name)の組とする。\
+各identityは一意で、保存順はowner/nameのUnicode scalar辞書順とする。\
+path依存はlockへ収録せず、依存graph全体のGit edgeだけを収録する。\
+Git edgeが0件の保存内容は`version = 2`と`package = []`の2fieldとする。
+
+lockがない初回は、rev指定時はそのrevision、rev省略時はremote default branchのHEADをcommitへ解決する。\
+依存graph全体の解決に成功した後、同じdirectory内の一時fileの書込み完了後renameしてlockを保存する。\
+Git checkoutの保存先はprojectの`.ond/dependencies`とする。
+
+lockがある場合は必要な全Git edgeについてowner/name、git、revの有無と値が一致し、commitが当該repositoryのcommitとして解決できることを要求する。\
+常に記録commitを使用し、version不一致、未知field、field型不正、identity重複、必要entry欠落、余剰entry、commit不正・読出不能はerrorとなる。\
+更新する操作は既存lockを削除した状態での再解決とする。
+
+### Source探索境界
+<!-- ond-spec-id: build/source-discovery-boundaries -->
 
 source探索はproject境界とignore設定に従う。\
 `[resolve].ignore`はmanifest directoryからの相対directory列であり、既定値は`[".git", ".ond", "target"]`である。\

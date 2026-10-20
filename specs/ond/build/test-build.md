@@ -38,8 +38,16 @@ CompilationManifestの通常/test識別は`tests` fieldによって次のよう�
 | `tests: {"cases": []}` | case 0件のtest build |
 | `tests: null`、未知のmode field | schema違反のerror |
 
-tests objectのfieldは`cases`、case objectのfieldは`package`、`name`、`symbol`である。\
-`package`は論理package path、`name`はtest function名、`symbol`は元test functionを指す。\
+metadataとsidecarの型は次の表で定義し、[JSON wire形式](../artifacts.md#json-wire形式)を適用する。
+
+| 型 | Field |
+| --- | --- |
+| TestMetadata | `cases: TestCase[]` |
+| TestCase | `package: string`, `name: string`, `symbol: string` |
+| TestSidecar | `build_id: string`, `cases: TestEntry[]` |
+| TestEntry | `package: string`, `name: string`, `entry_point: u32` |
+
+packageは論理package path、nameはtest function名、symbolは元function、entry_pointはwrapperのguest addressとする。\
 通常/testのsource集合とcompile modeをcache keyで区別する。\
 test compileの既定出力は`project/target/test.ondbuild`、通常は`project/target/build.ondbuild`であり、明示`-o`が優先する。
 
@@ -62,7 +70,9 @@ initializer faultもそのcaseの結果として扱う。
 <!-- ond-spec-id: build/test-execution-contract -->
 
 test sidecarはLinkedImageと同じdirectoryに、imageの拡張子を`.ondtest`へ置換して生成する。\
-top-level fieldは`build_id`と`cases`、case objectは`package`、`name`、guest address整数`entry_point`である。
+内容は上のTestSidecar型とする。
+
+以下のJSONと後続の空case表現では、`<LinkedImage build_id>`を対象imageの64桁識別子へ置換して内容を構成する。
 
 ```json
 {

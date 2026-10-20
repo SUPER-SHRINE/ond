@@ -56,15 +56,32 @@ ForClauseBlock= [ SimpleStmt ] ";" [ Expression ] ";" [ SimpleStmt ] Block .
 - 文法上 `Expression` は任意の式を許すが、型検査で `if` と条件付き `for` の条件は `bool` に制限する
 - multi-value function call は `VarSpec`、`Assignment`、`ShortVarDecl`、`ReturnStmt` で使える
   - multi-value展開を記した位置以外は単一値の式を要求する
-- assignment の左辺は `_`、変数、参照外し、配列または raw pointer の index、struct field のいずれかで、書き込み可能でなければならない
-- 単純代入 `=` は最初に左辺の index と pointer operand を左から右へ評価し、次に右辺を左から右へ評価して、それぞれの値を保持する
-- その後、左辺への書き込みを左から右へ行い、直接の配列格納先に必要な bounds check は各書き込みの直前に行う
+- assignmentの左辺は`_`、書き込み可能な変数・参照外し・builtin配列/raw pointerのindex・struct field、または適合するcustom `[]=`を持つ`collection[index]`とする
+- 単純代入`=`は最初に全左辺のbase、index、pointer operandを左から右へ各1回評価して保持し、次に全右辺を左から右へ各1回評価して保持する
+  - custom index書込みではgetterを要求せず、receiver調整後の値とindexを保持する
+- その後、左辺への書き込みを左から右へ行い、builtin配列格納先のbounds checkは各書込み直前、custom indexは当該setterを1回呼ぶ時点で書込みを行う
+  - custom setterのreceiver、index、valueの型は選択済み`[]=`宣言へ完全一致することを成立条件とする
 - 後続の格納先で bounds check が失敗しても、それ以前の書き込みは保持する
 - 左辺の operand 内で行う配列読み取り（`*P[i]` の `P[i]` など）、`&A[i]` のアドレス取得、および右辺の配列読み取りは、その評価時に bounds check を行う
-- compound assignment の左辺は `_` 以外の書き込み可能な式 1 個、右辺は式 1 個とし、左辺の index、pointer operand、bounds check、および現在値の読み取りを 1 回行ってから右辺を評価する
+
+getterは[operator解決](./expressions.md#user-defined-operator)で選んだindex読取り、setterは同じ規則で選んだindex書込みを表す。
+
+- compound assignmentの左辺は`_`以外の代入先1個、右辺は式1個とする
+  - 通常storageの代入先はbase、index、pointer operandと必要なbounds checkを1回行い、現在値を1回読んだ後に右辺を1回評価する
+  - 対応二項演算を1回行い、結果型が通常storageの型と完全一致することを検査して書き込む
+  - custom indexはbaseとindexを各1回評価し、getter/setter用にreceiver調整後の値とindexを保持して、getter1回、右辺1回、対応二項演算1回、setter1回の順で実行する
+  - getter、二項演算、setterがすべて静的に成立し、二項演算結果型がsetterのvalue parameter型と完全一致することを要求する
+- 各代入段階でfaultした場合は後続段階を実行せず、完了済みwriteと他のeffectを保持して停止する
 - `++`と`--`は後置statementの構文である
-- 戻り値を持つ関数は、到達可能なすべての実行経路で宣言と一致する `return` に到達しなければならない
-  - 無条件 `for {}` は、外へ到達する `break` を含まない場合に限り終端とみなす
+- 戻り値を持つ関数で本体末尾へ構文上到達できる入力はcompile errorとなる
+  - `return`と`trap`は当該経路を終了し、blockは先行文から通常継続できる経路を次文へ接続する
+  - 当該経路のreturn、trap、最内loopへのbreak/continue、終端loopの後の文は、その経路の到達判定へ寄与しない
+  - `if`は条件が定数でもthenとelseの両経路を持ち、else省略時の経路は通常継続する
+  - 条件付きforは条件の定数真偽によらず退出経路を持つ
+  - `for {}`とconditionを省略した3 clause forは、当該loopを対象とする構文上到達可能なbreakがない場合に後続文への経路を持たない
+  - 内側loopを対象とするbreakは外側loopの退出経路を作らない
+  - 呼出先の本体や実行時の定数真偽で構文上の経路を追加・削除しない
+- 到達判定で経路に寄与しない文にも、構文・名前・型など他の成立条件を適用する
 
 ## 文と制御構文
 <!-- ond-spec-id: statements/control-flow -->

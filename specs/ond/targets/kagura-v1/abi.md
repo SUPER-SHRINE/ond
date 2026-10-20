@@ -29,7 +29,7 @@ Objectの`CallSlot`/`JumpSlot`によるlinker thunkは`r12`だけを変更し、
 <!-- ond-spec-id: targets/kagura-v1/abi-call-boundary -->
 
 - stack は full descending とする
-- call 直前と callee entry の `r14` は 8-byte aligned とする
+- loaderが設定する初期r14は[STACK_TOP](./machine.md#3-ram-layout)とし、call直前とcallee entryのr14も8-byte alignedとする
 - callee entry 時の `r14` を `CFA` と呼ぶ
 - return address は `r15` に置く
 - stack 上の ABI word は 4 byte とする
@@ -44,7 +44,7 @@ Objectの`CallSlot`/`JumpSlot`によるlinker thunkは`r12`だけを変更し、
 | Indirect | array, struct | pointer 1 |
 
 Direct-1 のうち integer、`bool`、pointer は値を下位 bit に置き、未使用の上位 bit を `0` にする。\
-`f32` は IEEE 754 binary32 の 32-bit pattern をそのまま置く。
+f32は[言語のbinary32](../../language/v1/expressions.md#floating-point-arithmetic)の32bit patternをそのまま置く。
 
 Indirect argumentではcallerが値をcaller-owned temporaryへcopyし、その先頭pointerを渡す。\
 temporaryと渡したpointerの有効期間はcalleeのreturnまでであり、calleeはその期間内にtemporaryを変更できる。\

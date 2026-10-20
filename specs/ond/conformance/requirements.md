@@ -77,9 +77,9 @@ Rust runner、HIR/MIR内部検査、テスト実行器は実装sourceが管理�
 | NUM-05 | runtime wrap・bitwise・signed/unsigned比較 | [NUM-05の定義元](../language/v1/expressions.md#integer-arithmetic) | [numeric-integers](./cases/numeric-integers.md) |
 | FP-01 | constant binary32各演算、signed zero/Inf/NaN | [FP-01の定義元](../language/v1/expressions.md#floating-point-arithmetic) | [numeric-float-vectors](./cases/numeric-float-vectors.md)、[numeric-floats](./cases/numeric-floats.md)、[static-seed](./cases/static-seed.md) |
 | FP-02 | constant/runtimeのf32 bit一致 | [FP-02の定義元](../language/v1/expressions.md#floating-point-arithmetic) | [numeric-float-vectors](./cases/numeric-float-vectors.md) |
-| OP-01 | operatorごとのoperand型・result型と型不一致error | [OP-01の定義元](../language/v1/expressions.md#式と評価順) | [boundaries-conversions](./cases/boundaries-conversions.md)、[boundaries-operators](./cases/boundaries-operators.md)、[layout-operators](./cases/layout-operators.md) |
+| OP-01 | operatorごとのoperand型・result型と型不一致error | [OP-01の定義元](../language/v1/expressions.md#式と評価順) | [boundaries-conversions](./cases/boundaries-conversions.md)、[boundaries-operators](./cases/boundaries-operators.md)、[layout-operators](./cases/layout-operators.md) 、[operator-contracts](./cases/operator-contracts.md) |
 | EVAL-01 | &&/\|\|短絡、callee→引数の左から右 | [EVAL-01の定義元](../language/v1/expressions.md#式と評価順) | [static-constant-contexts](./cases/static-constant-contexts.md) |
-| EVAL-02 | 一般operand、代入LHSのindex/pointer→RHS→書込順 | [EVAL-02の定義元](../language/v1/statements.md#静的成立条件) | [static-evaluation](./cases/static-evaluation.md) |
+| EVAL-02 | 一般operand、代入LHSのindex/pointer→RHS→書込順 | [EVAL-02の定義元](../language/v1/statements.md#静的成立条件) | [static-evaluation](./cases/static-evaluation.md) 、[operator-contracts](./cases/operator-contracts.md) |
 
 ## 配列・struct・文字列・メモリ
 <!-- ond-spec-id: conformance/requirements-aggregate-memory -->
@@ -95,9 +95,9 @@ Rust runner、HIR/MIR内部検査、テスト実行器は実装sourceが管理�
 | PTR-01 | &local/field/index、deref、raw index u32/unchecked | [PTR-01の定義元](../language/v1/types.md#nilとpointer) | [nested_aggregates_copy_by_value_and_pointers_alias_storageの入力・期待](./implementation-index.md#既存回帰と要件) |
 | STR-01 | UTF-8・emoji・任意byte escapeとbyte len、raw string | [STR-01の定義元](../language/v1/expressions.md#文字列リテラル) | [static-seed](./cases/static-seed.md) |
 | STR-02 | `[N]u8`型、完全長一致、copy/mutation/addressability、pointer非変換 | [STR-02の定義元](../language/v1/expressions.md#文字列リテラル) | [string_literals_are_mutable_byte_array_values_and_copy_independentlyの入力・期待](./implementation-index.md#既存回帰と要件) |
-| LEN-01 | len(array)は定数u32を返しoperandを1回評価 | [LEN-01の定義元](../language/v1/builtins.md#41-配列に対する-len) | [array_len_preserves_one_operand_side_effect_and_runtime_faultsの入力・期待](./implementation-index.md#既存回帰と要件) |
+| LEN-01 | builtin配列lenは定数u32を返しoperandを1回評価 | [LEN-01の定義元](../language/v1/builtins.md#41-配列に対する-len) | [array_len_preserves_one_operand_side_effect_and_runtime_faultsの入力・期待](./implementation-index.md#既存回帰と要件) |
 | BI-01 | alloc/free/newの型・arity・戻り値 | [BI-01の定義元](../language/v1/builtins.md#1-一覧) | [boundaries-builtins](./cases/boundaries-builtins.md) |
-| BI-02 | lenの型・arity、builtin名のbinding禁止、`str`は通常identifier | [BI-02の定義元](../language/v1/builtins.md#4-len) | [boundaries-builtins](./cases/boundaries-builtins.md)、[layout-operators](./cases/layout-operators.md) |
+| BI-02 | lenの型・arity、builtin名のbinding禁止、`str`は通常identifier | [BI-02の定義元](../language/v1/builtins.md#4-len) | [boundaries-builtins](./cases/boundaries-builtins.md)、[layout-operators](./cases/layout-operators.md) 、[operator-contracts](./cases/operator-contracts.md) |
 | BI-03 | thisFile/thisLineの型・arity・論理位置 | [BI-03の定義元](../language/v1/builtins.md#6-thisfile) | [boundaries-builtins](./cases/boundaries-builtins.md) |
 | BI-04 | sizeof/alignofの型operandとlayout値 | [BI-04の定義元](../language/v1/builtins.md#組み込み構文) | [layout-operators](./cases/layout-operators.md) |
 | MEM-01 | new zero/alignment、alloc failure/0、free nil等 | [MEM-01の定義元](../language/v1/execution.md#メモリ管理) | [failed_allocation_and_overflow_preserve_existing_memoryの入力・期待](./implementation-index.md#既存回帰と要件) |
@@ -133,3 +133,15 @@ Rust runner、HIR/MIR内部検査、テスト実行器は実装sourceが管理�
 | DIAG-01 | source errorを位置付き診断で返し、全検査成功時に成功結果を得る | [DIAG-01の定義元](../language/v1/declarations.md#診断と成功結果) | [static-diagnostics](./cases/static-diagnostics.md) |
 | DIAG-02 | Unicode/複数fileの診断位置 | [DIAG-02の定義元](../language/v1/declarations.md#診断と成功結果) | [static-diagnostics](./cases/static-diagnostics.md)、[static-seed](./cases/static-seed.md) |
 | MIR-01 | 外部適合から除外する実装内部IRのID/type/op/dominance/guard/global/init検証の追跡 | [内部IR検証](./implementation-index.md) | [validator_rejects_use_before_definitionの入力・期待](./implementation-index.md#既存回帰と要件) |
+
+## 成果物・build・target
+<!-- ond-spec-id: conformance/requirements-artifact-build-target -->
+
+| ID | 要件の要約 | 規範定義元 | 対応するcase入力・期待 |
+| --- | --- | --- | --- |
+| ART-01 | JSON wire schemaとmanifest参照の整合 | [成果物](../artifacts.md) | [artifact-contracts](./cases/artifact-contracts.md) |
+| DBG-01 | link前後debug schema、区間、unwindと不適合時の扱い | [debug](../debug-metadata/v1.md) | [debug-fault-contracts](./cases/debug-fault-contracts.md) |
+| HASH-01 | canonical JSONと公開SHA-256識別子 | [canonical/hash](../build/cache.md#canonical-json) | [artifact-contracts](./cases/artifact-contracts.md) |
+| DEP-01 | Git edgeとlock v2の固定・照合 | [lock](../build/packages.md#git依存lock-v2) | [artifact-contracts](./cases/artifact-contracts.md) |
+| LINK-01 | 配置、symbol集合、Call16/Jump16の形とpatch | [linking](../linking.md) | [artifact-contracts](./cases/artifact-contracts.md) |
+| FAULT-01 | KaguraのCPU faultとOndの意味分類 | [fault対応](../targets/kagura-v1/machine.md#faultと観測結果) | [debug-fault-contracts](./cases/debug-fault-contracts.md) |
