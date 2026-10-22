@@ -288,7 +288,7 @@ dependencies = [
 
 [[package]]
 name = "ond-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ond-compiler",
  "ond-compiler-core",
@@ -301,7 +301,7 @@ dependencies = [
 
 [[package]]
 name = "ond-compiler"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "kagura",
  "kagura-debug-io",
@@ -312,7 +312,7 @@ dependencies = [
 
 [[package]]
 name = "ond-compiler-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "num-bigint",
  "num-traits",
@@ -324,14 +324,14 @@ dependencies = [
 
 [[package]]
 name = "ond-interface"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "ond-lsp"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ond-cli",
  "ond-compiler-core",
@@ -342,7 +342,7 @@ dependencies = [
 
 [[package]]
 name = "ond-protocol"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "base64",
  "ond-interface",
