@@ -160,26 +160,8 @@ fn completion_position(text: &str, offset: usize) -> (u32, u32) {
 
 pub fn keyword_completion_items() -> Vec<Value> {
     [
-        "package",
-        "import",
-        "const",
-        "var",
-        "type",
-        "func",
-        "struct",
-        "interface",
-        "return",
-        "trap",
-        "defer",
-        "break",
-        "continue",
-        "if",
-        "else",
-        "for",
-        "true",
-        "false",
-        "nil",
-        "as",
+        "package", "import", "const", "var", "type", "func", "struct", "return", "trap", "defer",
+        "break", "continue", "if", "else", "for", "true", "false", "nil", "as",
     ]
     .into_iter()
     .map(|label| completion_item(label, 14, Some("keyword"), None))
@@ -653,9 +635,7 @@ pub fn resolve_project_completion_methods(
     base: &ast::Expr,
 ) -> Option<Vec<Value>> {
     let resolved = resolve_project_completion_expr_type(project, package, file, function, base)?;
-    let interface = resolve_project_completion_interface_type(project, resolved.clone(), 0);
     let exact_receiver = project_completion_method_receiver(project, &resolved)?;
-    let pointer_depth = exact_receiver.2;
     let exact_receiver_key = (
         exact_receiver.0.logical_path.clone(),
         exact_receiver.1.clone(),
@@ -671,18 +651,6 @@ pub fn resolve_project_completion_methods(
     let addressable =
         project_completion_expr_is_addressable(project, package, file, function, base);
     let mut methods = Vec::new();
-    if pointer_depth == 0
-        && let Some((required, interface_external)) = interface
-    {
-        methods.extend(
-            required
-                .iter()
-                .filter(|method| {
-                    !interface_external || completion_name_is_exported(&method.name.name)
-                })
-                .map(interface_method_completion_item),
-        );
-    }
     for ((method_package, name, pointer_depth, external), exact_only) in receivers {
         for candidate_file in &method_package.files {
             for decl in &candidate_file.decls {
@@ -720,7 +688,6 @@ pub fn resolve_completion_methods(
 ) -> Option<Vec<Value>> {
     let ty = resolve_completion_expr_type(package, function, base)?;
     let exact_receiver = completion_exact_named_receiver(&ty)?;
-    let pointer_depth = exact_receiver.1;
     let mut receivers = vec![(exact_receiver.0.to_string(), exact_receiver.1, false)];
     if let Some(ty) = completion_implicit_dereference_type(package, &ty, 0)
         && let Some(receiver) = completion_exact_named_receiver(&ty)
@@ -730,11 +697,6 @@ pub fn resolve_completion_methods(
     }
     let addressable = completion_expr_is_addressable(package, function, base);
     let mut methods = Vec::new();
-    if pointer_depth == 0
-        && let Some(required) = resolve_completion_interface_type(package, &ty, 0)
-    {
-        methods.extend(required.iter().map(interface_method_completion_item));
-    }
     for (name, pointer_depth, exact_only) in receivers {
         for file in &package.files {
             for decl in &file.decls {
@@ -879,60 +841,6 @@ pub(crate) fn project_completion_expr_is_addressable(
 fn method_completion_item(method: &ast::FuncDecl) -> Value {
     let detail = completion_function_signature(method);
     completion_item(&method.name.name, 2, Some(&detail), Some("method"))
-}
-
-fn interface_method_completion_item(method: &ast::InterfaceMethod) -> Value {
-    let parameters = method
-        .signature
-        .params
-        .iter()
-        .map(|parameter| completion_type_name(&parameter.ty))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let returns = match method.signature.results.as_slice() {
-        [] => String::new(),
-        [result] => format!(" -> {}", completion_type_name(result)),
-        results => format!(
-            " -> ({})",
-            results
-                .iter()
-                .map(completion_type_name)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-    };
-    let detail = format!("{}({parameters}){returns}", method.name.name);
-    completion_item(
-        &method.name.name,
-        2,
-        Some(&detail),
-        Some("interface method"),
-    )
-}
-
-fn resolve_completion_interface_type(
-    package: &ast::Package,
-    ty: &ast::Type,
-    depth: usize,
-) -> Option<Vec<ast::InterfaceMethod>> {
-    if depth > 16 {
-        return None;
-    }
-    match ty {
-        ast::Type::Interface { methods, .. } => Some(methods.clone()),
-        ast::Type::Named(path) if path.segments.len() == 1 => {
-            let (ty, _) = completion_type_declaration(package, &path.segments[0].name)?;
-            resolve_completion_interface_type(package, ty, depth + 1)
-        }
-        ast::Type::Apply {
-            base, arguments, ..
-        } if base.segments.len() == 1 => {
-            let (spec, _) = completion_type_spec(package, &base.segments[0].name)?;
-            let ty = substitute_completion_type_arguments(spec, arguments)?;
-            resolve_completion_interface_type(package, &ty, depth + 1)
-        }
-        _ => None,
-    }
 }
 
 pub fn project_completion_base_has_known_type(
@@ -1129,83 +1037,6 @@ fn qualify_project_type_spec(
             }
         }
         _ => qualify_project_value_type(ty.clone(), alias, declaring_package),
-    }
-}
-
-fn resolve_project_completion_interface_type(
-    project: &ast::Project,
-    resolved: ProjectCompletionType<'_>,
-    depth: usize,
-) -> Option<(Vec<ast::InterfaceMethod>, bool)> {
-    if depth > 16 {
-        return None;
-    }
-    match resolved.ty {
-        ast::Type::Interface { methods, .. } => Some((methods, resolved.external)),
-        ast::Type::Named(path) => match path.segments.as_slice() {
-            [name] => {
-                let (ty, declaring_file) =
-                    completion_type_declaration(resolved.package, &name.name)?;
-                resolve_project_completion_interface_type(
-                    project,
-                    ProjectCompletionType {
-                        ty: ty.clone(),
-                        file: declaring_file,
-                        ..resolved
-                    },
-                    depth + 1,
-                )
-            }
-            [alias, name] => {
-                let imported = completion_imported_package(project, resolved.file, &alias.name)?;
-                let (ty, declaring_file) = completion_type_declaration(imported, &name.name)?;
-                resolve_project_completion_interface_type(
-                    project,
-                    ProjectCompletionType {
-                        ty: ty.clone(),
-                        package: imported,
-                        file: declaring_file,
-                        external: true,
-                    },
-                    depth + 1,
-                )
-            }
-            _ => None,
-        },
-        ast::Type::Apply {
-            base, arguments, ..
-        } => match base.segments.as_slice() {
-            [name] => {
-                let (spec, declaring_file) = completion_type_spec(resolved.package, &name.name)?;
-                let ty = substitute_completion_type_arguments(spec, &arguments)?;
-                resolve_project_completion_interface_type(
-                    project,
-                    ProjectCompletionType {
-                        ty,
-                        file: declaring_file,
-                        ..resolved
-                    },
-                    depth + 1,
-                )
-            }
-            [alias, name] => {
-                let imported = completion_imported_package(project, resolved.file, &alias.name)?;
-                let (spec, declaring_file) = completion_type_spec(imported, &name.name)?;
-                let ty = substitute_completion_type_arguments(spec, &arguments)?;
-                resolve_project_completion_interface_type(
-                    project,
-                    ProjectCompletionType {
-                        ty,
-                        package: imported,
-                        file: declaring_file,
-                        external: true,
-                    },
-                    depth + 1,
-                )
-            }
-            _ => None,
-        },
-        _ => None,
     }
 }
 
@@ -2126,35 +1957,6 @@ fn substitute_completion_type(
                 .collect(),
             span: *span,
         },
-        ast::Type::Interface { methods, span } => ast::Type::Interface {
-            methods: methods
-                .iter()
-                .map(|method| ast::InterfaceMethod {
-                    name: method.name.clone(),
-                    signature: ast::TypeSignature {
-                        params: method
-                            .signature
-                            .params
-                            .iter()
-                            .map(|parameter| ast::TypeParameter {
-                                name: parameter.name.clone(),
-                                ty: substitute_completion_type(&parameter.ty, substitutions),
-                                span: parameter.span,
-                            })
-                            .collect(),
-                        results: method
-                            .signature
-                            .results
-                            .iter()
-                            .map(|result| substitute_completion_type(result, substitutions))
-                            .collect(),
-                        span: method.signature.span,
-                    },
-                    span: method.span,
-                })
-                .collect(),
-            span: *span,
-        },
         ast::Type::Func { signature, span } => ast::Type::Func {
             signature: ast::TypeSignature {
                 params: signature
@@ -2564,7 +2366,6 @@ pub(crate) fn completion_type_name(ty: &ast::Type) -> String {
         ast::Type::Pointer(inner, _) => format!("*{}", completion_type_name(inner)),
         ast::Type::Array { element, .. } => format!("[...]{}", completion_type_name(element)),
         ast::Type::Struct { .. } => "struct".to_string(),
-        ast::Type::Interface { .. } => "interface".to_string(),
         ast::Type::Func { .. } => "func".to_string(),
     }
 }

@@ -81,7 +81,7 @@ fn defined_structs_stay_distinct_but_matching_underlying_casts_work() {
 #[test]
 fn public_fields_match_across_packages_and_private_fields_do_not() {
     let shared = "package shared\nfunc Public() -> struct { X: i32; } { var v: struct { X: i32; }; v.X = 7; return v; }\nfunc Private() -> struct { x: i32; } { var v: struct { x: i32; }; return v; }\n";
-    let result = compile("package main\nimport \"shared\"\nfunc main() {}\nfunc result() -> i32 { var v: struct { X: i32; } = shared.Public(); return v.X; }\n", Some(shared)).unwrap();
+    let result = compile("package main\nimport \"test/shared\"\nfunc main() {}\nfunc result() -> i32 { var v: struct { X: i32; } = shared.Public(); return v.X; }\n", Some(shared)).unwrap();
     assert_eq!(
         crate::memory_test_vm::execute(&result.mir, "main.result", &[]).unwrap(),
         vec![7]
@@ -104,7 +104,7 @@ fn public_fields_match_across_packages_and_private_fields_do_not() {
         ),
     ] {
         crate::test_support::reject(
-            &format!("package main\nimport \"shared\"\nfunc main() {{ {body}; }}\n"),
+            &format!("package main\nimport \"test/shared\"\nfunc main() {{ {body}; }}\n"),
             Some(shared),
             message,
             span,

@@ -45,15 +45,27 @@ pub(super) const CASES: &[Case] = &[
             path: "main.ond",
             text: "package other\nfunc main() {}\n",
         }],
-        expected: Expected::Reject(&[ExpectedDiagnostic {
-            severity: Severity::Error,
-            message: Message::Exact("package `.` must declare `package main`"),
-            location: Location::Source {
-                file: "main.ond",
-                text: "package other",
-                occurrence: 0,
+        expected: Expected::Reject(&[
+            ExpectedDiagnostic {
+                severity: Severity::Error,
+                message: Message::Exact("package `test` must declare `package test`"),
+                location: Location::Source {
+                    file: "main.ond",
+                    text: "package other",
+                    occurrence: 0,
+                },
             },
-        }]),
+            ExpectedDiagnostic {
+                severity: Severity::Error,
+                message: Message::Exact("project root must contain `main.ond`"),
+                location: Location::Project,
+            },
+            ExpectedDiagnostic {
+                severity: Severity::Error,
+                message: Message::Exact("`main` package must define `func main()`"),
+                location: Location::Project,
+            },
+        ]),
     },
     Case {
         id: "PKG-01.directory_package_mismatch",
@@ -72,7 +84,7 @@ pub(super) const CASES: &[Case] = &[
         ],
         expected: Expected::Reject(&[ExpectedDiagnostic {
             severity: Severity::Error,
-            message: Message::Exact("package `lib` must declare `package lib`"),
+            message: Message::Exact("package `test/lib` must declare `package lib`"),
             location: Location::Source {
                 file: "lib/a.ond",
                 text: "package wrong",
@@ -102,7 +114,7 @@ pub(super) const CASES: &[Case] = &[
         expected: Expected::Reject(&[
             ExpectedDiagnostic {
                 severity: Severity::Error,
-                message: Message::Exact("package `lib` must declare `package lib`"),
+                message: Message::Exact("package `test/lib` must declare `package lib`"),
                 location: Location::Source {
                     file: "lib/b.ond",
                     text: "package wrong",
@@ -112,7 +124,7 @@ pub(super) const CASES: &[Case] = &[
             ExpectedDiagnostic {
                 severity: Severity::Error,
                 message: Message::Exact(
-                    "all files in package `lib` must use the same package clause",
+                    "all files in package `test/lib` must use the same package clause",
                 ),
                 location: Location::Source {
                     file: "lib/a.ond",
@@ -145,7 +157,7 @@ pub(super) const CASES: &[Case] = &[
         files: &[
             SourceFile {
                 path: "main.ond",
-                text: "package main\nimport \"lib\"\nfunc main() {}\n",
+                text: "package main\nimport \"test/lib\"\nfunc main() {}\n",
             },
             SourceFile {
                 path: "lib/empty.ond",
@@ -210,12 +222,12 @@ pub(super) const CASES: &[Case] = &[
             },
             SourceFile {
                 path: "lib/a.ond",
-                text: "package lib\nimport \"lib\"\n",
+                text: "package lib\nimport \"test/lib\"\n",
             },
         ],
         expected: Expected::Reject(&[ExpectedDiagnostic {
             severity: Severity::Error,
-            message: Message::Exact("import cycle detected: lib -> lib"),
+            message: Message::Exact("import cycle detected: test/lib -> test/lib"),
             location: Location::Project,
         }]),
     },
@@ -231,20 +243,20 @@ pub(super) const CASES: &[Case] = &[
             },
             SourceFile {
                 path: "a/a.ond",
-                text: "package a\nimport \"b\"\n",
+                text: "package a\nimport \"test/b\"\n",
             },
             SourceFile {
                 path: "b/b.ond",
-                text: "package b\nimport \"c\"\n",
+                text: "package b\nimport \"test/c\"\n",
             },
             SourceFile {
                 path: "c/c.ond",
-                text: "package c\nimport \"a\"\n",
+                text: "package c\nimport \"test/a\"\n",
             },
         ],
         expected: Expected::Reject(&[ExpectedDiagnostic {
             severity: Severity::Error,
-            message: Message::Exact("import cycle detected: a -> b -> c -> a"),
+            message: Message::Exact("import cycle detected: test/a -> test/b -> test/c -> test/a"),
             location: Location::Project,
         }]),
     },
@@ -406,19 +418,19 @@ pub(super) const CASES: &[Case] = &[
         files: &[
             SourceFile {
                 path: "main.ond",
-                text: "package main\nimport \"nested/lib\"\nvar G: lib.T = lib.C as lib.T\nconst C = lib.C\nfunc main() { G = lib.G; }\n",
+                text: "package main\nimport \"test/nested/lib\"\nvar G: lib.T = lib.C as lib.T\nconst C = lib.C\nfunc main() { G = lib.G; }\n",
             },
             SourceFile {
                 path: "z.ond",
-                text: "package main\nimport \"nested/lib\"\n",
+                text: "package main\nimport \"test/nested/lib\"\n",
             },
             SourceFile {
                 path: "zz.ond",
-                text: "package main\nimport \"nested/lib\"\n",
+                text: "package main\nimport \"test/nested/lib\"\n",
             },
             SourceFile {
                 path: "zzz.ond",
-                text: "package main\nimport \"nested/lib\"\nconst Later = lib.C\nfunc later() -> lib.T { return lib.G; }\n",
+                text: "package main\nimport \"test/nested/lib\"\nconst Later = lib.C\nfunc later() -> lib.T { return lib.G; }\n",
             },
             SourceFile {
                 path: "nested/lib/a.ond",
@@ -448,11 +460,11 @@ pub(super) const CASES: &[Case] = &[
         files: &[
             SourceFile {
                 path: "main.ond",
-                text: "package main\nimport \"a/lib\"\nfunc main() {}\n",
+                text: "package main\nimport \"test/a/lib\"\nfunc main() {}\n",
             },
             SourceFile {
                 path: "z.ond",
-                text: "package main\nimport \"b/lib\"\n",
+                text: "package main\nimport \"test/b/lib\"\n",
             },
             SourceFile {
                 path: "a/lib/a.ond",

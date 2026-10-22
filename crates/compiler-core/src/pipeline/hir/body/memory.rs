@@ -10,19 +10,40 @@ impl BodyLowerer<'_> {
     pub(super) fn read_only_target(&self, source: &ast::Expr) -> bool {
         match source {
             ast::Expr::Literal(ast::Literal::String(_, _)) => true,
-            ast::Expr::Name(path) if path.segments.len() == 1 => {
-                let name = &path.segments[0].name;
-                self.constants.contains_key(name)
-                    || (!self.names.contains_key(name)
-                        && self
-                            .universe
-                            .iter()
-                            .find(|package| package.id == self.package_id)
-                            .is_some_and(|package| package.constants.contains_key(name)))
+            ast::Expr::Name(path) => {
+                let Some(first) = path.segments.first() else {
+                    return false;
+                };
+                if self.constants.contains_key(&first.name) {
+                    return true;
+                }
+                if self.names.contains_key(&first.name) {
+                    return false;
+                }
+                if self
+                    .universe
+                    .iter()
+                    .find(|package| package.id == self.package_id)
+                    .is_some_and(|package| package.constants.contains_key(&first.name))
+                {
+                    return true;
+                }
+                if let Some(member) = path.segments.get(1)
+                    && let Some(package_id) = self.imported_package(&first.name, path.span)
+                {
+                    return self
+                        .universe
+                        .iter()
+                        .find(|package| package.id == package_id)
+                        .is_some_and(|package| package.constants.contains_key(&member.name));
+                }
+                false
             }
             ast::Expr::Selector { base, field, .. } => {
                 if let ast::Expr::Name(path) = base.as_ref()
                     && path.segments.len() == 1
+                    && !self.names.contains_key(&path.segments[0].name)
+                    && !self.constants.contains_key(&path.segments[0].name)
                     && let Some(package_id) =
                         self.imported_package(&path.segments[0].name, path.span)
                 {
@@ -46,9 +67,8 @@ impl BodyLowerer<'_> {
 
     pub(super) fn addressable(&self, expr: &hir::Expr) -> bool {
         match &expr.kind {
-            hir::ExprKind::Local(_) | hir::ExprKind::Global(_) | hir::ExprKind::Dereference(_) => {
-                true
-            }
+            hir::ExprKind::Local(local) => !self.non_addressable_locals.contains(local),
+            hir::ExprKind::Global(_) | hir::ExprKind::Dereference(_) => true,
             hir::ExprKind::Field { base, .. } => self.addressable(base),
             hir::ExprKind::Index { base, .. } => match self.types.underlying_kind(base.ty) {
                 Some(TypeKind::Pointer(_)) => true,
@@ -124,7 +144,12 @@ impl BodyLowerer<'_> {
     ) -> Option<hir::Expr> {
         let base = self.lower_expr(source, None)?;
         let expected_index = self
-            .unique_operator_parameter_types(ast::OperatorName::Index, &[Some(base.ty), None])
+            .unique_operator_parameter_types(
+                ast::OperatorName::Index,
+                &base,
+                &[Some(base.ty), None],
+                span,
+            )
             .map(|parameters| parameters[1])
             .or_else(|| {
                 matches!(
@@ -133,7 +158,12 @@ impl BodyLowerer<'_> {
                 )
                 .then_some(TypeId::U32)
             });
-        let lowered_index = self.lower_value(index, expected_index)?;
+        let lowered_index = self.lower_value(
+            index,
+            super::expressions::contextual_literal(index)
+                .then_some(expected_index)
+                .flatten(),
+        )?;
         if let Some(call) = self.matching_operator_call(
             ast::OperatorName::Index,
             vec![base.clone(), lowered_index.clone()],
@@ -149,6 +179,24 @@ impl BodyLowerer<'_> {
                 span,
             });
         }
+        let lowered_index = if matches!(
+            self.types.underlying_kind(base.ty),
+            Some(TypeKind::Pointer(_))
+        ) && lowered_index.ty != TypeId::U32
+        {
+            self.lower_value(index, Some(TypeId::U32))?
+        } else {
+            lowered_index
+        };
+        self.builtin_index(base, lowered_index, span)
+    }
+
+    pub(super) fn builtin_index(
+        &mut self,
+        base: hir::Expr,
+        index: hir::Expr,
+        span: Span,
+    ) -> Option<hir::Expr> {
         let (ty, length, raw) = match self.types.underlying_kind(base.ty) {
             Some(TypeKind::Array { length, element }) => (*element, Some(*length), false),
             Some(TypeKind::Pointer(element)) => (*element, None, true),
@@ -159,11 +207,9 @@ impl BodyLowerer<'_> {
                 );
             }
         };
-        let index = if raw && lowered_index.ty != TypeId::U32 {
-            self.lower_value(index, Some(TypeId::U32))?
-        } else {
-            lowered_index
-        };
+        if raw && index.ty != TypeId::U32 {
+            return self.type_mismatch(index.span, TypeId::U32, index.ty);
+        }
         if !self.types.is_integer(index.ty) {
             return self.fail(index.span, "index must be an integer");
         }

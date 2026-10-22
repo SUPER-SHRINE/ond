@@ -35,7 +35,7 @@ fn named_unnamed_and_mixed_signatures_have_identical_types() {
 #[test]
 fn callback_arguments_returns_and_indirect_calls_reach_valid_mir() {
     compile("package main\nfunc identity(x: i32) -> i32 { return x; }\nfunc choose() -> func(i32) -> i32 { return identity; }\nfunc apply(f: func(i32) -> i32, x: i32) -> i32 { return f(x); }\nfunc main() { var callback: func(i32) -> i32 = choose(); var x = apply(callback, 7); }\n", None).unwrap();
-    compile("package main\nimport \"shared\"\nvar callback: func(shared.T) -> shared.T\nfunc main() {}\n", Some("package shared\ntype T i32\n")).unwrap();
+    compile("package main\nimport \"test/shared\"\nvar callback: func(shared.T) -> shared.T\nfunc main() {}\n", Some("package shared\ntype T i32\n")).unwrap();
 }
 
 #[test]

@@ -5,21 +5,21 @@ use ond_protocol::{
     interface::{Export, Kind, ValueKind},
 };
 use std::{collections::BTreeMap, fs, path::PathBuf};
-struct Fixture(PathBuf);
+pub(crate) struct Fixture(pub(crate) PathBuf);
 impl Fixture {
-    fn new(label: &str) -> Self {
+    pub(crate) fn new(label: &str) -> Self {
         let root = std::env::temp_dir().join(format!("ond-exports-{label}-{}", std::process::id()));
         fs::create_dir(&root).unwrap();
-        fs::write(root.join("ond.toml"), "").unwrap();
+        fs::write(root.join("ond.toml"), "[project]\nname = \"test\"\n").unwrap();
         Self(root)
     }
-    fn request(&self) -> CompileRequest {
+    pub(crate) fn request(&self) -> CompileRequest {
         CompileRequest {
+            test: false,
             excluded_dirs: Vec::new(),
             contract: Contract::default(),
             project_root: self.0.clone(),
             sources: BTreeMap::new(),
-            libraries: BTreeMap::new(),
             cache_dir: None,
         }
     }
@@ -36,7 +36,7 @@ fn export_closure_roundtrips_recursive_types_private_owners_and_constant_bits() 
     request.sources = BTreeMap::from([
         (
             "main.ond".into(),
-            "package main\nimport \"api\"\nfunc main(){var _=api.Flag}".into(),
+            "package main\nimport \"test/api\"\nfunc main(){var _=api.Flag}".into(),
         ),
         (
             "api/api.ond".into(),
@@ -63,7 +63,7 @@ func secret(){}
         .manifest
         .packages
         .iter()
-        .find(|p| p.package == "api")
+        .find(|p| p.package == "test/api")
         .unwrap();
     let artifact = cache::read_artifact(reference).unwrap();
     let data = &artifact.interface;
@@ -73,12 +73,12 @@ func secret(){}
         !data
             .types
             .iter()
-            .any(|t| t.name.as_deref() == Some("api.unused"))
+            .any(|t| t.name.as_deref() == Some("test/api.unused"))
     );
     assert!(
         data.types
             .iter()
-            .any(|t| t.name.as_deref() == Some("api.hidden"))
+            .any(|t| t.name.as_deref() == Some("test/api.hidden"))
     );
     let Export::Type(node) = data.exports["Node"] else {
         panic!("not a type")
@@ -88,12 +88,12 @@ func secret(){}
         data.types
             .iter()
             .any(|t| matches!(&t.kind, Kind::Struct(fields)
-        if fields.iter().any(|f| f.name=="hidden" && f.private_owner.as_deref()==Some("api"))))
+        if fields.iter().any(|f| f.name=="hidden" && f.private_owner.as_deref()==Some("test/api"))))
     );
     assert!(
         matches!(&data.exports["Real"], Export::Constant(v) if v.kind == ValueKind::Float32(0x80000000))
     );
-    assert!(matches!(&data.exports["Empty"], Export::Constant(v) if v.kind == ValueKind::Nil));
+    assert!(matches!(&data.exports["Empty"], Export::Constant(v) if v.kind == ValueKind::Zero));
     assert!(
         matches!(&data.exports["Bytes"], Export::Constant(v) if matches!(&v.kind, ValueKind::Composite(items) if items.len()==3))
     );
@@ -113,7 +113,7 @@ func secret(){}
             .manifest
             .packages
             .iter()
-            .find(|p| p.package == "api")
+            .find(|p| p.package == "test/api")
             .unwrap(),
     )
     .unwrap();
@@ -131,13 +131,12 @@ fn optional_library_reachability_and_required_package_membership() {
     request
         .sources
         .insert("main.ond".into(), "package main\nfunc main(){}".into());
-    request.libraries.insert(
-        "lib/lib.ond".into(),
-        "package lib\nimport \"dep\"\nconst Value=dep.Value".into(),
+    crate::dependency_test_support::source(
+        &f.0,
+        "lib/lib.ond",
+        "package lib\nimport \"dep\"\nconst Value=dep.Value",
     );
-    request
-        .libraries
-        .insert("dep/dep.ond".into(), "package dep\nconst Value=5".into());
+    crate::dependency_test_support::source(&f.0, "dep/dep.ond", "package dep\nconst Value=5");
     let result = compile(request.clone(), "test").unwrap();
     assert_eq!(result.rebuilt, ["."]);
     request.sources.insert(
@@ -156,7 +155,14 @@ fn optional_library_reachability_and_required_package_membership() {
         "package lib\nconst Extra=2".into(),
     );
     let result = compile(request, "test").unwrap();
-    assert_eq!(result.manifest.packages.len(), 3);
+    assert_eq!(result.manifest.packages.len(), 2);
+    assert!(
+        result
+            .manifest
+            .packages
+            .iter()
+            .any(|package| package.package == "test/lib")
+    );
 }
 
 #[test]
@@ -164,7 +170,7 @@ fn generic_metadata_identity_survives_unrelated_type_ids() {
     let f = Fixture::new("generic-identity");
     let mut request = f.request();
     request.sources = BTreeMap::from([
-        ("main.ond".into(), "package main\nimport \"api\"\nfunc main(){ cell:=api.Make(); _=cell.Get() }".into()),
+        ("main.ond".into(), "package main\nimport \"test/api\"\nfunc main(){ cell:=api.Make(); _=cell.Get() }".into()),
         ("api/api.ond".into(), "package api\ntype Token struct { Value:u32 }\ntype Cell[T] struct { Value:T }\nfunc (cell:Cell[T]) Get()->T { return cell.Value }\nfunc Make()->Cell[Token]{ return Cell[Token]{} }".into()),
     ]);
     let before = compile(request.clone(), "test").unwrap();
@@ -173,7 +179,7 @@ fn generic_metadata_identity_survives_unrelated_type_ids() {
             .manifest
             .packages
             .iter()
-            .find(|p| p.package == "api")
+            .find(|p| p.package == "test/api")
             .unwrap(),
     )
     .unwrap();
@@ -195,9 +201,12 @@ fn generic_metadata_identity_survives_unrelated_type_ids() {
             .manifest
             .packages
             .iter()
-            .find(|p| p.package == "api")
+            .find(|p| p.package == "test/api")
             .unwrap(),
     )
     .unwrap();
     assert_eq!(artifact.interface, changed.interface);
 }
+
+#[path = "artifact_conformance_tests.rs"]
+mod artifact_conformance_tests;

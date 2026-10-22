@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::diagnostic::{Diagnostic, Diagnostics, FrontendError};
 use crate::source::{FileId, SourceDb, Span};
+use serde::Deserialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PackageId(pub usize);
@@ -41,6 +42,14 @@ pub fn load_project_with_overrides_and_exclusions(
     overrides: &BTreeMap<PathBuf, String>,
     excluded_dirs: &[PathBuf],
 ) -> Result<LoadedProject, FrontendError> {
+    load_project_with_test_sources(root, overrides, excluded_dirs, false)
+}
+pub fn load_project_with_test_sources(
+    root: impl AsRef<Path>,
+    overrides: &BTreeMap<PathBuf, String>,
+    excluded_dirs: &[PathBuf],
+    include_tests: bool,
+) -> Result<LoadedProject, FrontendError> {
     let root = root.as_ref();
     let root = if root.is_file() && root.file_name().is_some_and(|name| name == "ond.toml") {
         root.parent().unwrap_or(root)
@@ -61,6 +70,7 @@ pub fn load_project_with_overrides_and_exclusions(
         ));
         return Err(FrontendError::new(diagnostics.into_vec()));
     }
+    let project_name = project_name(&manifest_path)?;
 
     let mut sources = SourceDb::default();
     let mut files_by_package = BTreeMap::<String, Vec<FileId>>::new();
@@ -69,6 +79,7 @@ pub fn load_project_with_overrides_and_exclusions(
     let options = SourceLoadOptions {
         overrides,
         excluded_dirs,
+        include_tests,
     };
     collect_ond_files(
         &root,
@@ -85,10 +96,25 @@ pub fn load_project_with_overrides_and_exclusions(
     }
 
     let mut packages = Vec::new();
-    for (index, (logical_path, files)) in files_by_package.into_iter().enumerate() {
+    let app_root = files_by_package.get(".").is_some_and(|files| {
+        is_application_root(files.iter().map(|id| {
+            let file = sources.file(*id);
+            (file.path(), file.text())
+        }))
+    });
+    for (index, (relative_path, files)) in files_by_package.into_iter().enumerate() {
         let directory = dir_by_package
-            .remove(&logical_path)
+            .remove(&relative_path)
             .unwrap_or_else(|| root.clone());
+        let logical_path = if relative_path == "." {
+            if app_root {
+                ".".to_string()
+            } else {
+                project_name.clone()
+            }
+        } else {
+            format!("{project_name}/{relative_path}")
+        };
         packages.push(PackageSources {
             id: PackageId(index),
             logical_path,
@@ -100,8 +126,8 @@ pub fn load_project_with_overrides_and_exclusions(
     let ignored_paths = excluded_dirs
         .iter()
         .filter_map(|path| path.strip_prefix(&root).ok())
-        .map(path_to_logical)
-        .filter(|path| path != ".")
+        .filter(|path| *path != Path::new("."))
+        .map(|path| format!("{project_name}/{}", path_to_logical(path)))
         .collect();
 
     Ok(LoadedProject {
@@ -113,8 +139,73 @@ pub fn load_project_with_overrides_and_exclusions(
     })
 }
 
+#[derive(Deserialize)]
+struct ManifestProject {
+    project: Option<ManifestName>,
+}
+
+#[derive(Deserialize)]
+struct ManifestName {
+    name: String,
+}
+
+pub(crate) fn project_name(path: &Path) -> Result<String, FrontendError> {
+    let text = fs::read_to_string(path)
+        .map_err(|error| manifest_error(format!("failed to read `{}`: {error}", path.display())))?;
+    let manifest: ManifestProject = toml::from_str(&text).map_err(|error| {
+        manifest_error(format!("invalid manifest `{}`: {error}", path.display()))
+    })?;
+    let name = manifest
+        .project
+        .map(|project| project.name)
+        .ok_or_else(|| {
+            manifest_error(format!(
+                "project must declare `[project] name` in {}",
+                path.display()
+            ))
+        })?;
+    let valid = name != "_"
+        && crate::ond::parse_source_file(FileId(0), &format!("package {name}\n"))
+            .is_ok_and(|file| file.package.name == name);
+    if !valid {
+        return Err(manifest_error(format!(
+            "invalid project name `{name}` in {}; `[project].name` must be an Ond identifier",
+            path.display()
+        )));
+    }
+    Ok(name)
+}
+
+fn manifest_error(message: String) -> FrontendError {
+    FrontendError::new(vec![Diagnostic::error(Span::synthetic(), message)])
+}
+
+fn declared_root_package(source: &str) -> Option<String> {
+    let mut prefix = String::new();
+    for line in source.split_inclusive('\n') {
+        prefix.push_str(line);
+        if let Ok(file) = crate::ond::parse_source_file(FileId(0), &prefix) {
+            return Some(file.package.name);
+        }
+    }
+    None
+}
+
+pub(crate) fn is_application_root<'a>(files: impl Iterator<Item = (&'a Path, &'a str)>) -> bool {
+    let mut declaration = None;
+    let mut has_main_file = false;
+    for (path, text) in files {
+        if declaration.is_none() {
+            declaration = declared_root_package(text);
+        }
+        has_main_file |= path.file_name().is_some_and(|name| name == "main.ond");
+    }
+    declaration.map_or(has_main_file, |name| name == "main")
+}
+
 #[derive(Clone, Copy)]
 struct SourceLoadOptions<'a> {
+    include_tests: bool,
     overrides: &'a BTreeMap<PathBuf, String>,
     excluded_dirs: &'a [PathBuf],
 }
@@ -144,6 +235,7 @@ fn collect_ond_files(
 
     for entry in entries {
         let path = entry.path();
+
         let file_type = match entry.file_type() {
             Ok(file_type) => file_type,
             Err(err) => {
@@ -179,7 +271,10 @@ fn collect_ond_files(
             continue;
         }
 
-        if !file_type.is_file() || path.extension().and_then(|ext| ext.to_str()) != Some("ond") {
+        if !file_type.is_file()
+            || (!options.include_tests && is_test_source(&path))
+            || path.extension().and_then(|ext| ext.to_str()) != Some("ond")
+        {
             continue;
         }
 
@@ -199,7 +294,12 @@ fn collect_ond_files(
             .and_then(|parent| parent.strip_prefix(root).ok())
             .unwrap_or_else(|| Path::new(""));
         let logical_path = path_to_logical(relative_dir);
-        let file_id = sources.add_file(path.clone(), text);
+        let display_path = path
+            .strip_prefix(root)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let file_id = sources.add_file_with_display_path(path.clone(), text, display_path);
         files_by_package
             .entry(logical_path.clone())
             .or_default()
@@ -243,4 +343,10 @@ fn path_to_logical(path: &Path) -> String {
     } else {
         display
     }
+}
+
+pub fn is_test_source(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n == "test.ond" || n.ends_with("_test.ond"))
 }

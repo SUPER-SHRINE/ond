@@ -85,7 +85,50 @@ pub(crate) fn scan(source: &str) -> (usize, Result<Kind, &'static str>) {
         }
         Ok(if float { Kind::Float } else { Kind::Integer })
     })();
-    (i, result)
+    let mut candidate_end = if bytes.first() == Some(&b'0') {
+        let mut end = 1;
+        while bytes.get(end) == Some(&b'_') {
+            end += 1;
+        }
+        if bytes
+            .get(end)
+            .is_some_and(|byte| matches!(byte, b'b' | b'B' | b'o' | b'O' | b'x' | b'X'))
+        {
+            end + 1
+        } else {
+            0
+        }
+    } else {
+        0
+    };
+    let hex_candidate = candidate_end > 0 && matches!(bytes[candidate_end - 1], b'x' | b'X');
+    while let Some(&byte) = bytes.get(candidate_end) {
+        let exponent = if hex_candidate {
+            matches!(byte, b'p' | b'P')
+        } else {
+            matches!(byte, b'e' | b'E' | b'p' | b'P')
+        };
+        let allowed = byte.is_ascii_digit()
+            || matches!(byte, b'_' | b'.')
+            || exponent
+            || (hex_candidate && byte.is_ascii_hexdigit())
+            || (matches!(byte, b'+' | b'-')
+                && candidate_end > prefix
+                && if hex_candidate {
+                    matches!(bytes[candidate_end - 1], b'p' | b'P')
+                } else {
+                    matches!(bytes[candidate_end - 1], b'e' | b'E' | b'p' | b'P')
+                });
+        if !allowed {
+            break;
+        }
+        candidate_end += 1;
+    }
+    if candidate_end != i {
+        (candidate_end, result.and(Err("invalid numeric literal")))
+    } else {
+        (i, result)
+    }
 }
 
 fn digits(text: &str, radix: u32, prefix: bool) -> Result<usize, &'static str> {
@@ -109,6 +152,11 @@ fn digits(text: &str, radix: u32, prefix: bool) -> Result<usize, &'static str> {
 }
 
 pub(crate) fn integer(text: &str) -> Option<u64> {
+    use num_traits::ToPrimitive;
+    integer_exact(text)?.to_u64()
+}
+
+pub(crate) fn integer_exact(text: &str) -> Option<num_bigint::BigInt> {
     if scan(text) != (text.len(), Ok(Kind::Integer)) {
         return None;
     }
@@ -120,7 +168,7 @@ pub(crate) fn integer(text: &str) -> Option<u64> {
         _ if clean.starts_with('0') && clean.len() > 1 => (8, clean.as_str()),
         _ => (10, clean.as_str()),
     };
-    u64::from_str_radix(digits, radix).ok()
+    num_bigint::BigInt::parse_bytes(digits.as_bytes(), radix)
 }
 
 pub(crate) fn float(text: &str) -> Result<f32, &'static str> {

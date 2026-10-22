@@ -174,28 +174,6 @@ pub(super) fn write_value(
                 }
                 Ok(())
             }
-            Some(mir::TypeKind::Interface(interface)) => {
-                let fields = layout::data(types, value.ty, span)?.fields;
-                let expected = [interface.data_pointer, interface.vtable];
-                for (index, child) in values {
-                    let Some(field_ty) = expected.get(*index as usize) else {
-                        return Err(error(span, "invalid static interface initializer"));
-                    };
-                    if child.ty != *field_ty {
-                        return Err(error(span, "static interface field type mismatch"));
-                    }
-                    write_value(
-                        types,
-                        child,
-                        offset + fields[*index as usize],
-                        data,
-                        relocations,
-                        section,
-                        span,
-                    )?;
-                }
-                Ok(())
-            }
             _ => Err(error(
                 span,
                 "composite static initializer requires aggregate type",

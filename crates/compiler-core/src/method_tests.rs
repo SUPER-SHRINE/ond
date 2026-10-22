@@ -146,14 +146,13 @@ fn generic_type_methods_infer_receiver_arguments_and_monomorphize() {
 }
 
 #[test]
-fn instantiated_generic_methods_satisfy_interfaces() {
+fn instantiated_generic_methods_work_through_pointer_parameters() {
     let compilation = compile(
         "package main\n\
-         type Reader interface { Read() -> u32; }\n\
          type Cell[T] struct { value: T; }\n\
          func (cell: *Cell[Element]) Read() -> Element { return cell.value; }\n\
-         func consume(reader: Reader) -> u32 { return reader.Read(); }\n\
-         func observe() -> u32 { var cell = Cell[u32]{value: 7}; return consume((&cell) as Reader); }\n\
+         func consume(reader: *Cell[u32]) -> u32 { return reader.Read(); }\n\
+         func observe() -> u32 { var cell = Cell[u32]{value: 7}; return consume(&cell); }\n\
          func main() {}\n",
         None,
     )
@@ -169,7 +168,7 @@ fn instantiated_generic_methods_satisfy_interfaces() {
 #[test]
 fn imported_generic_methods_are_specialized_in_their_owner_package() {
     let compilation = compile(
-        "package main\nimport \"shared\"\nfunc observe() -> u32 { var cell = shared.Cell[u32]{Value: 11}; return cell.Get(); }\nfunc main() {}\n",
+        "package main\nimport \"test/shared\"\nfunc observe() -> u32 { var cell = shared.Cell[u32]{Value: 11}; return cell.Get(); }\nfunc main() {}\n",
         Some(
             "package shared\ntype Cell[T] struct { Value: T; }\nfunc (cell: Cell[Element]) Get() -> Element { return cell.Value; }\n",
         ),
@@ -181,9 +180,9 @@ fn imported_generic_methods_are_specialized_in_their_owner_package() {
         [11]
     );
     assert!(compilation.hir.packages.iter().any(|package| {
-        package.logical_path == "shared"
+        package.logical_path == "test/shared"
             && package.items.iter().any(|item| {
-                matches!(item, hir::Item::Func(function) if function.canonical_name.contains("shared.\u{1f}generic_method.Cell.Get"))
+                matches!(item, hir::Item::Func(function) if function.canonical_name.contains("test/shared.\u{1f}generic_method.Cell.Get"))
             })
     }));
 }

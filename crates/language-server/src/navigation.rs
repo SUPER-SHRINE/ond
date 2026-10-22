@@ -225,28 +225,6 @@ fn declaration_in_type(ty: &ast::Type, offset: usize) -> Option<(Span, Span)> {
                 .then_some((field.name.span, field.span))
                 .or_else(|| declaration_in_type(&field.ty, offset))
         }),
-        ast::Type::Interface { methods, .. } => methods.iter().find_map(|method| {
-            contains(method.name.span, offset)
-                .then_some((method.name.span, method.span))
-                .or_else(|| {
-                    method.signature.params.iter().find_map(|parameter| {
-                        parameter
-                            .name
-                            .as_ref()
-                            .and_then(|name| {
-                                contains(name.span, offset).then_some((name.span, parameter.span))
-                            })
-                            .or_else(|| declaration_in_type(&parameter.ty, offset))
-                    })
-                })
-                .or_else(|| {
-                    method
-                        .signature
-                        .results
-                        .iter()
-                        .find_map(|ty| declaration_in_type(ty, offset))
-                })
-        }),
         ast::Type::Func { signature, .. } => signature.params.iter().find_map(|field| {
             field
                 .name
@@ -402,27 +380,6 @@ fn full_in_type(ty: &ast::Type, selection: Span) -> Option<Span> {
             (f.name.span == selection)
                 .then_some(f.span)
                 .or_else(|| full_in_type(&f.ty, selection))
-        }),
-        ast::Type::Interface { methods, .. } => methods.iter().find_map(|method| {
-            (method.name.span == selection)
-                .then_some(method.span)
-                .or_else(|| {
-                    method.signature.params.iter().find_map(|parameter| {
-                        parameter
-                            .name
-                            .as_ref()
-                            .is_some_and(|name| name.span == selection)
-                            .then_some(parameter.span)
-                            .or_else(|| full_in_type(&parameter.ty, selection))
-                    })
-                })
-                .or_else(|| {
-                    method
-                        .signature
-                        .results
-                        .iter()
-                        .find_map(|ty| full_in_type(ty, selection))
-                })
         }),
         ast::Type::Func { signature, .. } => signature
             .params

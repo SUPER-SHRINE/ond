@@ -3,8 +3,8 @@ use compiler::source::{SourceDb, SourceFile, Span};
 use serde_json::{Value, json};
 
 use crate::completion::{completion_type_name, project_value_type_for_name};
+use crate::hover_reference::resolve_field_reference;
 use crate::hover_reference::{ResolvedTarget, resolve_local_value_reference, resolve_reference};
-use crate::hover_reference::{resolve_field_reference, resolve_interface_method_reference};
 use crate::protocol::{Position, lsp_offset};
 use crate::semantic_tokens::builtin_call_at;
 
@@ -85,56 +85,6 @@ pub fn hover_for_project(
             "range": {
                 "start": lsp_position(source, field.reference.start),
                 "end": lsp_position(source, field.reference.end)
-            }
-        }));
-    }
-
-    if let Some(method) = resolve_interface_method_reference(project, package, file, offset) {
-        let declaration_file = project
-            .packages
-            .iter()
-            .flat_map(|package| &package.files)
-            .find(|file| file.file_id == method.declaration.file)?;
-        let declaration_source = sources.file(method.declaration.file);
-        let target = find_target(
-            declaration_file,
-            declaration_source,
-            method.declaration.start,
-        )?;
-        let parameters = method
-            .signature
-            .params
-            .iter()
-            .map(|parameter| {
-                parameter.name.as_ref().map_or_else(
-                    || completion_type_name(&parameter.ty),
-                    |name| format!("{}: {}", name.name, completion_type_name(&parameter.ty)),
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-        let returns = match method.signature.results.as_slice() {
-            [] => String::new(),
-            [result] => format!(" -> {}", completion_type_name(result)),
-            results => format!(
-                " -> ({})",
-                results
-                    .iter()
-                    .map(completion_type_name)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-        };
-        let mut value = format!("```ond\n{}({parameters}){returns}\n```", method.name);
-        if let Some(comment) = documentation_for(&target, declaration_source) {
-            value.push_str("\n\n");
-            value.push_str(&comment);
-        }
-        return Some(json!({
-            "contents": { "kind": "markdown", "value": value },
-            "range": {
-                "start": lsp_position(source, method.reference.start),
-                "end": lsp_position(source, method.reference.end)
             }
         }));
     }
@@ -428,20 +378,6 @@ fn find_target(file: &ast::File, source: &SourceFile, offset: usize) -> Option<H
                             }
                         }
                     }
-                    if let ast::Type::Interface { methods, .. } = &spec.ty {
-                        for method in methods {
-                            if contains(method.name.span.start, method.name.span.end, offset) {
-                                return Some(target_for_name(
-                                    TargetKind::Func,
-                                    method.span.start,
-                                    method.span.end,
-                                    method.name.span.start,
-                                    method.name.span.end,
-                                    source.slice(method.span).trim().to_string(),
-                                ));
-                            }
-                        }
-                    }
                 }
             }
             ast::TopLevelDecl::Func(decl) => {
@@ -560,7 +496,6 @@ fn format_type(ty: &ast::Type, source: &SourceFile) -> String {
                 .join("; ");
             format!("struct {{ {} }}", fields)
         }
-        ast::Type::Interface { span, .. } => source.slice(*span).trim().to_string(),
         ast::Type::Func { span, .. } => source.slice(*span).trim().to_string(),
     }
 }
@@ -814,15 +749,6 @@ mod tests {
                 .unwrap()
                 .contains("func (list: *List[T]) push(value: T)")
         );
-    }
-
-    #[test]
-    fn resolves_generic_interface_method_hover_with_the_applied_type() {
-        let text = "package main\ntype List[T] interface { Get(index: u32) -> T; }\nfunc use(values: List[u16]) { _ = values.Get(0) }\n";
-
-        let method = hover_at(text, "Get", 1).expect("generic interface method hover");
-        let value = method["contents"]["value"].as_str().unwrap();
-        assert!(value.contains("Get(index: u32) -> u16"), "{value}");
     }
 
     #[test]

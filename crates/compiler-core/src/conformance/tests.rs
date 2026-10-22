@@ -254,3 +254,46 @@ fn rejects_absent_location_and_empty_reject_expectations() {
     };
     assert!(run(&case).unwrap_err().contains("occurrence not found"));
 }
+
+#[test]
+fn spec_cause_expectation_accepts_unspecified_diagnostic_text_and_inner_span() {
+    let source = "package main\nfunc main() { var x: i32 = true }\n";
+    let case = Case {
+        id: "DIAG-01.source-cause-any-message",
+        specs: &["DIAG-01"],
+        layer: Layer::Core,
+        manifest: true,
+        files: &[SourceFile {
+            path: "main.ond",
+            text: source,
+        }],
+        expected: Expected::Reject(&[ExpectedDiagnostic {
+            severity: Severity::Error,
+            message: Message::Any,
+            location: Location::WithinSource {
+                file: "main.ond",
+                text: "var x: i32 = true",
+                occurrence: 0,
+            },
+        }]),
+    };
+    run(&case).unwrap();
+    assert!(
+        run(&Case {
+            expected: Expected::Reject(&[ExpectedDiagnostic {
+                location: Location::WithinSource {
+                    file: "main.ond",
+                    text: "func main()",
+                    occurrence: 0,
+                },
+                ..ExpectedDiagnostic {
+                    severity: Severity::Error,
+                    message: Message::Any,
+                    location: Location::Project,
+                }
+            }]),
+            ..case
+        })
+        .is_err()
+    );
+}

@@ -1,6 +1,7 @@
 use crate::DriverResult;
+pub(crate) use crate::json::encode;
 use ond_protocol::{ArtifactRef, PackageArtifact};
-use serde::{Serialize, de::DeserializeOwned};
+use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
 use std::{
     fs,
@@ -11,9 +12,6 @@ use std::{
 
 pub fn hash(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
-}
-pub fn encode<T: Serialize>(value: &T) -> DriverResult<Vec<u8>> {
-    serde_json::to_vec(value).map_err(|e| vec![e.to_string()])
 }
 pub fn read_json<T: DeserializeOwned>(path: &Path) -> DriverResult<T> {
     let bytes = fs::read(path).map_err(|e| vec![format!("{}: {e}", path.display())])?;
@@ -31,13 +29,25 @@ pub fn read_artifact(reference: &ArtifactRef) -> DriverResult<PackageArtifact> {
     let artifact: PackageArtifact =
         serde_json::from_slice(&bytes).map_err(|e| vec![e.to_string()])?;
     artifact.contract.validate().map_err(|e| vec![e])?;
+    let valid_hash = |value: &str| {
+        value.len() == 64
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    };
+    if !valid_hash(&artifact.build_id)
+        || artifact.dependencies.values().any(|hash| !valid_hash(hash))
+    {
+        return Err(vec![
+            "artifact build identities must be lowercase SHA-256 hashes".into(),
+        ]);
+    }
     artifact.interface.validate().map_err(|e| vec![e])?;
     if artifact.interface.package != artifact.package {
         return Err(vec!["export data package mismatch".into()]);
     }
     if artifact.package != reference.package
         || artifact.build_id != reference.build_id
-        || artifact.object.name != artifact.package
         || artifact.debug.package != artifact.package
     {
         return Err(vec![format!(

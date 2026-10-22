@@ -57,7 +57,8 @@ function Get-StreamSha256 {
 function Get-ReleaseArchivePaths {
     param([string]$Target, [string]$Version)
     $suffix = if ($Target -ceq 'linux-x86_64') { '' } else { '.exe' }
-    @('CHANGELOG.md', 'LICENSE.md', 'README.md', "ond-lsp$suffix", "ond$suffix")
+    if ([version]$Version -lt [version]'0.2.0') { 'CHANGELOG.md' }
+    @('LICENSE.md', 'README.md', "ond-lsp$suffix", "ond$suffix")
     # 公開済み0.1.1の5ファイル契約は変更しない。
     if ([version]$Version -ge [version]'0.1.3') { 'THIRD-PARTY-NOTICES.txt'; 'COPYRIGHT-library.html' }
 }

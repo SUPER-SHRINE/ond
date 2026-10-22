@@ -49,11 +49,6 @@ impl Validator<'_> {
                         Some(TypeKind::Struct(structure)) => {
                             structure.fields.get(*index as usize).map(|f| f.ty)
                         }
-                        Some(TypeKind::Interface(interface)) => match *index {
-                            0 => Some(interface.data_pointer),
-                            1 => Some(interface.vtable),
-                            _ => None,
-                        },
                         _ => None,
                     };
                     if actual != Some(*result) {

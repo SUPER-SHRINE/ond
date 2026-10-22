@@ -201,7 +201,7 @@ fn ambiguous_imports_are_rejected() {
     let error = compile_files(&[
         (
             "main.ond",
-            "package main\nimport \"a/util\"\nimport \"b/util\"\nfunc main() {}\n",
+            "package main\nimport \"test/a/util\"\nimport \"test/b/util\"\nfunc main() {}\n",
         ),
         ("a/util/util.ond", "package util\n"),
         ("b/util/util.ond", "package util\n"),
@@ -317,7 +317,7 @@ fn validator_requires_division_and_bounds_guards() {
 #[test]
 fn validator_rejects_automatic_startup_order() {
     let mut p = compile(
-        "package main\nimport \"shared\"\nfunc main() {}\n",
+        "package main\nimport \"test/shared\"\nfunc main() {}\n",
         Some("package shared\nvar V = 1\n"),
     )
     .unwrap()

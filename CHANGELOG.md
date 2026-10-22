@@ -2,6 +2,29 @@
 
 このファイルには、Ondの利用者に影響する主な変更を記録する。
 
+## 0.3.0
+
+### Added
+
+- `ond compile --test`によるtest buildと`.ondtest` sidecar出力に対応
+- Language Serverで通常/test sourceの解析cacheとtest宣言の補完に対応
+
+### Changed
+
+- `project.name`を必須とし、project名を先頭に置くimport pathと`[dependencies]`による依存登録へ移行
+- `len` operatorの結果を単一の`u32`へ統一
+- 規範仕様を`specs/ond/`へ集約し、適合要件とcaseを再編
+
+### Fixed
+
+- generic具体化診断に使用位置を集約し、暗黙数値helperの呼び出し範囲を`Call`、範囲外のf32から整数への変換faultを`InvalidConversion`として分類
+- 配列`len`の評価とconst適格性、狭い符号付き整数の負値による配列index検査を修正
+
+### Removed
+
+- 組込みinterface型、変換、dispatchを削除し、動的dispatchは通常のstructとfunction pointerで明示する方式へ移行
+- `OND_PATH`環境変数と`--library-dir`による依存指定を削除
+
 ## 0.2.0
 
 ### Added
@@ -95,7 +118,7 @@
 
 - 言語、ABI、MIR、Object／LinkedImage、Rust公開APIの後方互換性は保証しない。
 - 正式な検証環境はWindows x64とRust 1.91.1に限定する。
-- ROM生成、asset配置、実行環境はEnbuなどの機種SDKから提供する。
+- ROM生成、asset配置、実行環境の構成は、対象実行環境向けのtoolやlibraryが提供する。
 - 差分buildのcache garbage collectionは未実装である。
 
 0.1.3は本リポジトリで最初のリリースです。\

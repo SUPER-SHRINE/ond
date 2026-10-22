@@ -8,13 +8,18 @@ use std::collections::{BTreeMap, BTreeSet};
 mod array_layout;
 mod body;
 mod body_names;
+mod cache;
+pub use cache::SemanticCache;
 mod control_flow;
+pub(crate) mod generation;
 mod generic_functions;
+mod generic_paths;
 mod identity;
 #[cfg(test)]
 mod identity_tests;
 mod operators;
 mod types;
+mod validation;
 use body::{BodyLowerer, lower_typed_body};
 use body_names::validate_generic_body_names;
 use control_flow::{block_can_complete_normally, return_diagnostics};
@@ -24,11 +29,38 @@ use types::{
     TypePackage, collect_type_universe, generic_method_receiver, method_receiver_name,
     resolve_all_defined_types, resolve_defined_type, resolve_method_signature, resolve_signature,
 };
+use validation::{report_duplicate_top_level, validate_test_signatures};
 
 pub(crate) fn lower_to_hir(
     loaded: &LoadedProject,
     ast: &ast::Project,
 ) -> Result<hir::Project, FrontendError> {
+    validate_test_signatures(loaded, ast)?;
+    lower_context_to_hir(loaded, ast, None)
+}
+
+fn lower_context_to_hir(
+    loaded: &LoadedProject,
+    ast: &ast::Project,
+    selected: Option<&BTreeSet<crate::source::FileId>>,
+) -> Result<hir::Project, FrontendError> {
+    lower_context_with_generation(loaded, ast, selected, false).map(|(project, _)| project)
+}
+
+pub(crate) fn lower_to_hir_with_generation(
+    loaded: &LoadedProject,
+    ast: &ast::Project,
+) -> Result<(hir::Project, generation::Collected), FrontendError> {
+    validate_test_signatures(loaded, ast)?;
+    lower_context_with_generation(loaded, ast, None, true)
+}
+
+fn lower_context_with_generation(
+    loaded: &LoadedProject,
+    ast: &ast::Project,
+    selected: Option<&BTreeSet<crate::source::FileId>>,
+    capture: bool,
+) -> Result<(hir::Project, generation::Collected), FrontendError> {
     let mut diagnostics = Diagnostics::new();
     let early_return_diagnostics = return_diagnostics(ast);
     let mut logical_to_package = BTreeMap::<String, PackageId>::new();
@@ -36,62 +68,11 @@ pub(crate) fn lower_to_hir(
         logical_to_package.insert(package.logical_path.clone(), package.id);
     }
     let mut types = crate::semantic::TypeTable::new();
-    let mut symbols = Vec::new();
-    for package in &ast.packages {
-        let package_id = logical_to_package[&package.logical_path];
-        for file in &package.files {
-            for declaration in &file.decls {
-                let (kind, names): (_, Vec<&ast::Ident>) = match declaration {
-                    ast::TopLevelDecl::Const(decl) => (
-                        hir::SymbolKind::Constant,
-                        decl.specs
-                            .iter()
-                            .flat_map(|spec| spec.names.iter())
-                            .collect(),
-                    ),
-                    ast::TopLevelDecl::Var(decl) => (
-                        hir::SymbolKind::Global,
-                        decl.specs
-                            .iter()
-                            .flat_map(|spec| spec.names.iter())
-                            .collect(),
-                    ),
-                    ast::TopLevelDecl::Type(decl) => (
-                        hir::SymbolKind::Type,
-                        decl.specs.iter().map(|spec| &spec.name).collect(),
-                    ),
-                    ast::TopLevelDecl::Func(decl) => (
-                        hir::SymbolKind::Function,
-                        decl.receiver
-                            .is_none()
-                            .then_some(&decl.name)
-                            .into_iter()
-                            .collect(),
-                    ),
-                    ast::TopLevelDecl::Operator(_) => (hir::SymbolKind::Function, Vec::new()),
-                };
-                for name in names {
-                    if name.name == "_" {
-                        continue;
-                    }
-                    symbols.push(hir::Symbol {
-                        id: hir::SymbolId(symbols.len() as u32),
-                        package: package_id,
-                        name: name.name.clone(),
-                        canonical_name: canonical_symbol_name(&package.logical_path, &name.name),
-                        kind,
-                        exported: name
-                            .name
-                            .as_bytes()
-                            .first()
-                            .is_some_and(u8::is_ascii_uppercase),
-                        span: name.span,
-                    });
-                }
-            }
-        }
-    }
+    let symbols = validation::collect_symbols(loaded, ast, &logical_to_package);
     let type_universe = collect_type_universe(loaded, ast, &logical_to_package, &mut types);
+    for package in &type_universe {
+        package.generation.borrow_mut().enabled = capture;
+    }
     resolve_all_defined_types(&type_universe, &mut types, &mut diagnostics);
     // Invalid definitions cannot be used by item/body lowering. Stop here instead
     // of resolving the same invalid declaration again and duplicating its error.
@@ -99,7 +80,10 @@ pub(crate) fn lower_to_hir(
         diagnostics.extend(early_return_diagnostics);
         return Err(FrontendError::new(diagnostics.into_vec()));
     }
-    diagnostics.extend(validate_generic_body_names(ast));
+    diagnostics.extend(validate_generic_body_names(loaded, ast));
+    if selected.is_some() {
+        diagnostics.extend(validation::duplicate_declarations(ast));
+    }
 
     let mut packages = Vec::new();
     for package in &ast.packages {
@@ -136,6 +120,7 @@ pub(crate) fn lower_to_hir(
             files.push(hir::File {
                 file_id: file.file_id,
                 package_name: file.package.name.clone(),
+                test_only: crate::project::is_test_source(loaded.sources.file(file.file_id).path()),
             });
             package_names.insert(file.package.name.clone());
             if file.package.name != expected_name {
@@ -221,6 +206,9 @@ pub(crate) fn lower_to_hir(
             }
 
             for decl in &file.decls {
+                if selected.is_some_and(|selected| !selected.contains(&file.file_id)) {
+                    continue;
+                }
                 match decl {
                     ast::TopLevelDecl::Const(decl) => {
                         for spec in &decl.specs {
@@ -350,22 +338,6 @@ pub(crate) fn lower_to_hir(
                                 .find(|package| package.id == source_package.id)
                                 .and_then(|package| package.declarations.get(&spec.name.name))
                                 .expect("collected type declaration must be available");
-                            if let ast::Type::Interface { methods, .. } = &declaration.ty {
-                                for method in methods {
-                                    if !method
-                                        .name
-                                        .name
-                                        .as_bytes()
-                                        .first()
-                                        .is_some_and(u8::is_ascii_uppercase)
-                                    {
-                                        diagnostics.push(Diagnostic::error(
-                                            method.name.span,
-                                            "interface methods must be exported",
-                                        ));
-                                    }
-                                }
-                            }
                             if !declaration.type_params.is_empty() {
                                 continue;
                             }
@@ -443,7 +415,14 @@ pub(crate) fn lower_to_hir(
                                         .iter()
                                         .find(|candidate| candidate.id == source_package.id)
                                         .is_some_and(|package| {
-                                            package.declarations.contains_key(&parameter.name)
+                                            package.declarations.get(&parameter.name).is_some_and(
+                                                |declaration| {
+                                                    package.visible_from(
+                                                        declaration.span,
+                                                        parameter.span,
+                                                    )
+                                                },
+                                            )
                                         })
                                     || !names.insert(parameter.name.clone())
                             }) {
@@ -691,7 +670,13 @@ pub(crate) fn lower_to_hir(
                                                 .is_some_and(|package| {
                                                     package
                                                         .declarations
-                                                        .contains_key(&parameter.name)
+                                                        .get(&parameter.name)
+                                                        .is_some_and(|declaration| {
+                                                            package.visible_from(
+                                                                declaration.span,
+                                                                parameter.span,
+                                                            )
+                                                        })
                                                 })
                                             || !names.insert(parameter.name.clone())
                                     })
@@ -759,16 +744,6 @@ pub(crate) fn lower_to_hir(
                                 Some(crate::semantic::TypeKind::Pointer(pointee)) => *pointee,
                                 _ => receiver_type,
                             };
-                            if matches!(
-                                validation_types.underlying_kind(receiver_base_type),
-                                Some(crate::semantic::TypeKind::Interface(_))
-                            ) {
-                                diagnostics.push(Diagnostic::error(
-                                    receiver.span,
-                                    "methods cannot be declared on interface types",
-                                ));
-                                continue;
-                            }
                             let key = (receiver_name.to_string(), decl.name.name.clone());
                             if seen_methods.insert(key, decl.name.span).is_some() {
                                 diagnostics.push(Diagnostic::error(
@@ -931,16 +906,14 @@ pub(crate) fn lower_to_hir(
                 ),
             ));
         }
-        for import_names in import_names_by_file.values() {
-            for name in import_names.keys() {
-                if seen_top_level.contains_key(name) {
-                    diagnostics.push(Diagnostic::error(
-                        seen_top_level[name],
-                        format!("top-level declaration conflicts with imported package `{name}`"),
-                    ));
-                }
-            }
-        }
+        diagnostics.extend(validation::import_declaration_conflicts(
+            type_universe
+                .iter()
+                .find(|package| package.id == source_package.id)
+                .expect("loaded and indexed packages must align"),
+            &symbols,
+            &import_names_by_file,
+        ));
 
         packages.push(hir::Package {
             id: source_package.id,
@@ -964,70 +937,23 @@ pub(crate) fn lower_to_hir(
     );
     array_layout::validate(&types, &mut diagnostics);
 
-    // Semantic analysis consumes the loaded snapshot, including in-memory inputs.
-    // Filesystem discovery/validation belongs to the project loader.
-    let root_main = loaded
-        .packages
-        .iter()
-        .filter(|p| p.logical_path == ".")
-        .flat_map(|p| &p.files)
-        .any(|id| loaded.sources.file(*id).path() == loaded.root.join("main.ond"));
-    if !root_main {
-        diagnostics.push(Diagnostic::error(
-            Span::synthetic(),
-            "project root must contain `main.ond`",
-        ));
-    }
-
-    let main_package = packages.iter().find(|package| package.logical_path == ".");
-    let main_functions = main_package
-        .map(|package| {
-            package
-                .items
-                .iter()
-                .filter_map(|item| match item {
-                    hir::Item::Func(function) if function.name == "main" => Some(function),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    if main_functions.is_empty()
-        && !symbols
-            .iter()
-            .any(|s| s.canonical_name == "main.main" && s.kind == hir::SymbolKind::Function)
-    {
-        diagnostics.push(Diagnostic::error(
-            Span::synthetic(),
-            "`main` package must define `func main()`",
-        ));
-    } else {
-        for function in main_functions {
-            if !function.signature.parameters.is_empty() || !function.signature.returns.is_empty() {
-                diagnostics.push(Diagnostic::error(
-                    function.span,
-                    "`func main()` must not have parameters or return values",
-                ));
-            }
-        }
-    }
-
-    if let Some(cycle) = find_import_cycle(&packages) {
-        diagnostics.push(Diagnostic::error(
-            Span::synthetic(),
-            format!("import cycle detected: {}", cycle.join(" -> ")),
-        ));
-    }
+    validation::validate_project(loaded, ast, selected, &packages, &symbols, &mut diagnostics);
 
     if diagnostics.is_empty() {
         let initialization_order = Vec::new();
-        Ok(hir::Project {
+        let project = hir::Project {
             types,
             symbols,
             packages,
             entry_package: PackageId(0),
             initialization_order,
-        })
+        };
+        let generation = if capture {
+            generation::collect(&project, ast, &type_universe)
+        } else {
+            generation::Collected::default()
+        };
+        Ok((project, generation))
     } else {
         Err(FrontendError::new(diagnostics.into_vec()))
     }
@@ -1128,85 +1054,4 @@ fn constant_is_string_literal(
         .is_some_and(|(_, value)| constant_is_string_literal(owner, value, universe, visiting));
     visiting.remove(&key);
     result
-}
-
-fn report_duplicate_top_level(
-    diagnostics: &mut Diagnostics,
-    seen: &mut BTreeMap<String, Span>,
-    name: &str,
-    span: Span,
-) {
-    if name == "_" {
-        return;
-    }
-    if let Some(previous) = seen.insert(name.to_string(), span) {
-        diagnostics.push(
-            Diagnostic::error(span, format!("duplicate top-level declaration `{name}`")).with_note(
-                format!(
-                    "previous declaration starts at byte {} in the same package",
-                    previous.start
-                ),
-            ),
-        );
-    }
-}
-
-fn find_import_cycle(packages: &[hir::Package]) -> Option<Vec<String>> {
-    #[derive(Clone, Copy, PartialEq, Eq)]
-    enum Visit {
-        Visiting,
-        Done,
-    }
-
-    fn dfs(
-        package_id: PackageId,
-        packages: &[hir::Package],
-        states: &mut BTreeMap<PackageId, Visit>,
-        stack: &mut Vec<PackageId>,
-    ) -> Option<Vec<String>> {
-        states.insert(package_id, Visit::Visiting);
-        stack.push(package_id);
-
-        let package = packages.iter().find(|package| package.id == package_id)?;
-        for import in &package.imports {
-            match states.get(import).copied() {
-                Some(Visit::Visiting) => {
-                    let start = stack.iter().position(|id| id == import).unwrap_or(0);
-                    let cycle = stack[start..]
-                        .iter()
-                        .chain(std::iter::once(import))
-                        .filter_map(|id| {
-                            packages
-                                .iter()
-                                .find(|package| package.id == *id)
-                                .map(|package| package.logical_path.clone())
-                        })
-                        .collect::<Vec<_>>();
-                    return Some(cycle);
-                }
-                Some(Visit::Done) => {}
-                None => {
-                    if let Some(cycle) = dfs(*import, packages, states, stack) {
-                        return Some(cycle);
-                    }
-                }
-            }
-        }
-
-        stack.pop();
-        states.insert(package_id, Visit::Done);
-        None
-    }
-
-    let mut states = BTreeMap::<PackageId, Visit>::new();
-    let mut stack = Vec::new();
-    for package in packages {
-        if states.contains_key(&package.id) {
-            continue;
-        }
-        if let Some(cycle) = dfs(package.id, packages, &mut states, &mut stack) {
-            return Some(cycle);
-        }
-    }
-    None
 }

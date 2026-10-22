@@ -3,13 +3,12 @@ use ond_protocol::{CompilationManifest, Contract, link};
 use std::{collections::BTreeMap, path::PathBuf};
 #[derive(Debug, Clone)]
 pub struct CompileRequest {
+    pub test: bool,
     pub excluded_dirs: Vec<PathBuf>,
     pub contract: Contract,
     pub project_root: PathBuf,
     /// Project-relative .ond paths. Existing files must have identical contents.
     pub sources: BTreeMap<String, String>,
-    /// Optional SDK/library sources: include their packages only when imported.
-    pub libraries: BTreeMap<String, String>,
     /// Defaults to project_root/target/ond-cache.
     pub cache_dir: Option<PathBuf>,
 }
@@ -29,6 +28,7 @@ pub struct LinkRequest {
 
 #[derive(Debug, Clone)]
 pub struct LinkResult {
+    pub tests: Option<ond_protocol::TestSidecar>,
     pub image: link::LinkedImage,
     pub debug: ond_protocol::debug::DebugInfo,
 }

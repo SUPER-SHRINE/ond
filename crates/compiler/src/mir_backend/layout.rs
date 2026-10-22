@@ -109,7 +109,7 @@ pub struct DataLayout {
 pub fn aggregate(types: &mir::TypeTable, ty: mir::TypeId) -> bool {
     matches!(
         types.underlying_kind(ty),
-        Some(mir::TypeKind::Array { .. } | mir::TypeKind::Struct(_) | mir::TypeKind::Interface(_))
+        Some(mir::TypeKind::Array { .. } | mir::TypeKind::Struct(_))
     )
 }
 pub(super) fn align(n: u32, a: u32, span: Span) -> Result<u32, Diagnostic> {
@@ -154,19 +154,6 @@ pub fn data(types: &mir::TypeTable, ty: mir::TypeId, span: Span) -> Result<DataL
                 }
                 d.size = align(d.size, d.alignment, span)?;
             }
-            Some(mir::TypeKind::Interface(interface)) => {
-                for ty in [interface.data_pointer, interface.vtable] {
-                    let e = visit(types, ty, span, depth + 1)?;
-                    d.size = align(d.size, e.alignment, span)?;
-                    d.fields.push(d.size);
-                    d.size = d
-                        .size
-                        .checked_add(e.size)
-                        .ok_or_else(|| error(span, "interface layout overflow"))?;
-                    d.alignment = d.alignment.max(e.alignment);
-                }
-                d.size = align(d.size, d.alignment, span)?;
-            }
             _ => {
                 let s = scalar(types, ty, span)?;
                 d.size = s.size;
@@ -205,14 +192,6 @@ pub(super) fn leaves(
             Some(mir::TypeKind::Struct(s)) => {
                 for (f, o) in s.fields.iter().zip(d.fields) {
                     walk(types, f.ty, offset + o, span, out)?;
-                }
-            }
-            Some(mir::TypeKind::Interface(interface)) => {
-                for (ty, field_offset) in [interface.data_pointer, interface.vtable]
-                    .into_iter()
-                    .zip(d.fields)
-                {
-                    walk(types, ty, offset + field_offset, span, out)?;
                 }
             }
             _ => out.push((offset, scalar(types, ty, span)?)),

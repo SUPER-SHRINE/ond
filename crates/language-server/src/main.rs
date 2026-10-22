@@ -68,7 +68,7 @@ fn run_stdio() -> Result<(), String> {
     let stdout = io::stdout();
     let mut reader = BufReader::new(stdin.lock());
     let mut writer = stdout.lock();
-    let mut state = ServerState::with_library_roots(library_roots_from_env()?);
+    let mut state = ServerState::default();
 
     run_transport(&mut reader, &mut writer, &mut state)
 }
@@ -326,24 +326,6 @@ fn run_transport(
     }
 
     Ok(())
-}
-
-fn library_roots_from_env() -> Result<Vec<PathBuf>, String> {
-    let Some(value) = std::env::var_os("OND_PATH") else {
-        return Ok(Vec::new());
-    };
-    if value.is_empty() {
-        return Ok(Vec::new());
-    }
-    std::env::split_paths(&value)
-        .map(|path| {
-            if path.as_os_str().is_empty() {
-                return Err("OND_PATH contains an empty path".to_string());
-            }
-            path.canonicalize()
-                .map_err(|error| format!("library {}: {error}", path.display()))
-        })
-        .collect()
 }
 
 fn initialize_response(id: Option<Value>) -> Value {

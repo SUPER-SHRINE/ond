@@ -41,8 +41,17 @@ impl ProjectSymbolIndex {
                 let symbols = package
                     .files
                     .iter()
-                    .flat_map(|file| file.decls.iter())
-                    .flat_map(indexed_symbols_for_decl)
+                    .flat_map(|file| {
+                        let test = compiler::project::is_test_source(
+                            loaded.sources.file(file.file_id).path(),
+                        );
+                        file.decls.iter().flat_map(indexed_symbols_for_decl).map(
+                            move |mut symbol| {
+                                symbol.exported &= !test;
+                                symbol
+                            },
+                        )
+                    })
                     .collect();
                 (package.logical_path.clone(), symbols)
             })
@@ -105,6 +114,40 @@ impl ProjectSymbolIndex {
             .collect();
         let ast = ast::Project { packages };
         Self::with_file_state(loaded, ast, last_good_sources, failed_files)
+    }
+
+    pub(crate) fn for_source(mut self, path: &std::path::Path) -> Self {
+        let selected = compiler::project::is_test_source(path)
+            .then(|| {
+                self.ast
+                    .packages
+                    .iter()
+                    .find(|package| {
+                        package.files.iter().any(|file| {
+                            crate::util::same_path(
+                                self.loaded.sources.file(file.file_id).path(),
+                                path,
+                            )
+                        })
+                    })
+                    .map(|p| p.logical_path.clone())
+            })
+            .flatten();
+        for package in &mut self.ast.packages {
+            if selected.as_ref() != Some(&package.logical_path) {
+                package.files.retain(|file| {
+                    !compiler::project::is_test_source(
+                        self.loaded.sources.file(file.file_id).path(),
+                    )
+                });
+            }
+        }
+        Self::with_file_state(
+            self.loaded,
+            self.ast,
+            self.last_good_sources,
+            self.failed_files,
+        )
     }
 
     pub(crate) fn file_failed_to_parse(&self, path: &std::path::Path) -> bool {
@@ -215,7 +258,6 @@ fn type_name(ty: &ast::Type) -> String {
         ast::Type::Pointer(inner, _) => format!("*{}", type_name(inner)),
         ast::Type::Array { element, .. } => format!("[...]{}", type_name(element)),
         ast::Type::Struct { .. } => "struct".to_string(),
-        ast::Type::Interface { .. } => "interface".to_string(),
         ast::Type::Func { .. } => "func".to_string(),
     }
 }
@@ -224,4 +266,66 @@ fn is_exported(name: &str) -> bool {
     name.chars()
         .next()
         .is_some_and(|character| character.is_ascii_uppercase())
+}
+
+#[cfg(test)]
+mod test_build_tests {
+    use super::*;
+    #[test]
+    fn test_build_index_keeps_same_package_private_context_and_hides_test_exports() {
+        let root = std::path::Path::new("test-build-index").to_path_buf();
+        let mut sources = SourceDb::default();
+        let main = sources.add_file(
+            root.join("main.ond"),
+            "package main\nfunc private(){}\nfunc main(){}".into(),
+        );
+        let tests = sources.add_file(
+            root.join("main_test.ond"),
+            "package main\nfunc TestLocal(){private()}\nfunc Helper(){}".into(),
+        );
+        let other = sources.add_file(
+            root.join("other/other_test.ond"),
+            "package other\nfunc TestOther(){}".into(),
+        );
+        let loaded = compiler::LoadedProject {
+            root: root.clone(),
+            manifest_path: root.join("ond.toml"),
+            ignored_paths: Vec::new(),
+            sources,
+            packages: vec![
+                compiler::PackageSources {
+                    id: compiler::PackageId(0),
+                    logical_path: ".".into(),
+                    directory: root.clone(),
+                    files: vec![main, tests],
+                },
+                compiler::PackageSources {
+                    id: compiler::PackageId(1),
+                    logical_path: "other".into(),
+                    directory: root.join("other"),
+                    files: vec![other],
+                },
+            ],
+        };
+        let index = ProjectSymbolIndex::refresh(loaded, None);
+        let normal = index.clone().for_source(&root.join("main.ond"));
+        assert!(
+            normal
+                .package_symbols(".")
+                .iter()
+                .all(|s| s.name != "Helper" && s.name != "TestLocal")
+        );
+        let test = index.for_source(&root.join("main_test.ond"));
+        assert!(
+            test.package_symbols(".")
+                .iter()
+                .any(|s| s.name == "private")
+        );
+        assert!(
+            test.package_symbols(".")
+                .iter()
+                .any(|s| s.name == "Helper" && !s.exported)
+        );
+        assert!(test.package_symbols("other").is_empty());
+    }
 }

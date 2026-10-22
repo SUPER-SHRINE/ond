@@ -6,7 +6,7 @@ use crate::{
 
 #[test]
 fn constants_resolve_across_packages_and_lexical_scopes() {
-    let compilation = compile("package main\nimport \"shared\"\nconst Width = shared.Base + 2\ntype Buffer [Width * 2]u8\nfunc main() {}\nfunc value() -> i32 {\nconst x = Width * 3\n{ const x = 1\nvar y = x\n}\nreturn x\n}\n", Some("package shared\nconst Base = 4\nvar Global: i32\nfunc Function() {}\n")).unwrap();
+    let compilation = compile("package main\nimport \"test/shared\"\nconst Width = shared.Base + 2\ntype Buffer [Width * 2]u8\nfunc main() {}\nfunc value() -> i32 {\nconst x = Width * 3\n{ const x = 1\nvar y = x\n}\nreturn x\n}\n", Some("package shared\nconst Base = 4\nvar Global: i32\nfunc Function() {}\n")).unwrap();
     let root = compilation
         .hir
         .packages
@@ -94,7 +94,7 @@ fn reports_cycles_and_private_imports() {
     .unwrap_err();
     assert!(error.to_string().contains("cycle"));
     let error = compile(
-        "package main\nimport \"shared\"\nconst X = shared.private\nfunc main() {}\n",
+        "package main\nimport \"test/shared\"\nconst X = shared.private\nfunc main() {}\n",
         Some("package shared\nconst private = 1\n"),
     )
     .unwrap_err();
@@ -155,7 +155,7 @@ func main() {}
 #[test]
 fn generic_definition_and_specialization_errors_are_reported_together() {
     let source = r#"package main
-type List[T] interface { Get(index: u32) -> *T; Set(index: u32, value: T); }
+type List[T] struct { data: *T }
 type listImpl[T] struct { data: *T }
 func (l: *listImpl[T]) Get(index: u32) -> *T { return &list.data[index] }
 func (l: *listImpl[T]) Set(index: u32, item: T) { list.data[index] = value }
@@ -185,9 +185,9 @@ func main() { _ = NewList[u32]() }
         "{diagnostics:?}"
     );
     assert!(
-        diagnostics.iter().any(|diagnostic| diagnostic
-            .message
-            .contains("pointer-to-interface conversion")),
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("return type mismatch")),
         "{diagnostics:?}"
     );
 }

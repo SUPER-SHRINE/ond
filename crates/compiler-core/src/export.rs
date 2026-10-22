@@ -4,11 +4,19 @@ use crate::{
     semantic::{TypeId, TypeKind},
 };
 use ond_interface::{
-    ConcreteMethod, Export, Field, Interface, Kind, Method, Signature, Type, Value, ValueKind,
+    ConcreteMethod, Export, Field, Interface, Kind, Signature, Type, Value, ValueKind,
 };
 use std::collections::{BTreeMap, BTreeSet};
+pub(crate) mod identity;
 
 pub fn package(project: &hir::Project, path: &str) -> Result<Interface, String> {
+    package_and_type_ids(project, path).map(|(interface, _)| interface)
+}
+
+pub(crate) fn package_and_type_ids(
+    project: &hir::Project,
+    path: &str,
+) -> Result<(Interface, Vec<TypeId>), String> {
     let package = project
         .packages
         .iter()
@@ -21,12 +29,28 @@ pub fn package(project: &hir::Project, path: &str) -> Result<Interface, String> 
     };
     let mut exports = BTreeMap::new();
     let public = |s: &str| s.as_bytes().first().is_some_and(u8::is_ascii_uppercase);
+    let test_only = |span: crate::source::Span| {
+        package
+            .files
+            .iter()
+            .any(|file| file.file_id == span.file && file.test_only)
+    };
+
     for item in &package.items {
+        let span = match item {
+            hir::Item::Type(item) => item.span,
+            hir::Item::Func(item) => item.span,
+            hir::Item::Const(item) => item.span,
+            hir::Item::Var(item) => item.span,
+        };
+        if test_only(span) {
+            continue;
+        }
         match item {
             hir::Item::Type(item) if public(&item.name) => {
                 exports.insert(item.name.clone(), Export::Type(writer.ty(item.ty)?));
             }
-            hir::Item::Func(item) if public(&item.name) => {
+            hir::Item::Func(item) if item.receiver.is_none() && public(&item.name) => {
                 let signature = writer.signature(
                     item.signature.parameters.iter().map(|p| p.ty),
                     item.signature.returns.iter().copied(),
@@ -62,7 +86,10 @@ pub fn package(project: &hir::Project, path: &str) -> Result<Interface, String> 
             let Some(receiver) = item.receiver else {
                 continue;
             };
-            if !public(&item.name) || attached.contains(&item.canonical_name) {
+            if test_only(item.span)
+                || !public(&item.name)
+                || attached.contains(&item.canonical_name)
+            {
                 continue;
             }
             let (base, pointer_receiver) = match project.types.get(receiver).map(|ty| &ty.kind) {
@@ -94,13 +121,17 @@ pub fn package(project: &hir::Project, path: &str) -> Result<Interface, String> 
             break;
         }
     }
+    let mut type_ids = vec![TypeId::BOOL; writer.types.len()];
+    for (id, local) in &writer.ids {
+        type_ids[*local as usize] = *id;
+    }
     let interface = Interface {
         package: path.into(),
         types: writer.types,
         exports,
     };
     interface.validate()?;
-    Ok(interface)
+    Ok((interface, type_ids))
 }
 struct Writer<'a> {
     project: &'a hir::Project,
@@ -177,35 +208,10 @@ impl Writer<'_> {
                 }
                 Kind::Struct(fields)
             }
-            TypeKind::Interface(interface) => {
-                let mut methods = Vec::new();
-                for method in interface.methods {
-                    let owner = method
-                        .private_owner
-                        .map(|id| {
-                            self.project
-                                .packages
-                                .iter()
-                                .find(|package| package.id == id)
-                                .map(|package| package.logical_path.clone())
-                                .ok_or_else(|| "missing method owner package".to_string())
-                        })
-                        .transpose()?;
-                    methods.push(Method {
-                        name: method.name,
-                        signature: self.signature(
-                            method.signature.parameters.into_iter().skip(1),
-                            method.signature.returns.into_iter(),
-                        )?,
-                        private_owner: owner,
-                    });
-                }
-                Kind::Interface(methods)
-            }
         };
         self.types[local as usize] = Type {
             name: if matches!(kind, Kind::Defined(_)) {
-                definition.name
+                Some(identity::nominal_name(self.project, id)?)
             } else {
                 None
             },
@@ -228,6 +234,22 @@ impl Writer<'_> {
                     .collect::<Result<_, String>>()?,
             ),
             _ => return Err("export constant was not fully evaluated".into()),
+        };
+        let kind = match kind {
+            ValueKind::Integer(0)
+            | ValueKind::Float32(0)
+            | ValueKind::Bool(false)
+            | ValueKind::Nil => ValueKind::Zero,
+            ValueKind::Composite(mut items) => {
+                items.retain(|(_, value)| value.kind != ValueKind::Zero);
+                items.sort_by_key(|(index, _)| *index);
+                if items.is_empty() {
+                    ValueKind::Zero
+                } else {
+                    ValueKind::Composite(items)
+                }
+            }
+            kind => kind,
         };
         Ok(Value {
             ty: self.ty(expr.ty)?,

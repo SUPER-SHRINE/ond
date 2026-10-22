@@ -118,7 +118,8 @@ pub(super) fn lower(
             let start = cx.e.offset(i.span)?;
             cx.instruction(i)?;
             let end = cx.e.offset(i.span)?;
-            cx.record_range(start, end, instruction_operation(i), None, i.span);
+            let operation = instruction_operation(i, cx.e.has_call_since(start));
+            cx.record_range(start, end, operation, None, i.span);
         }
         let start = cx.e.offset(b.terminator.span)?;
         cx.terminator(&b.terminator)?;
@@ -343,7 +344,7 @@ impl Context<'_> {
     }
 }
 
-fn instruction_operation(instruction: &mir::Instruction) -> DebugOperation {
+fn instruction_operation(instruction: &mir::Instruction, emitted_call: bool) -> DebugOperation {
     match &instruction.kind {
         mir::InstructionKind::Load { .. } => DebugOperation::MemoryRead,
         mir::InstructionKind::Store { .. } | mir::InstructionKind::AggregateCopy { .. } => {
@@ -359,6 +360,7 @@ fn instruction_operation(instruction: &mir::Instruction) -> DebugOperation {
             behavior: mir::CastBehavior::Checked,
             ..
         } => DebugOperation::InvalidConversion,
+        _ if emitted_call => DebugOperation::Call,
         _ => DebugOperation::Source,
     }
 }

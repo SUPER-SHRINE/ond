@@ -119,7 +119,13 @@ impl Context<'_> {
     ) -> Result<(), Diagnostic> {
         match check {
             mir::Check::Bounds { index, length } => {
+                let scalar = layout::scalar(&self.p.types, self.ty(*index), span)?;
                 self.load(*index, 1);
+                if scalar.signed {
+                    ops::sign_extend(self.e, 1, scalar);
+                    self.e.emit(13, 3, 1, 0, 1);
+                    self.e.trap_if_nonzero(3);
+                }
                 self.load(*length, 2);
                 self.e.emit(13, 1, 1, 2, 6);
                 self.e.trap_if_nonzero(1);

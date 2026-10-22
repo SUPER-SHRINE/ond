@@ -15,6 +15,12 @@ impl BodyLowerer<'_> {
     ) -> Option<hir::Expr> {
         let package = self.universe.iter().find(|p| p.id == package_id)?;
         let spec = package.globals.get(name)?.clone();
+        if !package.visible_from(spec.span, span) {
+            return self.fail(
+                span,
+                format!("test-only global `{name}` is not visible here"),
+            );
+        }
         let symbol = super::super::canonical_symbol_name(&package.logical_path, name);
         let key = (package_id, name.to_string());
         if !self.global_stack.insert(key.clone()) {

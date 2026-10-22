@@ -19,7 +19,9 @@ fn validate(case: &Case) -> Result<(), String> {
     }
     let mut paths = BTreeSet::new();
     for spec in case.specs {
-        if !include_str!("../../docs/conformance-checklist.md").contains(&format!("| {spec} |")) {
+        if !include_str!("../../../../specs/ond/conformance/requirements.md")
+            .contains(&format!("| {spec} |"))
+        {
             return Err(format!("unknown checklist spec ID: {spec}"));
         }
     }
@@ -70,13 +72,17 @@ fn validate(case: &Case) -> Result<(), String> {
                         return Err("diagnostic source file not in fixture".into());
                     }
                 }
-                let message = match diagnostic.message {
-                    Message::Exact(s) | Message::Contains(s) => s,
-                };
-                if message.is_empty() {
+                if let Message::Exact(s) | Message::Contains(s) = diagnostic.message
+                    && s.is_empty()
+                {
                     return Err("diagnostic message must not be empty".into());
                 }
                 if let Location::Source {
+                    file,
+                    text,
+                    occurrence,
+                }
+                | Location::WithinSource {
                     file,
                     text,
                     occurrence,
@@ -217,6 +223,7 @@ fn diagnostic_matches(
     loaded: Option<&LoadedProject>,
 ) -> bool {
     let message = match want.message {
+        Message::Any => true,
         Message::Exact(s) => got.message == s,
         Message::Contains(s) => got.message.contains(s),
     };
@@ -256,6 +263,27 @@ fn diagnostic_matches(
             relative.to_string_lossy().replace('\\', "/") == file
                 && got.primary.span.start == start
                 && got.primary.span.end == start + text.len()
+        }
+        Location::WithinSource {
+            file,
+            text,
+            occurrence,
+        } => {
+            let Some(loaded) = loaded else {
+                return false;
+            };
+            let Some(source) = loaded.sources.files().get(got.primary.span.file.0) else {
+                return false;
+            };
+            let Ok(relative) = source.path().strip_prefix(&loaded.root) else {
+                return false;
+            };
+            let original = case.files.iter().find(|s| s.path == file).unwrap();
+            let start = original.text.match_indices(text).nth(occurrence).unwrap().0;
+            relative.to_string_lossy().replace('\\', "/") == file
+                && start <= got.primary.span.start
+                && got.primary.span.start < got.primary.span.end
+                && got.primary.span.end <= start + text.len()
         }
     }
 }

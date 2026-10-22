@@ -60,14 +60,14 @@ fn generic_identity_is_stable_and_preserves_type_distinctions() {
         "func()->u32",
     ];
     let mut source = String::from(
-        "package shared\ntype A u32\ntype B u32\ntype Node struct { Next:*Node; Wrapped:*Box[*Node] }\ntype Box[T] struct { Value:T }\ntype Pair[T,U] struct { Left:T; Right:U }\ntype Reader[T] interface { Get()->T; Next()->Reader[T] }\n",
+        "package shared\ntype A u32\ntype B u32\ntype Node struct { Next:*Node; Wrapped:*Box[*Node] }\ntype Box[T] struct { Value:T }\ntype Pair[T,U] struct { Left:T; Right:U }\ntype Reader[T] struct { Value:T; Next:*Reader[T] }\n",
     );
     for (index, shape) in shapes.iter().enumerate() {
         source.push_str(&format!(
             "func F{index}()->Box[{shape}] {{ var value:Box[{shape}]; return value }}\n"
         ));
     }
-    let main = "package main\nimport \"shared\"\nfunc main() { _=shared.F0() }";
+    let main = "package main\nimport \"test/shared\"\nfunc main() { _=shared.F0() }";
     let before = compile_files(&[("main.ond", main), ("shared/shared.ond", &source)]).unwrap();
     let after = compile_files(&[
         ("main.ond", main),
@@ -79,8 +79,8 @@ fn generic_identity_is_stable_and_preserves_type_distinctions() {
     ])
     .unwrap();
     assert_ne!(
-        before.hir.types.find_named("shared.Node"),
-        after.hir.types.find_named("shared.Node")
+        before.hir.types.find_named("test/shared.Node"),
+        after.hir.types.find_named("test/shared.Node")
     );
     let before_returns = returns(&before);
     let after_returns = returns(&after);
@@ -114,7 +114,7 @@ fn generic_identity_is_stable_and_preserves_type_distinctions() {
 #[test]
 fn generic_anonymous_arguments_keep_private_owner_logical_paths() {
     let main = r#"package main
-import "shared"
+import "test/shared"
 func FLocal()->shared.Box[struct { x:u32 }] { var value:shared.Box[struct { x:u32 }]; return value }
 func FPublic()->shared.Box[struct { X:u32 }] { var value:shared.Box[struct { X:u32 }]; return value }
 func main() {}
@@ -145,7 +145,7 @@ func FExported()->Box[struct { X:u32 }] { var value:Box[struct { X:u32 }]; retur
 #[test]
 fn specialization_symbols_ignore_unrelated_declaration_order_and_type_ids() {
     let main = r#"package main
-import "shared"
+import "test/shared"
 func main() {
     cell:=shared.Cell[shared.Token]{}
     _=cell.Get()

@@ -118,3 +118,42 @@ pub fn program_startup(
         relocations,
     }
 }
+
+/// One shared runtime state and an independent initializer/case entry for each test.
+pub fn test_startup(
+    cases: &[(String, Vec<String>, String)],
+    return_instructions: &[u32],
+) -> Object {
+    use crate::ir::object::{Relocation, Symbol, SymbolKind};
+    let mut object = program_startup(&[], "unused", &[]);
+    object
+        .relocations
+        .retain(|r| r.section != SectionKind::Text);
+    object.symbols[0].size = 4;
+    let mut words = vec![crate::kagura_encoding::word(6, 0, 0, 0, 0)];
+    for (entry, initializers, case) in cases {
+        let offset = (words.len() * 4) as u32;
+        for symbol in initializers.iter().chain(std::iter::once(case)) {
+            object.relocations.push(Relocation {
+                section: SectionKind::Text,
+                offset: (words.len() * 4) as u32,
+                kind: RelocationKind::CallSlot,
+                target: symbol.clone(),
+                addend: 0,
+            });
+            words.extend(crate::kagura_encoding::link_slot(true, 0));
+        }
+        words.extend_from_slice(return_instructions);
+        object.symbols.push(Symbol {
+            name: entry.clone(),
+            binding: SymbolBinding::Exported,
+            kind: SymbolKind::Function,
+            section: Some(SectionKind::Text),
+            offset,
+            size: (words.len() * 4) as u32 - offset,
+        });
+    }
+    object.sections[0].memory_size = (words.len() * 4) as u32;
+    object.sections[0].data = words.into_iter().flat_map(u32::to_le_bytes).collect();
+    object
+}

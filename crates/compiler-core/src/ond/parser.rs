@@ -378,27 +378,6 @@ impl Parser {
                     span: join_spans(start, end),
                 })
             }
-            TokenKind::Interface => {
-                let start = self.bump().span;
-                self.expect(TokenKind::LBrace, "`{`")?;
-                let mut methods = Vec::new();
-                while !self.at(TokenKind::RBrace) {
-                    let name = self.expect_ident()?;
-                    let signature = self.parse_type_signature(false)?;
-                    let span = join_spans(name.span, signature.span);
-                    methods.push(ast::InterfaceMethod {
-                        name,
-                        signature,
-                        span,
-                    });
-                    self.expect_semi()?;
-                }
-                let end = self.expect(TokenKind::RBrace, "`}`")?;
-                Ok(ast::Type::Interface {
-                    methods,
-                    span: join_spans(start, end),
-                })
-            }
             TokenKind::Func => {
                 let start = self.bump().span;
                 let signature = self.parse_type_signature(false)?;
@@ -812,18 +791,16 @@ impl Parser {
                             return None;
                         }
                         let end = self.bump().span;
-                        let allowed = matches!(&expr, ast::Expr::Name(path)
-                            if matches!(path.segments.as_slice(), [name] if name.name == "alloc"))
-                            || self.at(TokenKind::LParen)
-                            || self.named_composite_literal_starts();
-                        if !allowed {
+                        if !self.at(TokenKind::LParen) && !self.named_composite_literal_starts()
+                            && matches!(arguments.as_slice(), [ast::Type::Named(_) | ast::Type::Pointer(_, _) | ast::Type::Apply { .. }])
+                        {
                             self.cursor = saved;
                             return None;
                         }
                         Some((arguments, end))
                     });
                     if let Some((arguments, end)) = type_application.flatten() {
-                        if self.at(TokenKind::LBrace) {
+                        if self.at(TokenKind::LBrace) && self.named_composite_literal_starts() {
                             let ast::Expr::Name(path) = expr else { unreachable!() };
                             expr = self.parse_composite_literal(ast::Type::Apply {
                                 base: path,
@@ -1231,7 +1208,6 @@ fn type_span(ty: &ast::Type) -> Span {
         ast::Type::Pointer(_, span)
         | ast::Type::Array { span, .. }
         | ast::Type::Struct { span, .. }
-        | ast::Type::Interface { span, .. }
         | ast::Type::Func { span, .. } => *span,
     }
 }

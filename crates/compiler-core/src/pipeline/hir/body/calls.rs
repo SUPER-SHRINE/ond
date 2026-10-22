@@ -11,33 +11,22 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) struct ResolvedMethodCandidate {
     pub(super) package_id: PackageId,
-    pub(super) logical_path: String,
-    pub(super) receiver_name: String,
     pub(super) signature: hir::Signature,
     pub(super) symbol: String,
-    pub(super) span: Span,
 }
 
 impl BodyLowerer<'_> {
     pub(super) fn unique_operator_parameter_types(
         &mut self,
         name: ast::OperatorName,
+        receiver: &hir::Expr,
         known: &[Option<TypeId>],
+        span: Span,
     ) -> Option<Vec<TypeId>> {
-        let receiver = known.first().copied().flatten()?;
-        let declarations = self.operator_declarations(name, receiver, known.len());
-        let mut receivers = vec![receiver];
-        if let Some(TypeKind::Pointer(pointee)) = self.types.kind(receiver) {
-            receivers.push(*pointee);
-        } else {
-            receivers.push(
-                self.types
-                    .pointer(receiver, crate::source::Span::synthetic()),
-            );
-        }
-        for receiver in receivers {
+        let declarations = self.operator_declarations(name, receiver.ty, known.len(), span);
+        for receiver in self.operator_receivers(receiver) {
             let mut actual = known.to_vec();
-            actual[0] = Some(receiver);
+            actual[0] = Some(receiver.ty);
             for (package_id, _, _, declaration) in &declarations {
                 if let Some((signature, _)) =
                     self.resolve_operator_candidate(*package_id, declaration, &actual)
@@ -55,16 +44,7 @@ impl BodyLowerer<'_> {
         None
     }
 
-    pub(super) fn matching_operator_call(
-        &mut self,
-        name: ast::OperatorName,
-        arguments: Vec<hir::Expr>,
-        span: Span,
-    ) -> Option<Option<hir::Call>> {
-        let Some(receiver) = arguments.first() else {
-            return Some(None);
-        };
-        let declarations = self.operator_declarations(name, receiver.ty, arguments.len());
+    fn operator_receivers(&mut self, receiver: &hir::Expr) -> Vec<hir::Expr> {
         let mut receivers = vec![receiver.clone()];
         if self.addressable(receiver) {
             let pointer = self.types.pointer(receiver.ty, receiver.span);
@@ -81,7 +61,20 @@ impl BodyLowerer<'_> {
                 span: receiver.span,
             });
         }
-        for receiver in receivers {
+        receivers
+    }
+
+    pub(super) fn matching_operator_call(
+        &mut self,
+        name: ast::OperatorName,
+        arguments: Vec<hir::Expr>,
+        span: Span,
+    ) -> Option<Option<hir::Call>> {
+        let Some(receiver) = arguments.first() else {
+            return Some(None);
+        };
+        let declarations = self.operator_declarations(name, receiver.ty, arguments.len(), span);
+        for receiver in self.operator_receivers(receiver) {
             let mut actual_arguments = arguments.clone();
             actual_arguments[0] = receiver;
             let known = actual_arguments
@@ -131,6 +124,7 @@ impl BodyLowerer<'_> {
                                 arguments: type_arguments,
                             },
                         );
+                    self.record_generic_request(&symbol, span);
                     symbol
                 } else {
                     super::super::canonical_operator_symbol(
@@ -141,6 +135,7 @@ impl BodyLowerer<'_> {
                         self.universe,
                     )
                 };
+                self.record_generation_type(actual_arguments[0].ty);
                 return Some(Some(hir::Call {
                     callee: Box::new(hir::Expr {
                         kind: hir::ExprKind::Function(symbol),
@@ -161,6 +156,7 @@ impl BodyLowerer<'_> {
         name: ast::OperatorName,
         receiver: TypeId,
         arity: usize,
+        span: Span,
     ) -> Vec<(PackageId, String, usize, ast::OperatorDecl)> {
         let mut base = receiver;
         while self.types.generic_instance(base).is_none()
@@ -200,7 +196,14 @@ impl BodyLowerer<'_> {
                     .iter()
                     .enumerate()
                     .filter(move |(_, operator)| {
-                        operator.name == name
+                        (package.visible_from(operator.span, span)
+                            || package
+                                .declarations
+                                .get(receiver_name)
+                                .is_some_and(|declaration| {
+                                    !package.visible_from(declaration.span, span)
+                                }))
+                            && operator.name == name
                             && operator.signature.params.len() == arity
                             && operator
                                 .signature
@@ -367,6 +370,12 @@ impl BodyLowerer<'_> {
             .iter()
             .find(|package| package.id == package_id)?;
         let source = package.functions.get(name)?.clone();
+        if !package.visible_from(source.span, span) {
+            return self.fail(
+                span,
+                format!("test-only function `{name}` is not visible here"),
+            );
+        }
         let symbol = super::super::canonical_symbol_name(&package.logical_path, name);
         let mut diagnostics = Diagnostics::new();
         let signature = super::super::types::resolve_signature(
@@ -391,6 +400,19 @@ impl BodyLowerer<'_> {
     }
 
     pub(super) fn lower_call(&mut self, source: &ast::Expr) -> Option<hir::Call> {
+        let call = self.lower_call_inner(source)?;
+        for ty in call
+            .signature
+            .parameters
+            .iter()
+            .chain(&call.signature.returns)
+        {
+            self.record_generation_type(*ty);
+        }
+        Some(call)
+    }
+
+    fn lower_call_inner(&mut self, source: &ast::Expr) -> Option<hir::Call> {
         let ast::Expr::Call { callee, args, span } = source else {
             return None;
         };
@@ -417,11 +439,13 @@ impl BodyLowerer<'_> {
             // shape.  The parser preserves the latter form; when the name is
             // not a generic function, reinterpret a single name argument as
             // ordinary indexing and call the indexed function value.
-            if let [ast::Type::Named(index)] = arguments.as_slice() {
+            if let [index] = arguments.as_slice()
+                && let Some(index) = super::expressions::type_argument_index(index)
+            {
                 let indexed_call = ast::Expr::Call {
                     callee: Box::new(ast::Expr::Index {
                         base: base.clone(),
-                        index: Box::new(ast::Expr::Name(index.clone())),
+                        index: Box::new(index),
                         span: *application_span,
                     }),
                     args: args.clone(),
@@ -439,9 +463,6 @@ impl BodyLowerer<'_> {
         }
         match callee.as_ref() {
             ast::Expr::Selector { base, field, .. } => {
-                if let Some(call) = self.lower_interface_call(base, &field.name, args, *span) {
-                    return call;
-                }
                 if let Some(call) = self.lower_method_call(base, &field.name, args, *span) {
                     return call;
                 }
@@ -454,9 +475,6 @@ impl BodyLowerer<'_> {
                     span: path.span,
                 });
                 let name = &path.segments.last()?.name;
-                if let Some(call) = self.lower_interface_call(&base, name, args, *span) {
-                    return call;
-                }
                 if let Some(call) = self.lower_method_call(&base, name, args, *span) {
                     return call;
                 }
@@ -507,6 +525,41 @@ impl BodyLowerer<'_> {
         arguments: &[ast::Expr],
         span: Span,
     ) -> Option<hir::Call> {
+        self.generic_function_application(path, type_arguments, Some(arguments), span)
+    }
+
+    pub(super) fn lower_generic_function_value(
+        &mut self,
+        source: &ast::Expr,
+        type_arguments: &[ast::Type],
+        span: Span,
+    ) -> Option<Option<hir::Expr>> {
+        let path = match source {
+            ast::Expr::Name(path) => path.clone(),
+            ast::Expr::Selector { base, field, .. } => {
+                let ast::Expr::Name(path) = base.as_ref() else {
+                    return Some(None);
+                };
+                let mut path = path.clone();
+                path.segments.push(field.clone());
+                path
+            }
+            _ => return Some(None),
+        };
+        if !self.generic_function_exists(&path) {
+            return Some(None);
+        }
+        let call = self.generic_function_application(&path, type_arguments, None, span)?;
+        Some(Some(*call.callee))
+    }
+
+    fn generic_function_application(
+        &mut self,
+        path: &ast::Path,
+        type_arguments: &[ast::Type],
+        arguments: Option<&[ast::Expr]>,
+        span: Span,
+    ) -> Option<hir::Call> {
         let (package_id, logical_path, declaration) = match path.segments.as_slice() {
             [name] => {
                 let package = self
@@ -514,6 +567,12 @@ impl BodyLowerer<'_> {
                     .iter()
                     .find(|package| package.id == self.package_id)?;
                 let declaration = package.generic_functions.get(&name.name)?.clone();
+                if !package.visible_from(declaration.span, span) {
+                    return self.fail(
+                        span,
+                        format!("test-only function `{}` is not visible here", name.name),
+                    );
+                }
                 (package.id, package.logical_path.clone(), declaration)
             }
             [qualifier, name] => {
@@ -531,6 +590,12 @@ impl BodyLowerer<'_> {
                     .iter()
                     .find(|package| package.id == package_id)?;
                 let declaration = package.generic_functions.get(&name.name)?.clone();
+                if !package.visible_from(declaration.span, span) {
+                    return self.fail(
+                        span,
+                        format!("test-only function `{}` is not visible here", name.name),
+                    );
+                }
                 (package.id, package.logical_path.clone(), declaration)
             }
             _ => return self.fail(span, "invalid generic function name"),
@@ -587,7 +652,10 @@ impl BodyLowerer<'_> {
                     arguments: concrete_types,
                 },
             );
-        if arguments.len() != signature.parameters.len() {
+        self.record_generic_request(&symbol, span);
+        if let Some(arguments) = arguments
+            && arguments.len() != signature.parameters.len()
+        {
             return self.fail(
                 span,
                 format!(
@@ -598,8 +666,11 @@ impl BodyLowerer<'_> {
             );
         }
         let mut lowered = Vec::new();
-        for (index, (argument, parameter)) in
-            arguments.iter().zip(&signature.parameters).enumerate()
+        for (index, (argument, parameter)) in arguments
+            .unwrap_or_default()
+            .iter()
+            .zip(&signature.parameters)
+            .enumerate()
         {
             let Some(value) = self.lower_value(argument, Some(parameter.ty)) else {
                 if let Some(diagnostic) = &mut self.failure {
@@ -615,6 +686,7 @@ impl BodyLowerer<'_> {
         }
         let function_type = signature.function_type();
         let function_ty = self.types.function(function_type.clone(), span);
+        self.record_generation_type(function_ty);
         Some(hir::Call {
             callee: Box::new(hir::Expr {
                 kind: hir::ExprKind::Function(symbol),
@@ -628,6 +700,11 @@ impl BodyLowerer<'_> {
     }
 
     fn generic_function_exists(&self, path: &ast::Path) -> bool {
+        if path.segments.first().is_some_and(|first| {
+            self.names.contains_key(&first.name) || self.constants.contains_key(&first.name)
+        }) {
+            return false;
+        }
         match path.segments.as_slice() {
             [name] => {
                 if self.names.contains_key(&name.name) || self.constants.contains_key(&name.name) {
@@ -636,7 +713,12 @@ impl BodyLowerer<'_> {
                 self.universe
                     .iter()
                     .find(|package| package.id == self.package_id)
-                    .is_some_and(|package| package.generic_functions.contains_key(&name.name))
+                    .is_some_and(|package| {
+                        package
+                            .generic_functions
+                            .get(&name.name)
+                            .is_some_and(|function| package.visible_from(function.span, path.span))
+                    })
             }
             [qualifier, name] => self
                 .universe
@@ -649,7 +731,12 @@ impl BodyLowerer<'_> {
                         .iter()
                         .find(|package| package.id == *package_id)
                 })
-                .is_some_and(|package| package.generic_functions.contains_key(&name.name)),
+                .is_some_and(|package| {
+                    package
+                        .generic_functions
+                        .get(&name.name)
+                        .is_some_and(|function| package.visible_from(function.span, path.span))
+                }),
             _ => false,
         }
     }
@@ -664,10 +751,7 @@ impl BodyLowerer<'_> {
                 .universe
                 .iter()
                 .find(|package| package.id == self.package_id)
-                .is_some_and(|package| {
-                    package.values.contains(&first.name)
-                        || package.constants.contains_key(&first.name)
-                })
+                .is_some_and(|package| package.value_visible_from(&first.name, path.span))
     }
 
     fn lower_method_call(
@@ -699,9 +783,13 @@ impl BodyLowerer<'_> {
         };
         let mut matched = None;
         for (package_id, declaration_index, method) in &candidates {
-            if let Some(candidate) =
-                self.resolve_method_candidate(*package_id, *declaration_index, method, receiver.ty)
-            {
+            if let Some(candidate) = self.resolve_method_candidate(
+                *package_id,
+                *declaration_index,
+                method,
+                receiver.ty,
+                span,
+            ) {
                 matched = Some((candidate, receiver.clone()));
                 break;
             }
@@ -715,6 +803,7 @@ impl BodyLowerer<'_> {
                         method,
                         &receiver,
                         address,
+                        span,
                     ) {
                         matched = Some(candidate);
                         break;
@@ -726,6 +815,7 @@ impl BodyLowerer<'_> {
             }
         }
         let (candidate, receiver) = matched?;
+        self.record_generation_type(receiver.ty);
         let signature = candidate.signature;
         if candidate.package_id != self.package_id
             && !name.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
@@ -761,6 +851,14 @@ impl BodyLowerer<'_> {
         let function_ty = self
             .types
             .intern(TypeKind::Function(function_type.clone()), span);
+        let bound_ty = self.types.function(
+            crate::semantic::FunctionType {
+                parameters: function_type.parameters.iter().skip(1).copied().collect(),
+                returns: function_type.returns.clone(),
+            },
+            span,
+        );
+        self.record_generation_type(bound_ty);
         let callee = hir::Expr {
             kind: hir::ExprKind::Function(candidate.symbol),
             ty: function_ty,
@@ -781,13 +879,14 @@ impl BodyLowerer<'_> {
         method: &ast::FuncDecl,
         receiver: &hir::Expr,
         address: bool,
+        span: Span,
     ) -> Option<(ResolvedMethodCandidate, hir::Expr)> {
         if !address
             && let Some(TypeKind::Pointer(pointee)) = self.types.underlying_kind(receiver.ty)
         {
             let pointee = *pointee;
             if let Some(candidate) =
-                self.resolve_method_candidate(package_id, declaration_index, method, pointee)
+                self.resolve_method_candidate(package_id, declaration_index, method, pointee, span)
             {
                 return Some((
                     candidate,
@@ -804,7 +903,7 @@ impl BodyLowerer<'_> {
         }
         let pointer = self.types.pointer(receiver.ty, receiver.span);
         let candidate =
-            self.resolve_method_candidate(package_id, declaration_index, method, pointer)?;
+            self.resolve_method_candidate(package_id, declaration_index, method, pointer, span)?;
         Some((
             candidate,
             hir::Expr {
@@ -821,6 +920,7 @@ impl BodyLowerer<'_> {
         declaration_index: usize,
         method: &ast::FuncDecl,
         actual_receiver: TypeId,
+        caller: Span,
     ) -> Option<ResolvedMethodCandidate> {
         let package = self
             .universe
@@ -831,6 +931,14 @@ impl BodyLowerer<'_> {
         let receiver_name = receiver_name.to_string();
         let logical_path = package.logical_path.clone();
         let declaration = package.declarations.get(&receiver_name)?;
+        // A test-defined receiver can reach a normal template through a type
+        // argument. Resolving that receiver's method is dependent dispatch;
+        // adding a method to a normal, fixed receiver does not change its scope.
+        if !package.visible_from(method.span, caller)
+            && package.visible_from(declaration.span, caller)
+        {
+            return None;
+        }
         let (receiver_source, signature_source, symbol) = if declaration.type_params.is_empty() {
             (
                 (**receiver).clone(),
@@ -902,15 +1010,17 @@ impl BodyLowerer<'_> {
             self.types,
             &mut diagnostics,
         )?;
-        (signature.parameters.first().map(|parameter| parameter.ty) == Some(actual_receiver))
-            .then_some(ResolvedMethodCandidate {
-                package_id,
-                logical_path,
-                receiver_name,
-                signature,
-                symbol,
-                span: method.span,
-            })
+        if signature.parameters.first().map(|parameter| parameter.ty) != Some(actual_receiver) {
+            return None;
+        }
+        if package.specializations.borrow().contains_key(&symbol) {
+            self.record_generic_request(&symbol, caller);
+        }
+        Some(ResolvedMethodCandidate {
+            package_id,
+            signature,
+            symbol,
+        })
     }
 
     /// Only a sole call can expand into several results. All other expressions

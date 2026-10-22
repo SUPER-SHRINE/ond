@@ -20,6 +20,7 @@ impl BodyLowerer<'_> {
         span: Span,
         null_terminated: bool,
     ) -> hir::Expr {
+        self.record_evaluated(&value);
         let package = self
             .universe
             .iter()
@@ -38,6 +39,7 @@ impl BodyLowerer<'_> {
                 span,
             });
         }
+        self.static_values.insert(symbol.clone(), value.clone());
         hir::Expr {
             kind: hir::ExprKind::Global(symbol),
             ty: value.ty,
@@ -46,7 +48,7 @@ impl BodyLowerer<'_> {
     }
 
     fn named_static(
-        &self,
+        &mut self,
         package_id: PackageId,
         name: &str,
         value: &hir::Expr,
@@ -57,11 +59,10 @@ impl BodyLowerer<'_> {
             .iter()
             .find(|package| package.id == package_id)
             .expect("constant package must exist in the type universe");
+        let symbol = super::super::canonical_symbol_name(&package.logical_path, name);
+        self.static_values.insert(symbol.clone(), value.clone());
         hir::Expr {
-            kind: hir::ExprKind::Global(super::super::canonical_symbol_name(
-                &package.logical_path,
-                name,
-            )),
+            kind: hir::ExprKind::Global(symbol),
             ty: value.ty,
             span,
         }
@@ -110,6 +111,7 @@ impl BodyLowerer<'_> {
         null_terminated: bool,
     ) -> Option<hir::Expr> {
         let value = self.constant_use(value, expected, span)?;
+        self.record_evaluated(&value);
         if self.constant_depth == 0 && self.aggregate_constant(&value) {
             return Some(self.anonymous_static(value, span, null_terminated));
         }
@@ -145,6 +147,12 @@ impl BodyLowerer<'_> {
                 self.fail(span, format!("unknown identifier `{name}`"))
             };
         };
+        if !package.visible_from(source.span(), span) {
+            return self.fail(
+                span,
+                format!("test-only constant `{name}` is not visible here"),
+            );
+        }
         let key = (package_id, name.to_string());
         if !self.const_stack.insert(key.clone()) {
             return self.fail(span, format!("constant dependency cycle at `{name}`"));
@@ -167,6 +175,9 @@ impl BodyLowerer<'_> {
         self.null_terminated_constants = saved_null_terminated_constants;
         self.const_stack.remove(&key);
         let value = value?;
+        let mut recorded = value.clone();
+        recorded.span = span;
+        self.record_evaluated(&recorded);
         if let Some(expected) = expected
             && expected != value.ty
         {
@@ -194,8 +205,20 @@ impl BodyLowerer<'_> {
         self.constant_depth -= 1;
         let expr = expr?;
         match crate::constant::evaluate(&expr, self.types) {
-            Ok(value) => Some(value),
-            Err(message) => self.fail(source.span(), message),
+            Ok(value) => {
+                self.record_evaluated(&value);
+                Some(value)
+            }
+            Err(message) => {
+                let span = match &expr.kind {
+                    hir::ExprKind::Unary {
+                        op: ast::UnaryOp::Minus,
+                        operand,
+                    } if matches!(operand.kind, hir::ExprKind::Integer(_)) => operand.span,
+                    _ => source.span(),
+                };
+                self.fail(span, message)
+            }
         }
     }
 }

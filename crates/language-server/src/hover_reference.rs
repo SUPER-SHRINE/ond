@@ -32,118 +32,6 @@ pub struct ResolvedFieldReference {
     pub ty: ast::Type,
 }
 
-#[derive(Debug, Clone)]
-pub struct ResolvedMethodReference {
-    pub declaration: Span,
-    pub reference: Span,
-    pub name: String,
-    pub signature: ast::TypeSignature,
-}
-
-pub fn resolve_interface_method_reference(
-    project: &ast::Project,
-    package: &ast::Package,
-    file: &ast::File,
-    offset: usize,
-) -> Option<ResolvedMethodReference> {
-    let (ty, field) = match find_reference(file, offset)? {
-        Reference::Name {
-            path,
-            segment: 1,
-            function,
-            type_position: false,
-        } if path.segments.len() == 2 => {
-            let base = &path.segments[0];
-            let ty = type_for_name(package, function, &base.name, offset).or_else(|| {
-                crate::completion::project_value_type_for_name(
-                    project, package, file, &base.name, offset,
-                )
-            })?;
-            (ty, &path.segments[1])
-        }
-        Reference::Field {
-            base,
-            field,
-            function,
-        } => (
-            resolve_expr_type(project, package, file, function, base, offset)?,
-            field,
-        ),
-        _ => return None,
-    };
-    let method = interface_method_in_project(project, package, file, &ty, &field.name, 0, false)?;
-    Some(ResolvedMethodReference {
-        declaration: method.name.span,
-        reference: field.span,
-        name: field.name.clone(),
-        signature: method.signature,
-    })
-}
-
-#[allow(clippy::too_many_arguments)]
-fn interface_method_in_project(
-    project: &ast::Project,
-    package: &ast::Package,
-    file: &ast::File,
-    ty: &ast::Type,
-    name: &str,
-    depth: usize,
-    external: bool,
-) -> Option<ast::InterfaceMethod> {
-    if depth > 16 {
-        return None;
-    }
-    match ty {
-        ast::Type::Interface { methods, .. } => methods
-            .iter()
-            .find(|method| method.name.name == name && (!external || is_exported(name)))
-            .cloned(),
-        ast::Type::Named(path) if path.segments.len() == 1 => {
-            let ty = find_type(package, &path.segments[0].name)?;
-            interface_method_in_project(project, package, file, ty, name, depth + 1, external)
-        }
-        ast::Type::Named(path) if path.segments.len() == 2 => {
-            let import_path = import_path_for_alias(file, &path.segments[0].name)?;
-            let imported = project
-                .packages
-                .iter()
-                .find(|candidate| candidate.logical_path == import_path)?;
-            let ty = find_type(imported, &path.segments[1].name)?;
-            let imported_file = imported.files.first()?;
-            interface_method_in_project(project, imported, imported_file, ty, name, depth + 1, true)
-        }
-        ast::Type::Apply {
-            base, arguments, ..
-        } if base.segments.len() == 1 => {
-            let spec = find_type_spec(package, &base.segments[0].name)?;
-            let ty = substitute_type_spec(spec, arguments)?;
-            interface_method_in_project(project, package, file, &ty, name, depth + 1, external)
-        }
-        ast::Type::Apply {
-            base, arguments, ..
-        } if base.segments.len() == 2 => {
-            let import_path = import_path_for_alias(file, &base.segments[0].name)?;
-            let imported = project
-                .packages
-                .iter()
-                .find(|candidate| candidate.logical_path == import_path)?;
-            let spec = find_type_spec(imported, &base.segments[1].name)?;
-            let ty = substitute_type_spec(spec, arguments)?;
-            let imported_file = imported.files.first()?;
-            interface_method_in_project(
-                project,
-                imported,
-                imported_file,
-                &ty,
-                name,
-                depth + 1,
-                true,
-            )
-        }
-        _ => None,
-    }
-}
-
 pub fn resolve_field_reference(
     project: &ast::Project,
     package: &ast::Package,
@@ -494,16 +382,7 @@ fn method_in_package(
             }
         }
     }
-    if pointer_depth != 0 {
-        return None;
-    }
-    let ast::Type::Interface { methods, .. } = find_type(package, receiver_name)? else {
-        return None;
-    };
-    methods
-        .iter()
-        .find(|method| method.name.name == method_name && (!external || is_exported(method_name)))
-        .map(|method| method.name.span)
+    None
 }
 
 fn exact_receiver_name(ty: &ast::Type) -> Option<(&str, bool)> {
@@ -1202,20 +1081,6 @@ fn find_in_type<'a>(
         ast::Type::Struct { fields, .. } => fields
             .iter()
             .find_map(|field| find_in_type(&field.ty, offset, function)),
-        ast::Type::Interface { methods, .. } => methods.iter().find_map(|method| {
-            method
-                .signature
-                .params
-                .iter()
-                .find_map(|parameter| find_in_type(&parameter.ty, offset, function))
-                .or_else(|| {
-                    method
-                        .signature
-                        .results
-                        .iter()
-                        .find_map(|ty| find_in_type(ty, offset, function))
-                })
-        }),
         ast::Type::Func { signature, .. } => signature
             .params
             .iter()
@@ -1793,17 +1658,6 @@ fn substitute_type(ty: &ast::Type, substitutions: &BTreeMap<&str, &ast::Type>) -
                     name: field.name.clone(),
                     ty: substitute_type(&field.ty, substitutions),
                     span: field.span,
-                })
-                .collect(),
-            span: *span,
-        },
-        ast::Type::Interface { methods, span } => ast::Type::Interface {
-            methods: methods
-                .iter()
-                .map(|method| ast::InterfaceMethod {
-                    name: method.name.clone(),
-                    signature: substitute_type_signature(&method.signature, substitutions),
-                    span: method.span,
                 })
                 .collect(),
             span: *span,

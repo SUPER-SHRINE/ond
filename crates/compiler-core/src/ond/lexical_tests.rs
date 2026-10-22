@@ -42,13 +42,13 @@ fn unicode_does_not_change_ascii_only_export_policy() {
     compile_files(&[
         (
             "main.ond",
-            "package main\nimport \"shared\"\nfunc main() { _ = shared.A値 }",
+            "package main\nimport \"test/shared\"\nfunc main() { _ = shared.A値 }",
         ),
         ("shared/shared.ond", "package shared\nconst A値 = 1"),
     ])
     .unwrap();
     crate::test_support::reject(
-        "package main\nimport \"shared\"\nfunc main() { _ = shared.値 }",
+        "package main\nimport \"test/shared\"\nfunc main() { _ = shared.値 }",
         Some("package shared\nconst 値 = 1"),
         "not exported",
         "shared.値",
@@ -147,6 +147,71 @@ fn float_forms_and_exponent_boundaries() {
 }
 
 #[test]
+fn syn03_hex_exponent_letter_is_integer_digit() {
+    let source = "0x1e+2";
+    let tokens = tokenize(FileId(0), source).unwrap();
+    assert_eq!(
+        tokens
+            .iter()
+            .take_while(|token| !matches!(token.kind, T::Semi | T::Eof))
+            .map(|token| (
+                token.kind,
+                token.text.as_str(),
+                token.span.start,
+                token.span.end
+            ))
+            .collect::<Vec<_>>(),
+        [
+            (T::IntLit, "0x1e", 0, 4),
+            (T::Plus, "+", 4, 5),
+            (T::IntLit, "2", 5, 6),
+        ]
+    );
+    crate::conformance::run(&crate::conformance::Case {
+        id: "SYN-03.hex-exponent-letter-as-digit",
+        specs: &["SYN-03"],
+        layer: crate::conformance::Layer::Core,
+        manifest: true,
+        files: &[crate::conformance::SourceFile {
+            path: "main.ond",
+            text: "package main\nconst X:u32=0x1e+2\nfunc main(){}\n",
+        }],
+        expected: crate::conformance::Expected::Accept(&[crate::conformance::Check::HirConstant {
+            package: ".",
+            name: "X",
+            ty: "u32",
+            value: crate::conformance::Scalar::Integer(32),
+        }]),
+    })
+    .unwrap();
+}
+
+#[test]
+fn syn04_decimal_signed_exponent_token_and_value() {
+    let tokens = tokenize(FileId(0), "1e+2").unwrap();
+    assert_eq!(tokens[0].kind, T::FloatLit);
+    assert_eq!(tokens[0].text, "1e+2");
+    assert_eq!((tokens[0].span.start, tokens[0].span.end), (0, 4));
+    crate::conformance::run(&crate::conformance::Case {
+        id: "SYN-04.decimal-signed-exponent",
+        specs: &["SYN-04"],
+        layer: crate::conformance::Layer::Core,
+        manifest: true,
+        files: &[crate::conformance::SourceFile {
+            path: "main.ond",
+            text: "package main\nconst X:f32=1e+2\nfunc main(){}\n",
+        }],
+        expected: crate::conformance::Expected::Accept(&[crate::conformance::Check::HirConstant {
+            package: ".",
+            name: "X",
+            ty: "f32",
+            value: crate::conformance::Scalar::Float32(0x42c80000),
+        }]),
+    })
+    .unwrap();
+}
+
+#[test]
 fn invalid_numeric_spelling_is_a_lexical_error() {
     for source in [
         "08", "0_9", "0b2", "0o8", "0x", "0x_", "42_", "4__2", "0_x1", "0b__1", "1_.0", "1._0",
@@ -217,7 +282,7 @@ fn strings_are_validated_even_without_hir_lowering() {
 
 #[test]
 fn import_paths_use_the_same_string_decoding() {
-    for path in [r#""\u0073hared""#, "`shared`", r#""shared""#] {
+    for path in [r#""te\u0073t/shared""#, "`test/shared`", r#""test/shared""#] {
         let source = format!("package main\nimport {path}\nfunc main() {{ _ = shared.Value }}");
         compile_files(&[
             ("main.ond", &source),
@@ -350,4 +415,28 @@ fn hexadecimal_float_rounds_once_with_guard_and_sticky_bits() {
         );
     }
     assert_eq!(numeric_literal::float(".5").unwrap(), 0.5);
+}
+
+// 数値候補の最大長走査。下線範囲全体の一致は要求しない。
+fn reject_numeric_candidate(source: &str) {
+    let errors = tokenize(FileId(7), source).expect_err(source).into_vec();
+    assert!(
+        errors.iter().any(|d| {
+            let s = d.primary.span;
+            s.file == FileId(7) && s.start < s.end && s.end <= source.len()
+        }),
+        "{source}: {errors:?}"
+    );
+}
+#[test]
+fn syn_maximal_decimal_fraction() {
+    reject_numeric_candidate("1.2.3");
+}
+#[test]
+fn syn_maximal_decimal_exponent() {
+    reject_numeric_candidate("1e2.3");
+}
+#[test]
+fn syn_maximal_hex_exponent() {
+    reject_numeric_candidate("0x1p0.0");
 }

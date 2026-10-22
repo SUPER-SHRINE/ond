@@ -351,7 +351,7 @@ pub(super) const CASES: &[Case] = &[
         files: &[
             SourceFile {
                 path: "main.ond",
-                text: "package main\nimport \"shared\"\nfunc main() {}\nfunc test() { var shared = 1; _ = shared.Exported; }\n",
+                text: "package main\nimport \"test/shared\"\nfunc main() {}\nfunc test() { var shared = 1; _ = shared.Exported; }\n",
             },
             SourceFile {
                 path: "shared/a.ond",

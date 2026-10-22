@@ -4,6 +4,8 @@ mod branch_tests;
 mod calls;
 #[cfg(test)]
 mod conformance;
+#[cfg(test)]
+mod debug_tests;
 mod emit;
 mod frame;
 #[cfg(test)]
@@ -26,6 +28,8 @@ mod ops;
 mod ordered_tests;
 mod readonly;
 pub mod runtime;
+#[cfg(test)]
+mod test_build_tests;
 #[cfg(test)]
 mod tests;
 use crate::{
@@ -166,6 +170,35 @@ pub fn codegen_selected_with_debug(
                     section: Some(SectionKind::Text),
                     offset: start,
                     size,
+                });
+            }
+            if package.initializer.is_none()
+                && let Some(name) = crate::program::initializer_symbol(package)
+            {
+                let start = emitter.offset(Span::synthetic())?;
+                globals::initializer(&project.types, package, &mut emitter)?;
+                let size = emitter.offset(Span::synthetic())? - start;
+                symbols.push(Symbol {
+                    name: name.clone(),
+                    binding: SymbolBinding::Exported,
+                    kind: SymbolKind::Function,
+                    section: Some(SectionKind::Text),
+                    offset: start,
+                    size,
+                });
+                debug.functions.push(ObjectFunctionDebug {
+                    symbol: name,
+                    section: SectionKind::Text,
+                    offset: start,
+                    size,
+                    frame_size: 0,
+                    return_address_offset: 0,
+                    source: None,
+                    unwind: vec![ObjectUnwindRow {
+                        offset: start,
+                        cfa_sp_offset: 0,
+                        return_address: ond_protocol::debug::ReturnAddressLocation::LinkRegister,
+                    }],
                 });
             }
             let (data, mut relocations) = emitter.finish()?;

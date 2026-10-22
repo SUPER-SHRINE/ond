@@ -7,9 +7,11 @@ mod diagnostics;
 mod evaluation;
 mod fixture;
 mod flow;
+mod layout_operators;
 mod name_duplicates;
 mod names;
 mod numeric;
+mod operator_contracts;
 mod precedence;
 mod runner;
 mod scope;
@@ -87,6 +89,7 @@ pub enum Check {
 
 #[derive(Clone, Copy)]
 pub enum Message {
+    Any,
     Exact(&'static str),
     Contains(&'static str),
 }
@@ -97,6 +100,12 @@ pub enum Location<'a> {
     EndOfFile { file: &'static str },
     /// Exact UTF-8 byte span of the zero-based occurrence of text in file.
     Source {
+        file: &'static str,
+        text: &'a str,
+        occurrence: usize,
+    },
+    /// A diagnostic source span contained by the identified cause expression.
+    WithinSource {
         file: &'static str,
         text: &'a str,
         occurrence: usize,

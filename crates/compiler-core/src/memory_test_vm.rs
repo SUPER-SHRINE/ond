@@ -51,10 +51,6 @@ fn zero(types: &TypeTable, ty: TypeId) -> Value {
                 .map(|field| zero(types, field.ty))
                 .collect(),
         ),
-        TypeKind::Interface(interface) => Value::Aggregate(vec![
-            zero(types, interface.data_pointer),
-            zero(types, interface.vtable),
-        ]),
         _ => Value::Number(0),
     }
 }

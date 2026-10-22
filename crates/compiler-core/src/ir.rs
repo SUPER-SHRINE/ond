@@ -148,13 +148,6 @@ pub mod ast {
     }
 
     #[derive(Debug, Clone)]
-    pub struct InterfaceMethod {
-        pub name: Ident,
-        pub signature: TypeSignature,
-        pub span: Span,
-    }
-
-    #[derive(Debug, Clone)]
     pub struct Block {
         pub statements: Vec<Stmt>,
         pub span: Span,
@@ -263,10 +256,6 @@ pub mod ast {
         },
         Struct {
             fields: Vec<Field>,
-            span: Span,
-        },
-        Interface {
-            methods: Vec<InterfaceMethod>,
             span: Span,
         },
         Func {
@@ -520,6 +509,7 @@ pub mod hir {
     pub struct File {
         pub file_id: crate::source::FileId,
         pub package_name: String,
+        pub test_only: bool,
     }
 
     #[derive(Debug, Clone)]
@@ -746,15 +736,6 @@ pub mod hir {
         },
         Composite(Vec<(u32, Expr)>),
         Function(String),
-        InterfaceMethod {
-            receiver: Box<Expr>,
-            index: u32,
-        },
-        InterfaceEqual {
-            lhs: Box<Expr>,
-            rhs: Box<Expr>,
-            negate: bool,
-        },
         EvaluatedLength {
             value: Box<Expr>,
             length: u32,

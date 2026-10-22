@@ -3,6 +3,7 @@ mod casts;
 mod float_vectors;
 mod floats;
 mod integers;
+mod num02;
 mod runtime;
 use super::*;
 use crate::test_vectors::integers as vectors;

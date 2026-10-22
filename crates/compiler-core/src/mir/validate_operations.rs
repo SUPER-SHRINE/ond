@@ -128,7 +128,7 @@ pub(super) fn function(types: &TypeTable, f: &Function) -> Vec<ValidationError> 
                 }),
                 InstructionKind::AggregateCopy { source, .. } => matches!(
                     types.underlying_kind(source.ty),
-                    Some(TypeKind::Array { .. } | TypeKind::Struct(_) | TypeKind::Interface(_))
+                    Some(TypeKind::Array { .. } | TypeKind::Struct(_))
                 ),
                 InstructionKind::AddressOf(Place {
                     base: PlaceBase::Local(id),

@@ -602,7 +602,6 @@ impl FunctionBuilder<'_> {
     fn lower_expr(&mut self, expr: &hir::Expr) -> Option<mir::ValueId> {
         let kind = match &expr.kind {
             hir::ExprKind::Intrinsic(_) => return None, // only legal as a call target
-            hir::ExprKind::InterfaceMethod { .. } => return None, // only legal as a call target
             hir::ExprKind::Global(_)
             | hir::ExprKind::Dereference(_)
             | hir::ExprKind::AddressOf(_)
@@ -611,9 +610,6 @@ impl FunctionBuilder<'_> {
             | hir::ExprKind::Composite(_) => return self.lower_memory_expr(expr),
             hir::ExprKind::Call(call) => {
                 return self.lower_call(call)?.into_iter().next();
-            }
-            hir::ExprKind::InterfaceEqual { lhs, rhs, negate } => {
-                return self.lower_interface_equal(lhs, rhs, *negate, expr.span);
             }
             hir::ExprKind::EvaluatedLength { value, length } => {
                 self.lower_expr(value)?;
@@ -802,26 +798,16 @@ impl FunctionBuilder<'_> {
     fn lower_call(&mut self, call: &hir::Call) -> Option<Vec<mir::ValueId>> {
         // Evaluate the callee first, then arguments left to right. A direct
         // function reference has no evaluation effects of its own.
-        let mut interface_data = None;
         let callee = match &call.callee.kind {
             hir::ExprKind::Intrinsic(op) => mir::Callee::Intrinsic(*op),
             hir::ExprKind::Function(symbol) => mir::Callee::Direct(symbol.clone()),
-            hir::ExprKind::InterfaceMethod { receiver, index } => {
-                let (callee, data) =
-                    self.lower_interface_callee(receiver, *index, call.callee.ty, call.span)?;
-                interface_data = Some(data);
-                mir::Callee::Indirect(callee)
-            }
             _ => mir::Callee::Indirect(self.lower_expr(&call.callee)?),
         };
-        let mut arguments = call
+        let arguments = call
             .arguments
             .iter()
             .map(|arg| self.lower_expr(arg))
             .collect::<Option<Vec<_>>>()?;
-        if let Some(data) = interface_data {
-            arguments.insert(0, data);
-        }
         let results = call
             .signature
             .returns
@@ -909,222 +895,6 @@ impl FunctionBuilder<'_> {
             )),
             _ => Some(value),
         }
-    }
-
-    fn lower_interface_callee(
-        &mut self,
-        receiver: &hir::Expr,
-        index: u32,
-        function_ty: mir::TypeId,
-        span: Span,
-    ) -> Option<(mir::ValueId, mir::ValueId)> {
-        let interface = match self.types.underlying_kind(receiver.ty)? {
-            crate::semantic::TypeKind::Interface(interface) => interface.clone(),
-            _ => return None,
-        };
-        let value = self.lower_expr(receiver)?;
-        let storage = self.temporary(receiver.ty, span);
-        self.store_value(storage.clone(), value, span);
-        let data = self.load_interface_field(storage.clone(), 0, interface.data_pointer, span);
-        let table = self.load_interface_field(storage, 1, interface.vtable, span);
-        let nil = self.emit_value(
-            interface.vtable,
-            mir::InstructionKind::Constant(mir::Constant::Nil(interface.vtable)),
-            span,
-        );
-        let table_nil = self.emit_value(
-            mir::TypeId::BOOL,
-            mir::InstructionKind::Binary {
-                op: mir::BinaryOp::Equal,
-                lhs: table,
-                rhs: nil,
-                overflow: mir::OverflowBehavior::Wrap,
-            },
-            span,
-        );
-        let fault = self.new_block(span);
-        let dispatch = self.new_block(span);
-        self.terminate(
-            mir::TerminatorKind::Branch {
-                condition: table_nil,
-                then_edge: edge(fault),
-                else_edge: edge(dispatch),
-            },
-            span,
-        );
-        self.current = Some(fault);
-        self.terminate(
-            mir::TerminatorKind::Trap(mir::TrapKind::Explicit("nil interface method call".into())),
-            span,
-        );
-        self.current = Some(dispatch);
-        let method_place = mir::Place {
-            base: mir::PlaceBase::Pointer(table),
-            projections: vec![mir::Projection::Field {
-                index,
-                ty: function_ty,
-            }],
-            ty: function_ty,
-        };
-        let callee = self.load_place_value(method_place, span);
-        Some((callee, data))
-    }
-
-    fn load_interface_field(
-        &mut self,
-        mut place: mir::Place,
-        index: u32,
-        ty: mir::TypeId,
-        span: Span,
-    ) -> mir::ValueId {
-        place.projections.push(mir::Projection::Field { index, ty });
-        place.ty = ty;
-        self.load_place_value(place, span)
-    }
-
-    fn lower_interface_equal(
-        &mut self,
-        lhs: &hir::Expr,
-        rhs: &hir::Expr,
-        negate: bool,
-        span: Span,
-    ) -> Option<mir::ValueId> {
-        let interface = match self.types.underlying_kind(lhs.ty)? {
-            crate::semantic::TypeKind::Interface(interface) => interface.clone(),
-            _ => return None,
-        };
-        let lhs_value = self.lower_expr(lhs)?;
-        let lhs_place = self.temporary(lhs.ty, lhs.span);
-        self.store_value(lhs_place.clone(), lhs_value, lhs.span);
-        let rhs_value = self.lower_expr(rhs)?;
-        let rhs_place = self.temporary(rhs.ty, rhs.span);
-        self.store_value(rhs_place.clone(), rhs_value, rhs.span);
-
-        let lhs_data =
-            self.load_interface_field(lhs_place.clone(), 0, interface.data_pointer, span);
-        let rhs_data =
-            self.load_interface_field(rhs_place.clone(), 0, interface.data_pointer, span);
-        let data_equal = self.emit_value(
-            mir::TypeId::BOOL,
-            mir::InstructionKind::Binary {
-                op: mir::BinaryOp::Equal,
-                lhs: lhs_data,
-                rhs: rhs_data,
-                overflow: mir::OverflowBehavior::Wrap,
-            },
-            span,
-        );
-        let nil = self.emit_value(
-            interface.data_pointer,
-            mir::InstructionKind::Constant(mir::Constant::Nil(interface.data_pointer)),
-            span,
-        );
-        let data_nil = self.emit_value(
-            mir::TypeId::BOOL,
-            mir::InstructionKind::Binary {
-                op: mir::BinaryOp::Equal,
-                lhs: lhs_data,
-                rhs: nil,
-                overflow: mir::OverflowBehavior::Wrap,
-            },
-            span,
-        );
-        let lhs_table = self.load_interface_field(lhs_place, 1, interface.vtable, span);
-        let rhs_table = self.load_interface_field(rhs_place, 1, interface.vtable, span);
-        let table_equal = self.emit_value(
-            mir::TypeId::BOOL,
-            mir::InstructionKind::Binary {
-                op: mir::BinaryOp::Equal,
-                lhs: lhs_table,
-                rhs: rhs_table,
-                overflow: mir::OverflowBehavior::Wrap,
-            },
-            span,
-        );
-
-        let false_block = self.new_block(span);
-        let data_match = self.new_block(span);
-        let true_block = self.new_block(span);
-        let table_block = self.new_block(span);
-        let merge = self.new_block(span);
-        let result = mir::ValueId(self.values.len() as u32);
-        self.values.push(mir::Value {
-            id: result,
-            ty: mir::TypeId::BOOL,
-            span,
-        });
-        self.blocks[merge.0 as usize].parameters.push(result);
-        self.terminate(
-            mir::TerminatorKind::Branch {
-                condition: data_equal,
-                then_edge: edge(data_match),
-                else_edge: edge(false_block),
-            },
-            span,
-        );
-        self.current = Some(data_match);
-        self.terminate(
-            mir::TerminatorKind::Branch {
-                condition: data_nil,
-                then_edge: edge(true_block),
-                else_edge: edge(table_block),
-            },
-            span,
-        );
-        self.current = Some(false_block);
-        let false_value = self.emit_value(
-            mir::TypeId::BOOL,
-            mir::InstructionKind::Constant(mir::Constant::Bool {
-                value: negate,
-                ty: mir::TypeId::BOOL,
-            }),
-            span,
-        );
-        self.terminate(
-            mir::TerminatorKind::Jump(mir::Edge {
-                target: merge,
-                arguments: vec![false_value],
-            }),
-            span,
-        );
-        self.current = Some(true_block);
-        let true_value = self.emit_value(
-            mir::TypeId::BOOL,
-            mir::InstructionKind::Constant(mir::Constant::Bool {
-                value: !negate,
-                ty: mir::TypeId::BOOL,
-            }),
-            span,
-        );
-        self.terminate(
-            mir::TerminatorKind::Jump(mir::Edge {
-                target: merge,
-                arguments: vec![true_value],
-            }),
-            span,
-        );
-        self.current = Some(table_block);
-        let table_result = if negate {
-            self.emit_value(
-                mir::TypeId::BOOL,
-                mir::InstructionKind::Unary {
-                    op: mir::UnaryOp::LogicalNot,
-                    operand: table_equal,
-                },
-                span,
-            )
-        } else {
-            table_equal
-        };
-        self.terminate(
-            mir::TerminatorKind::Jump(mir::Edge {
-                target: merge,
-                arguments: vec![table_result],
-            }),
-            span,
-        );
-        self.current = Some(merge);
-        Some(result)
     }
 
     fn emit_value(

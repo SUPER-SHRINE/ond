@@ -261,3 +261,6 @@ fn branch_slots_reject_interior_symbols_and_resolved_targets() {
             .contains("slot interior")
     );
 }
+
+#[path = "conformance_tests.rs"]
+mod conformance_tests;

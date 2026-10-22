@@ -1,6 +1,24 @@
 use crate::{memory_test_vm, test_support};
 
 #[test]
+fn builtin_compound_index_captures_a_pointer_call_once() {
+    let compilation = test_support::compile("package main\nvar A:u32\nvar Trace:u32\nfunc base()->*u32{Trace=Trace*10+1;return &A}\nfunc index()->u32{Trace=Trace*10+2;return 0}\nfunc rhs()->u32{Trace=Trace*10+3;return 3}\nfunc observe()->(u32,u32){A=7;Trace=0;base()[index()]+=rhs();return A,Trace}\nfunc main(){}\n", None).unwrap();
+    assert_eq!(
+        memory_test_vm::execute(&compilation.mir, "main.observe", &[]).unwrap(),
+        [10, 123]
+    );
+}
+
+#[test]
+fn builtin_compound_index_freezes_the_pointer_before_index_effects() {
+    let compilation = test_support::compile("package main\nvar A:u32\nvar B:u32\nvar P:*u32\nfunc index()->u32{P=&B;return 0}\nfunc observe()->(u32,u32){A=7;B=20;P=&A;P[index()]+=3;return A,B}\nfunc main(){}\n", None).unwrap();
+    assert_eq!(
+        memory_test_vm::execute(&compilation.mir, "main.observe", &[]).unwrap(),
+        [10, 20]
+    );
+}
+
+#[test]
 fn compound_assignment_dereferences_receiver_before_rhs() {
     let compilation = test_support::compile(
         r#"package main
@@ -380,66 +398,6 @@ func main() {
 }
 
 #[test]
-fn independent_generic_specialization_failures_are_all_reported() {
-    let source = r#"package main
-func Add[T](value: T) -> T { return value + value }
-func Sub[T](value: T) -> T { return value - value }
-func main() {
-    _ = Add[bool](true)
-    _ = Sub[bool](true)
-}
-"#;
-    let error = test_support::compile(source, None)
-        .expect_err("independent invalid specializations should both be rejected");
-    let diagnostics = error.diagnostics();
-    assert_eq!(diagnostics.len(), 2, "{diagnostics:?}");
-    let primary = diagnostics
-        .iter()
-        .map(|diagnostic| &source[diagnostic.primary.span.start..diagnostic.primary.span.end])
-        .collect::<Vec<_>>();
-    assert!(primary.contains(&"value + value"), "{diagnostics:?}");
-    assert!(primary.contains(&"value - value"), "{diagnostics:?}");
-}
-
-#[test]
-fn pointer_to_interface_return_explains_the_required_explicit_conversion() {
-    let source = r#"package main
-type Box[T] interface { Get() -> T; }
-type Cell[T] struct { value: T }
-func (cell: *Cell[T]) Get() -> T { return cell.value }
-func NewBox[T]() -> Box[T] {
-    cell := new(Cell[T])
-    return cell
-}
-func main() { _ = NewBox[u32]() }
-"#;
-    let error = test_support::compile(source, None)
-        .expect_err("implicit pointer-to-interface return should be rejected");
-    let diagnostic = error
-        .diagnostics()
-        .iter()
-        .find(|diagnostic| diagnostic.message.contains("pointer-to-interface"))
-        .expect("explicit interface conversion diagnostic");
-    assert!(
-        diagnostic.message.contains("expected `Box[u32]`")
-            && diagnostic.message.contains("found `*Cell[u32]`")
-            && diagnostic.message.contains("as Box[u32]"),
-        "{diagnostic:?}"
-    );
-    assert_eq!(
-        &source[diagnostic.primary.span.start..diagnostic.primary.span.end],
-        "cell"
-    );
-    assert!(
-        diagnostic
-            .related
-            .iter()
-            .any(|related| &source[related.span.start..related.span.end] == "NewBox[u32]()"),
-        "{diagnostic:?}"
-    );
-}
-
-#[test]
 fn nested_generic_errors_include_the_instantiation_chain() {
     let source = r#"package main
 
@@ -553,7 +511,7 @@ func main() {}
 fn imported_generic_types_and_functions_are_specialized_in_their_owner_package() {
     let compilation = test_support::compile(
         r#"package main
-import "shared"
+import "test/shared"
 
 func observe() -> u32 {
     return shared.Wrap[u32](31).Value
@@ -666,15 +624,14 @@ func main() {}
 }
 
 #[test]
-fn generic_interface_operators_delegate_to_interface_methods() {
+fn generic_struct_operators_delegate_to_methods() {
     test_support::compile(
         r#"package main
 
-type List[T] interface {
-    Get(index: u32) -> T
-    Set(index: u32, value: T)
-    Len() -> u32
-}
+type List[T] struct { pair: *Pair[T] }
+func (list: List[T]) Get(index: u32) -> T { return list.pair.Get(index) }
+func (list: List[T]) Set(index: u32, value: T) { list.pair.Set(index, value) }
+func (list: List[T]) Len() -> u32 { return list.pair.Len() }
 
 type Pair[T] struct { values: [2]T }
 
@@ -696,7 +653,7 @@ operator (values: List[T]) len() -> u32 {
 
 func observe() -> (u32, u32) {
     pair := Pair[u32]{values: [2]u32{3, 5}}
-    var values: List[u32] = (&pair) as List[u32]
+    var values = List[u32]{pair:&pair}
     values[1] = 13
     return values[1], len(values)
 }
@@ -705,7 +662,7 @@ func main() {}
 "#,
         None,
     )
-    .expect("operators on a named generic interface should compile");
+    .expect("operators on a named generic struct should compile");
 }
 
 #[test]
@@ -875,7 +832,7 @@ func main() {
 fn imported_generic_operators_are_specialized_in_their_owner_package() {
     let compilation = test_support::compile(
         r#"package main
-import "shared"
+import "test/shared"
 
 func observe() -> u32 {
     values := shared.Values[u32]{Data: [1]u32{37}}
@@ -909,7 +866,7 @@ fn generic_pointer_operators_are_found_through_a_bridge_import() {
         (
             "main.ond",
             r#"package main
-import facade "bridge"
+import facade "test/bridge"
 
 func observe() -> u32 {
     values := facade.Make[u32]()
@@ -922,7 +879,7 @@ func main() {}
         (
             "bridge/bridge.ond",
             r#"package bridge
-import ownerpkg "owner"
+import ownerpkg "test/owner"
 
 func Make[T]() -> ownerpkg.Values[T] {
     return ownerpkg.Values[T]{Data: [1]T{37}}
@@ -988,24 +945,25 @@ func main() {}
 }
 
 #[test]
-fn imported_generic_interface_operators_are_discovered_from_the_owner_package() {
+fn imported_generic_struct_operators_are_discovered_from_the_owner_package() {
     test_support::compile(
         r#"package main
-import "shared"
+import "test/shared"
 
 type Pair struct { Values: [1]u32 }
 func (pair: *Pair) Get(index: u32) -> u32 { return pair.Values[index] }
 
 func main() {
     pair := Pair{Values: [1]u32{7}}
-    var values: shared.List[u32] = (&pair) as shared.List[u32]
+    var values = shared.List[u32]{Values:pair.Values}
     _ = values[0]
 }
 "#,
         Some(
             r#"package shared
 
-type List[T] interface { Get(index: u32) -> T; }
+type List[T] struct { Values: [1]T }
+func (values: List[T]) Get(index: u32) -> T { return values.Values[index] }
 
 operator (values: List[T]) [](index: u32) -> T {
     return values.Get(index)
@@ -1013,16 +971,16 @@ operator (values: List[T]) [](index: u32) -> T {
 "#,
         ),
     )
-    .expect("an imported generic interface operator should be available by operand type");
+    .expect("an imported generic struct operator should be available by operand type");
 }
 
 #[test]
-fn generic_interface_operators_are_found_through_a_bridge_import() {
+fn generic_struct_operators_are_found_through_a_bridge_import() {
     test_support::compile_files(&[
         (
             "main.ond",
             r#"package main
-import facade "bridge"
+import facade "test/bridge"
 
 func main() {
     values := facade.Make()
@@ -1033,14 +991,14 @@ func main() {
         (
             "bridge/bridge.ond",
             r#"package bridge
-import ownerpkg "owner"
+import ownerpkg "test/owner"
 
 type Pair struct { Values: [1]u32 }
 var pair = Pair{Values: [1]u32{37}}
 func (pair: *Pair) Get(index: u32) -> u32 { return pair.Values[index] }
 
 func Make() -> ownerpkg.List[u32] {
-    return (&pair) as ownerpkg.List[u32]
+    return ownerpkg.List[u32]{Values:pair.Values}
 }
 "#,
         ),
@@ -1048,7 +1006,8 @@ func Make() -> ownerpkg.List[u32] {
             "owner/owner.ond",
             r#"package owner
 
-type List[T] interface { Get(index: u32) -> T; }
+type List[T] struct { Values: [1]T }
+func (values: List[T]) Get(index: u32) -> T { return values.Values[index] }
 
 operator (values: List[T]) [](index: u32) -> T {
     return values.Get(index)
@@ -1056,32 +1015,7 @@ operator (values: List[T]) [](index: u32) -> T {
 "#,
         ),
     ])
-    .expect("generic interface operators should be found in the receiver owner package");
-}
-
-#[test]
-fn interface_operators_do_not_apply_to_implementing_concrete_types_implicitly() {
-    let error = test_support::compile(
-        r#"package main
-
-type List interface { Get(index: u32) -> u32; }
-type Pair struct { values: [1]u32 }
-func (pair: *Pair) Get(index: u32) -> u32 { return pair.values[index] }
-operator (values: List) + (index: u32) -> u32 { return values.Get(index) }
-
-func main() { var pair: Pair; var zero: u32 = 0; _ = (&pair) + zero }
-"#,
-        None,
-    )
-    .expect_err("operator lookup must not insert an implicit interface conversion");
-    assert!(
-        error
-            .diagnostics()
-            .iter()
-            .any(|diagnostic| diagnostic.message.contains("operand")),
-        "{:?}",
-        error.diagnostics()
-    );
+    .expect("generic struct operators should be found in the receiver owner package");
 }
 
 #[test]
@@ -1271,4 +1205,26 @@ func main() {}
         memory_test_vm::execute(&compilation.mir, "main.observe", &[]).unwrap(),
         [5]
     );
+}
+
+#[test]
+fn independent_generic_specialization_failures_are_all_reported() {
+    let source = r#"package main
+func Add[T](value: T) -> T { return value + value }
+func Sub[T](value: T) -> T { return value - value }
+func main() {
+    _ = Add[bool](true)
+    _ = Sub[bool](true)
+}
+"#;
+    let error = test_support::compile(source, None)
+        .expect_err("independent invalid specializations should both be rejected");
+    let diagnostics = error.diagnostics();
+    assert_eq!(diagnostics.len(), 2, "{diagnostics:?}");
+    let primary = diagnostics
+        .iter()
+        .map(|diagnostic| &source[diagnostic.primary.span.start..diagnostic.primary.span.end])
+        .collect::<Vec<_>>();
+    assert!(primary.contains(&"value + value"), "{diagnostics:?}");
+    assert!(primary.contains(&"value - value"), "{diagnostics:?}");
 }

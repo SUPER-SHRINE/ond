@@ -36,11 +36,16 @@ pub fn compile_loaded_project(loaded: LoadedProject) -> Result<Compilation, Fron
             let file = frontend.loaded.sources.file(*file_id);
             let relative = file.path().strip_prefix(&package.directory).unwrap_or(file.path());
             let relative = relative.to_string_lossy().replace('\\', "/");
-            let path = if package.logical_path == "." {
-                relative
-            } else {
-                format!("{}/{relative}", package.logical_path)
-            };
+            let path = file.display_path().map_or_else(
+                || {
+                    if package.logical_path == "." {
+                        relative
+                    } else {
+                        format!("{}/{relative}", package.logical_path)
+                    }
+                },
+                str::to_string,
+            );
             debug_paths.insert(*file_id, path);
         }
     }

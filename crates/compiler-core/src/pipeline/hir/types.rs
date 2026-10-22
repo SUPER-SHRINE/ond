@@ -69,6 +69,7 @@ pub(super) struct TypeDeclaration {
     pub(super) ty: ast::Type,
     pub(super) type_params: Vec<ast::Ident>,
     pub(super) span: Span,
+    name_span: Span,
     pub(super) type_id: Option<crate::semantic::TypeId>,
 }
 
@@ -90,10 +91,14 @@ pub(super) enum GenericSpecialization {
 }
 
 pub(super) struct TypePackage {
+    pub(super) generation: RefCell<super::generation::Collector>,
     pub(super) specializations: RefCell<BTreeMap<String, GenericSpecialization>>,
+    pub(super) generic_requests: RefCell<Vec<super::generic_paths::Request>>,
+    active_types: RefCell<BTreeMap<String, Vec<crate::semantic::TypeId>>>,
     pub(super) id: PackageId,
     pub(super) logical_path: String,
     pub(super) imports: BTreeMap<FileId, BTreeMap<String, PackageId>>,
+    test_files: BTreeSet<FileId>,
     pub(super) declarations: BTreeMap<String, TypeDeclaration>,
     pub(super) constants: BTreeMap<String, (Option<ast::Type>, ast::Expr)>,
     pub(super) values: BTreeSet<String>,
@@ -102,6 +107,27 @@ pub(super) struct TypePackage {
     pub(super) methods: Vec<ast::FuncDecl>,
     pub(super) operators: Vec<ast::OperatorDecl>,
     pub(super) globals: BTreeMap<String, ast::VarSpec>,
+}
+
+impl TypePackage {
+    pub(super) fn value_visible_from(&self, name: &str, caller: Span) -> bool {
+        let declaration = self
+            .constants
+            .get(name)
+            .map(|(_, value)| value.span())
+            .or_else(|| self.globals.get(name).map(|spec| spec.span))
+            .or_else(|| self.functions.get(name).map(|signature| signature.span))
+            .or_else(|| {
+                self.generic_functions
+                    .get(name)
+                    .map(|function| function.span)
+            });
+        declaration.is_some_and(|declaration| self.visible_from(declaration, caller))
+    }
+
+    pub(super) fn visible_from(&self, declaration: Span, caller: Span) -> bool {
+        !self.test_files.contains(&declaration.file) || self.test_files.contains(&caller.file)
+    }
 }
 
 pub(super) fn collect_type_universe(
@@ -213,16 +239,28 @@ pub(super) fn collect_type_universe(
                                 ty: spec.ty.clone(),
                                 type_params: spec.type_params.clone(),
                                 span: spec.span,
+                                name_span: spec.name.span,
                                 type_id,
                             });
                     }
                 }
             }
             Some(TypePackage {
+                generation: RefCell::default(),
                 specializations: RefCell::default(),
+                generic_requests: RefCell::default(),
+                active_types: RefCell::default(),
                 id: source.id,
                 logical_path: package.logical_path.clone(),
                 imports,
+                test_files: source
+                    .files
+                    .iter()
+                    .copied()
+                    .filter(|file| {
+                        crate::project::is_test_source(loaded.sources.file(*file).path())
+                    })
+                    .collect(),
                 declarations,
                 constants,
                 values,
@@ -346,26 +384,15 @@ pub(super) fn resolve_defined_type(
         return None;
     }
     visiting.insert(type_id);
-    let underlying = match &declaration.ty {
-        ast::Type::Interface { methods, span } => resolve_interface_type(
-            package_id,
-            methods,
-            *span,
-            universe,
-            types,
-            visiting,
-            diagnostics,
-        ),
-        ty => resolve_type(
-            package_id,
-            ty,
-            universe,
-            types,
-            false,
-            visiting,
-            diagnostics,
-        ),
-    };
+    let underlying = resolve_type(
+        package_id,
+        &declaration.ty,
+        universe,
+        types,
+        false,
+        visiting,
+        diagnostics,
+    );
     visiting.remove(&type_id);
     if let Some(underlying) = underlying {
         types.define(type_id, TypeKind::Defined { underlying });
@@ -373,97 +400,6 @@ pub(super) fn resolve_defined_type(
     } else {
         None
     }
-}
-
-fn resolve_interface_type(
-    package_id: PackageId,
-    methods: &[ast::InterfaceMethod],
-    span: Span,
-    universe: &[TypePackage],
-    types: &mut crate::semantic::TypeTable,
-    visiting: &mut BTreeSet<crate::semantic::TypeId>,
-    diagnostics: &mut Diagnostics,
-) -> Option<crate::semantic::TypeId> {
-    use crate::semantic::{
-        FunctionType, InterfaceMethod, InterfaceType, StructField, StructType, TypeKind,
-    };
-
-    let data_pointer = types.pointer(crate::semantic::TypeId::U8, span);
-    let mut names = BTreeSet::new();
-    let mut resolved = Vec::new();
-    let mut fields = Vec::new();
-    let mut valid = true;
-    for method in methods {
-        if !names.insert(method.name.name.clone()) {
-            diagnostics.push(Diagnostic::error(
-                method.name.span,
-                format!("duplicate interface method `{}`", method.name.name),
-            ));
-            valid = false;
-            continue;
-        }
-        let mut parameters = vec![data_pointer];
-        for parameter in &method.signature.params {
-            let ty = resolve_type(
-                package_id,
-                &parameter.ty,
-                universe,
-                types,
-                true,
-                visiting,
-                diagnostics,
-            );
-            valid &= ty.is_some();
-            if let Some(ty) = ty {
-                parameters.push(ty);
-            }
-        }
-        let mut returns = Vec::new();
-        for result in &method.signature.results {
-            let ty = resolve_type(
-                package_id,
-                result,
-                universe,
-                types,
-                true,
-                visiting,
-                diagnostics,
-            );
-            valid &= ty.is_some();
-            if let Some(ty) = ty {
-                returns.push(ty);
-            }
-        }
-        let signature = FunctionType {
-            parameters,
-            returns,
-        };
-        let function = types.function(signature.clone(), method.span);
-        fields.push(StructField {
-            name: method.name.name.clone(),
-            ty: function,
-            private_owner: None,
-            span: method.span,
-        });
-        resolved.push(InterfaceMethod {
-            name: method.name.name.clone(),
-            signature,
-            private_owner: None,
-        });
-    }
-    if !valid {
-        return None;
-    }
-    let vtable = types.intern(TypeKind::Struct(StructType { fields }), span);
-    let vtable = types.pointer(vtable, span);
-    Some(types.intern(
-        TypeKind::Interface(InterfaceType {
-            methods: resolved,
-            data_pointer,
-            vtable,
-        }),
-        span,
-    ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -515,6 +451,13 @@ fn resolve_applied_type(
         ));
         return None;
     };
+    if !owner.visible_from(declaration.span, base.span) {
+        diagnostics.push(Diagnostic::error(
+            base.span,
+            format!("test-only type `{name}` is not visible here"),
+        ));
+        return None;
+    }
     if declaration.type_params.is_empty() {
         diagnostics.push(Diagnostic::error(
             span,
@@ -547,13 +490,34 @@ fn resolve_applied_type(
             )
         })
         .collect::<Option<Vec<_>>>()?;
+    // Arguments explicitly written inside an application use the caller's path.
+    // The application itself enters only after resolving those arguments, so a
+    // root Box[Box[u8]] does not confuse the independent inner and outer uses.
+    let first_arguments = owner.active_types.borrow().get(name).cloned();
+    if first_arguments
+        .as_ref()
+        .is_some_and(|first| first != &resolved_arguments)
+    {
+        diagnostics.push(
+            Diagnostic::error(
+                span,
+                "generic instantiation changes type arguments on the same path",
+            )
+            .with_related(declaration.name_span, "generic type declared here"),
+        );
+        return None;
+    }
     let declaration_name = format!("{}.{}", owner.logical_path, name);
     let instance_name =
         super::identity::generic_name(&declaration_name, &resolved_arguments, types, universe);
     let existing = types.find_named(&instance_name);
     if let Some(id) = existing {
         if !matches!(types.kind(id), Some(crate::semantic::TypeKind::Pending)) {
-            return Some(id);
+            // A completed instance may have been reached first from another
+            // root. Replay its source requests in this path before reusing it.
+            if first_arguments.is_some() {
+                return Some(id);
+            }
         }
         if visiting.contains(&id) {
             if indirected {
@@ -575,6 +539,10 @@ fn resolve_applied_type(
         )
     });
     visiting.insert(type_id);
+    owner
+        .active_types
+        .borrow_mut()
+        .insert(name.to_string(), resolved_arguments.clone());
     let substitutions = declaration
         .type_params
         .iter()
@@ -583,27 +551,17 @@ fn resolve_applied_type(
         .collect::<BTreeMap<_, _>>();
     let concrete = substitute_type(&declaration.ty, &substitutions);
     let mut instance_diagnostics = Diagnostics::new();
-    let underlying = match &concrete {
-        ast::Type::Interface { methods, span } => resolve_interface_type(
-            owner.id,
-            methods,
-            *span,
-            universe,
-            types,
-            visiting,
-            &mut instance_diagnostics,
-        ),
-        ty => resolve_type(
-            owner.id,
-            ty,
-            universe,
-            types,
-            false,
-            visiting,
-            &mut instance_diagnostics,
-        ),
-    };
+    let underlying = resolve_type(
+        owner.id,
+        &concrete,
+        universe,
+        types,
+        false,
+        visiting,
+        &mut instance_diagnostics,
+    );
     visiting.remove(&type_id);
+    owner.active_types.borrow_mut().remove(name);
     for diagnostic in instance_diagnostics {
         diagnostics.push(diagnostic.reanchor(
             span,
@@ -654,17 +612,6 @@ pub(super) fn substitute_type(
                     name: field.name.clone(),
                     ty: substitute_type(&field.ty, substitutions),
                     span: field.span,
-                })
-                .collect(),
-            span: *span,
-        },
-        ast::Type::Interface { methods, span } => ast::Type::Interface {
-            methods: methods
-                .iter()
-                .map(|method| ast::InterfaceMethod {
-                    name: method.name.clone(),
-                    signature: substitute_type_signature(&method.signature, substitutions),
-                    span: method.span,
                 })
                 .collect(),
             span: *span,
@@ -780,6 +727,14 @@ pub(super) fn resolve_type(
                     .iter()
                     .find(|package| package.id == package_id)
                     .and_then(|package| package.declarations.get(name))?;
+                let owner = universe.iter().find(|package| package.id == package_id)?;
+                if !owner.visible_from(declaration.span, path.span) {
+                    diagnostics.push(Diagnostic::error(
+                        path.span,
+                        format!("test-only type `{name}` is not visible here"),
+                    ));
+                    return None;
+                }
                 if !declaration.type_params.is_empty() {
                     diagnostics.push(Diagnostic::error(
                         path.span,
@@ -825,6 +780,13 @@ pub(super) fn resolve_type(
                 .find(|candidate| Some(candidate.id) == target_id);
             match target {
                 Some(target) if target.declarations.contains_key(name) => {
+                    if !target.visible_from(target.declarations[name].span, path.span) {
+                        diagnostics.push(Diagnostic::error(
+                            path.span,
+                            format!("test-only type `{name}` is not visible here"),
+                        ));
+                        return None;
+                    }
                     if target
                         .declarations
                         .get(name)
@@ -960,13 +922,6 @@ pub(super) fn resolve_type(
                 });
             }
             Some(types.intern(TypeKind::Struct(StructType { fields: resolved }), *span))
-        }
-        ast::Type::Interface { span, .. } => {
-            diagnostics.push(Diagnostic::error(
-                *span,
-                "interface types must be declared with `type Name interface { ... }`",
-            ));
-            None
         }
         ast::Type::Func { signature, span } => {
             let mut parameters = Vec::new();
