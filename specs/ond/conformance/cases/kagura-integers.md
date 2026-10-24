@@ -2,12 +2,19 @@
 <!-- ond-spec-id: conformance/cases/kagura-integers -->
 
 全caseは[共通case契約](./README.md#入力と期待結果の読み方)のproject manifestと通常buildを使用し、sourceを`main.ond`に置く。\
-Kagura実行は次の状態と操作で行う。
+Kagura実行は次の状態と操作で行う。\
+このfamilyはcaller指定の配置論理値と正常終了命令を入力にした言語・命令の個別検査であり、ONDX file生成やCLIのlink.exit選択を操作へ含めない。\
+以下のimageは[解決済みlink結果の論理値](../../artifacts.md#linkplanとlinkedimage)を指し、JSON保存成果物を入力としない。
+
+この個別検査では、Text、Rodata、Data、Bssの順に、最初のTextをmemory baseへ、後続kindを直前kindの末尾から配置する。\
+各kindとObjectの開始は`max(alignment, 4)`へ揃え、空kindは省略する。\
+heap_baseは全section末尾を4へ切り上げ、stack_topはmemory baseとmemory sizeの和、stack_bottomはそこからstack sizeを引いた値とする。\
+この配置入力はヘッダを含まない言語・命令検査の起点を指定し、ONDX fileの配置規則へ追加しない。
 
 | 項目 | 初期状態・操作 |
 | --- | --- |
 | LinkPlan | `read_only=null`, memory base=`0x1000`, memory size=`0x800000`, stack size=`0x100000` |
-| RAM | `[0x1000,0x801000)`をzero初期化し、LinkedImageの各sectionをload、initialized bytes以降からmemory_size末尾までzero初期化 |
+| RAM | `[0x1000,0x801000)`をzero初期化し、配置済みsectionのbyte列を指定addressへ置き、initialized bytes以降からmemory_size末尾までzero初期化 |
 | 計算領域 | `[0x20000000,0x20000200)`を読み書き可能なzero初期化RAMとしてmap |
 | INPUT・OUTPUT | INPUT=`0x20000000`, OUTPUT=`0x20000100`、表の入力wordをINPUTから書き、OUTPUTから64wordを`0xdeadbeef`（SENTINEL）で初期化 |
 | 追加mapping | `0xffff8050`から4byteのzero初期化RAM。上記RAMと明記したmapping以外はunmappedとし、address 0もunmapped |

@@ -28,8 +28,10 @@ SHA-256の出力stringは、digestのbyte順に各byteを小文字hex2桁へ変�
 `compiler_id`は実行compiler executableの全file bytes、`content_hash`は保存されたPackageArtifact fileの全bytesのSHA-256である。\
 content_hashの照合時は入力file bytesをそのままhashし、再encodeしたJSONのhashへ置き換えない。
 
-LinkedImageのbuild_idは、当該imageの`build_id`だけ空stringへ置換した全fieldをcanonical JSON化したbytesのSHA-256とする。\
-debug/test sidecarのbuild_idにはこのimage build_idを使い、sidecar bytesはimage hash入力へ加えない。
+image build_idは、出力する実行可能バイナリの全bytesのSHA-256とする。\
+externalは標準実行バイナリ全体、selfは前置起動処理を含む出力全体がhash入力である。\
+debug/test sidecarのbuild_idにはこの識別子を使い、sidecar bytesをhash入力へ加えない。\
+sidecar利用者は対象バイナリの全bytesから識別子を求め、不一致のsidecar全体を使用拒否する。
 
 package build_idは次のPackageBuildInputをcanonical JSON化したbytesのSHA-256とする。\
 以下のobjectも閉schemaで全fieldを必須とし、mapのentry集合は対応する規則に従う。

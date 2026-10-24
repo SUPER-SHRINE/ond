@@ -55,14 +55,14 @@ func main() {
 ## 操作と比較
 <!-- ond-spec-id: conformance/memory-placement/observations -->
 
-compileとlinkを成功させ、LinkedImageのsection範囲とstack_bottom/topを読み、fresh machineでentryから正常終了まで実行する。\
+compileと配置・relocationの個別検査を成功させ、解決結果の論理値からsection範囲とstack_bottom/topを読み、fresh machineでentryから正常終了まで実行する。\
 命令上限は200,000とし、終了通知、SPとcallee-save registerの復元は共通契約で比較する。\
 OUTPUTへ完了したu32 storeを観測し、次の条件をすべて照合する。\
 各pointerの格納先u32領域は半開区間[p,p+4)として比較し、加算はchecked u32とする。
 
 | 観測 | 期待 |
 | --- | --- |
-| OUTPUT word 0のpointer G | Gは4-byte aligned。対応するLinkedImageのBss sectionの半開区間に[G,G+4)が包含され、stack予約範囲と分離する |
+| OUTPUT word 0のpointer G | Gは4-byte aligned。配置済みBss sectionの半開区間に[G,G+4)が包含され、stack予約範囲と分離する |
 | OUTPUT word 1へのstoreのpointer L | Lは4-byte aligned。[L,L+4)は[stack_bottom,stack_top)内にあり、このstore完了時のSP以上に位置する |
 | OUTPUT word 2へのstoreのpointer C | Cは4-byte aligned。[C,C+4)は[stack_bottom,stack_top)内にあり、このstore完了時のSP以上に位置する。LとCの4byte領域は互いに分離する |
 | OUTPUT words 3〜7 | `[18,19,12,1234,3]`とu32 little-endianで完全一致 |

@@ -140,7 +140,12 @@
 | --- | --- | --- | --- |
 | ART-01 | JSON wire schemaとmanifest参照の整合 | [成果物](../artifacts.md) | [artifact-contracts](./cases/artifact-contracts.md)、[interface-values](./cases/interface-values.md) |
 | DBG-01 | link前後debug schema、区間、unwindと不適合時の扱い | [debug](../debug-metadata/v1.md) | [debug-fault-contracts](./cases/debug-fault-contracts.md) |
-| HASH-01 | canonical JSONと公開SHA-256識別子 | [canonical/hash](../build/cache.md#canonical-json) | [artifact-contracts](./cases/artifact-contracts.md)、[package-hash](./cases/package-hash.md)、[interface-values](./cases/interface-values.md) |
+| HASH-01 | canonical JSON、packageとバイナリ全bytesのSHA-256識別子 | [canonical/hash](../build/cache.md#canonical-json) | [artifact-contracts](./cases/artifact-contracts.md)、[package-hash](./cases/package-hash.md)、[interface-values](./cases/interface-values.md)、[binary識別子](./cases/executable-binaries.md#起動方式最終address識別子) |
 | DEP-01 | Git edgeとlock v2の固定・照合 | [lock](../build/packages.md#git依存lock-v2) | [artifact-contracts](./cases/artifact-contracts.md) |
-| LINK-01 | 配置、symbol集合、Call16/Jump16の形とpatch | [linking](../linking.md) | [artifact-contracts](./cases/artifact-contracts.md) |
+| LINK-01 | 配置、symbol集合、Call16/Jump16の形とpatch、ヘッダを反映した最終address | [linking](../linking.md) | [artifact-contracts](./cases/artifact-contracts.md)、[最終address](./cases/executable-binaries.md#起動方式最終address識別子) |
+| BIN-01 | ONDXヘッダ・セクション表・padding・範囲のwire受理条件 | [標準実行バイナリ](../artifacts.md#標準実行バイナリ) | [wire](./cases/executable-binaries.md#wire入力と読出し) |
+| BIN-02 | ROM直接参照・RAM全体コピー・zero初期化・容量・SP | [配置とロード](../artifacts.md#配置容量と出力範囲) | [ロード状態](./cases/executable-binaries.md#配置とロード状態) |
+| BIN-03 | self/externalと前置起動処理を反映した最終address | [起動](../artifacts.md#外部起動とセルフ起動)、[最終配置](../linking.md#最終配置とstartup) | [起動・識別子](./cases/executable-binaries.md#起動方式最終address識別子) |
+| CLI-01 | TOML設定元、入力省略、path、通常/test出力、引数error | [commands](../build/commands.md)、[設定](../build/packages.md#compileとlink設定) | [CLI](./cases/executable-binaries.md#cliのprojectとpath) |
+| TEST-01 | test metadata、共通binary形式、guard、wrapper、終了経路 | [test build](../build/test-build.md) | [test生成](./cases/executable-binaries.md#test生成と個別入口) |
 | FAULT-01 | KaguraのCPU faultとOndの意味分類 | [fault対応](../targets/kagura-v1/machine.md#faultと観測結果) | [debug-fault-contracts](./cases/debug-fault-contracts.md) |

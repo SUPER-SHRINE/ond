@@ -44,15 +44,15 @@ package内のglobal initializerはsource file順、各fileの宣言順に適用�
 ここで定めるentryは通常buildのentryである。\
 test buildの個別起動入口は[テストビルド仕様](../../build/test-build.md)を参照する。
 
-Kagura target の runtime entry と正常終了通知は [Ond for Kagura Machine Profile v1](../../targets/kagura-v1/machine.md) に従う。
+Kagura targetのruntime entryと正常終了後の制御経路は[Ond for Kagura Machine Profile v1](../../targets/kagura-v1/machine.md)に従う。
 
 ## Build Output
 <!-- ond-spec-id: build/output -->
 
-- compilerはsourceから[Object](../../artifacts.md)を生成し、linkerは[linking契約](../../linking.md)に従いLinkedImageを生成する
-  - 配布ツールはLinkedImageを配布形式またはROMへまとめる
+- compilerはsourceから[Object](../../artifacts.md)を生成し、linkerは[linking契約](../../linking.md)に従い[実行可能バイナリ](../../artifacts.md#実行可能バイナリ)を生成する
+  - 配布ツールは実行可能バイナリを配布形式またはROMへまとめる
 - assembly は中間生成物または診断用出力として生成できる
-- 全packageとruntimeは静的にlinkし、呼出側が指定する配置値に従ってLinkedImageを生成する
+- 全packageとruntimeは静的にlinkし、呼出側が指定する配置値でaddressを解決する
 - build toolはasset discoveryとresource IDを管理し、実行環境はdevice protocolとmemory mappingを定める
-- 配布ツールはLinkedImageとassetを配布形式へ同梱する
+- 配布ツールは実行可能バイナリとassetを配布形式へ同梱する
 - 正常終了後の制御経路はcallerが指定するtermination instructionsに従う
