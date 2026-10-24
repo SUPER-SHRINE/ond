@@ -434,6 +434,7 @@ fn collect_stmt_declarations(
     records: &mut Vec<DeclarationRecord>,
 ) {
     match stmt {
+        ast::Stmt::InlineAssembly(_) => {}
         ast::Stmt::Const(decl) => collect_const_declarations(decl, scope, records),
         ast::Stmt::Var(decl) => collect_var_declarations(decl, scope, records),
         ast::Stmt::ShortVar(decl) => {
@@ -613,6 +614,11 @@ fn collect_block_identifier_spans(block: &ast::Block, spans: &mut Vec<Span>) {
 
 fn collect_stmt_identifier_spans(stmt: &ast::Stmt, spans: &mut Vec<Span>) {
     match stmt {
+        ast::Stmt::InlineAssembly(statement) => {
+            for binding in &statement.bindings {
+                collect_expr_identifier_spans(&binding.value, spans);
+            }
+        }
         ast::Stmt::Const(decl) => collect_const_identifier_spans(decl, spans),
         ast::Stmt::Var(decl) => collect_var_identifier_spans(decl, spans),
         ast::Stmt::ShortVar(decl) => {
@@ -788,6 +794,47 @@ mod tests {
             packages: vec![package.clone()],
         };
         (sources, project, package, file)
+    }
+
+    #[test]
+    fn asm_header_references_rename_ond_values_without_touching_registers_or_labels() {
+        let text = "package main\nfunc main(){var r1:u32=1;asm(r1<->r1){r1:;ADD r1,r1,r0,1}}\n";
+        let (sources, project, package, file) = fixture(text);
+        let edit = rename(
+            &project,
+            &package,
+            &file,
+            &sources,
+            &position(text, "r1", 0),
+            None,
+            "value",
+        )
+        .unwrap();
+        let edits = edit["changes"]
+            .as_object()
+            .unwrap()
+            .values()
+            .next()
+            .unwrap()
+            .as_array()
+            .unwrap();
+        assert_eq!(
+            edits.len(),
+            2,
+            "only declaration and binding RHS are Ond references: {edit}"
+        );
+        assert!(
+            prepare_rename(
+                &project,
+                &package,
+                &file,
+                &sources,
+                &position(text, "r1", 1),
+                None
+            )
+            .is_none(),
+            "binding LHS is a register"
+        );
     }
 
     #[test]

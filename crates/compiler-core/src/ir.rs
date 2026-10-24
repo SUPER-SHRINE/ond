@@ -162,6 +162,7 @@ pub mod ast {
         Expr(ExprStmt),
         Return(ReturnStmt),
         Defer(DeferStmt),
+        InlineAssembly(InlineAssembly),
         Trap { message: String, span: Span },
         Break(Span),
         Continue(Span),
@@ -170,6 +171,19 @@ pub mod ast {
         For(ForStmt),
     }
 
+    #[derive(Debug, Clone)]
+    pub struct AsmBinding {
+        pub register: crate::inline_asm::Register,
+        pub direction: crate::inline_asm::Direction,
+        pub value: Expr,
+    }
+    #[derive(Debug, Clone)]
+    pub struct InlineAssembly {
+        pub noreturn: bool,
+        pub bindings: Vec<AsmBinding>,
+        pub program: crate::inline_asm::Program,
+        pub span: Span,
+    }
     #[derive(Debug, Clone)]
     pub struct ShortVarDecl {
         pub names: Vec<Ident>,
@@ -639,6 +653,13 @@ pub mod hir {
             span: Span,
         },
         IndexAssign(Box<IndexAssignStmt>),
+        InlineAssembly {
+            noreturn: bool,
+            inputs: Vec<(crate::inline_asm::Register, Expr)>,
+            outputs: Vec<(crate::inline_asm::Register, Expr)>,
+            program: crate::inline_asm::Program,
+            span: Span,
+        },
         Expr(Expr),
         Call(Call),
         Return {

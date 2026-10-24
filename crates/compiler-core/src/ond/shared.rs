@@ -116,7 +116,7 @@ pub fn parse_project(project: &LoadedProject) -> Result<ast::Project, FrontendEr
 
 fn parse_file(file_id: FileId, text: &str) -> Result<ast::File, Diagnostics> {
     let tokens = tokenize(file_id, text)?;
-    Parser::new(file_id, tokens).parse_file()
+    Parser::new(file_id, tokens, text).parse_file()
 }
 
 pub fn parse_source_file(file_id: FileId, text: &str) -> Result<ast::File, Diagnostics> {
