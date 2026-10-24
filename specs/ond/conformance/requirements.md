@@ -115,6 +115,10 @@
 | FLOW-01 | if/else-if、for3形式、最内break/continue | [FLOW-01の定義元](../language/v1/statements.md#文と制御構文) | [executes_cfg_scopes_loops_and_short_circuitの入力・期待](./implementation-index.md#既存回帰と要件) |
 | FLOW-02 | bool条件、必須block、loop外break/continue拒否 | [FLOW-02の定義元](../language/v1/statements.md#静的成立条件) | [static-control-headers](./cases/static-control-headers.md)、[static-evaluation](./cases/static-evaluation.md)、[static-flow](./cases/static-flow.md) |
 | FLOW-03 | 全経路return・終端loopの判定 | [FLOW-03の定義元](../language/v1/statements.md#静的成立条件) | [static-evaluation](./cases/static-evaluation.md)、[static-flow](./cases/static-flow.md) |
+| ASM-01 | asm文とbindingの識別・構文・名前境界 | [ASM-01の定義元](../language/v1/inline-assembly.md#構文) | [inline-assembly](./cases/inline-assembly.md) |
+| ASM-02 | binding型、順序付きinput snapshot、register入出力変換 | [ASM-02の定義元](../language/v1/inline-assembly.md#bindingと型)、[評価](../language/v1/inline-assembly.md#評価と値の受渡し) | [inline-assembly](./cases/inline-assembly.md) |
+| ASM-03 | Kagura命令構文、control-flow、register定義到達性、分岐範囲 | [ASM-03の定義元](../targets/kagura-v1/inline-assembly.md#命令構文)、[flow](../targets/kagura-v1/inline-assembly.md#register命令意味control-flow)、[定義到達性](../targets/kagura-v1/inline-assembly.md#定義到達性とregister制約) | [inline-assembly](./cases/inline-assembly.md) |
+| ASM-04 | memory順序、fault、通常継続、noreturn移行とdefer | [ASM-04の定義元](../targets/kagura-v1/inline-assembly.md#effect順序停止)、[Ond制御](../language/v1/inline-assembly.md#通常継続と外部移行) | [inline-assembly](./cases/inline-assembly.md) |
 | CALL-01 | 0/1/複数戻り値、展開位置・個数・型 | [CALL-01の定義元](../language/v1/declarations.md#関数) | [multiple_results_are_evaluated_once_and_forwardedの入力・期待](./implementation-index.md#既存回帰と要件) |
 | CALL-02 | direct/indirect、forward/import/mutual recursion | [CALL-02の定義元](../language/v1/declarations.md#関数) | [calls_support_imports_forward_references_and_mutual_recursionの入力・期待](./implementation-index.md#既存回帰と要件) |
 | INIT-01 | file辞書順/import DFS/宣言順/各package1回 | [INIT-01の定義元](../language/v1/execution.md#初期化とエントリ) | [serialized_packages_link_identically_to_full_codegen_without_runtime_initializersの入力・期待](./implementation-index.md#既存回帰と要件) |

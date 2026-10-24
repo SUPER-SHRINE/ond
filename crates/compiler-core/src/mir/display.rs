@@ -85,6 +85,7 @@ fn format_value(types: &TypeTable, function: &Function, value: ValueId) -> Strin
 
 fn format_instruction(kind: &InstructionKind) -> String {
     match kind {
+        InstructionKind::InlineAssembly { .. } => format!("asm {kind:?}"),
         InstructionKind::Constant(value) => format!("const {value:?}"),
         InstructionKind::Unary { op, operand } => format!("{op:?} %{}", operand.0),
         InstructionKind::Binary {

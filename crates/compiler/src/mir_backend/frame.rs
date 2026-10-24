@@ -29,6 +29,10 @@ impl Frame {
     ) -> Result<Self, Diagnostic> {
         let mut cursor = 0;
         for i in f.blocks.iter().flat_map(|b| &b.instructions) {
+            if matches!(i.kind, mir::InstructionKind::InlineAssembly { .. }) {
+                // asm中にcallはないのでoutgoing領域をstagingとして共用する。
+                cursor = cursor.max(128);
+            }
             if let mir::InstructionKind::Call { signature, .. } = &i.kind {
                 cursor = cursor.max(layout::abi(types, signature, i.span)?.stack_bytes);
             }

@@ -19,6 +19,7 @@ pub use pipeline::SemanticCache;
 use pipeline::{lower_to_hir, lower_to_mir};
 pub mod diagnostic;
 pub mod export;
+pub mod inline_asm;
 pub mod ir;
 pub mod mir;
 pub mod ond;
@@ -192,6 +193,8 @@ mod generic_identity_tests;
 mod global_tests;
 #[cfg(test)]
 mod inferred_array_tests;
+#[cfg(test)]
+mod inline_asm_tests;
 #[cfg(test)]
 mod interface_tests;
 #[cfg(test)]
