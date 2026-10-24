@@ -716,30 +716,14 @@ fn artifact_reader_rejects_invalid_build_hashes_with_matching_reference() {
     assert!(cache::read_artifact(&reference).is_err());
 }
 #[test]
-fn hash01_image_build_id_canonical() {
+fn hash01_image_build_id_uses_full_binary_bytes() {
     let f = Fixture::new("HASH-01.image-build-id");
     fs::write(f.0.join("main.ond"), "package main\nfunc main(){}\n").unwrap();
     let compiled = compile(f.request(), &crate::compiler_identity().unwrap()).unwrap();
-    let linked = crate::link_with_debug(crate::LinkRequest {
-        manifest: compiled.manifest,
-        main_return_address: 0,
-        layout: ond_protocol::link::LinkPlan {
-            read_only: None,
-            memory_base: 4096,
-            memory_size: 65536,
-            stack_size: 8192,
-            entry_symbol: "__ond.entry".into(),
-            heap_base_symbol: "__ond_heap_base".into(),
-            stack_bottom_symbol: "__ond_stack_bottom".into(),
-        },
-    })
-    .unwrap();
-    // serde_json::Valueのmap key順は上の固定canonical vectorで独立に検証する。
-    let mut canonical = serde_json::to_value(&linked.image).unwrap();
-    canonical["build_id"] = "".into();
-    assert_eq!(
-        linked.image.build_id,
-        cache::hash(&serde_json::to_vec(&canonical).unwrap()),
-        "HASH-01 image all-field canonical hash"
-    );
+    let settings:crate::settings::Settings=toml::from_str("[link]\nstartup='external'\nstack-size=8192\n[link.ram]\nbase=4096\nsize=65536\n[link.exit]\nmode='loop'\n").unwrap();
+    let (linked, bytes) =
+        crate::link_executable(compiled.manifest, &settings.link.unwrap()).unwrap();
+    assert_eq!(linked.image.build_id, cache::hash(&bytes));
+    assert_eq!(linked.debug.build_id, cache::hash(&bytes));
+    ond_protocol::executable::Executable::read(&bytes).unwrap();
 }

@@ -1,4 +1,4 @@
-use ond_protocol::{CompilationManifest, debug::DebugInfo, link::LinkedImage};
+use ond_protocol::{CompilationManifest, debug::DebugInfo, executable::Executable};
 use std::{
     fs,
     io::{Read, Write},
@@ -46,18 +46,7 @@ fn public_json_outputs_use_canonical_bytes() {
     canonical(&compile.stdout);
     let link = run(
         &f.0,
-        &[
-            "link",
-            "-",
-            "--ram",
-            "4096:262144",
-            "--stack",
-            "65536",
-            "--return-to",
-            "0",
-            "-o",
-            "image.ondimage",
-        ],
+        &["link", "-", "-o", "image.bin"],
         Some(&compile.stdout),
     );
     assert!(
@@ -65,7 +54,8 @@ fn public_json_outputs_use_canonical_bytes() {
         "{}",
         String::from_utf8_lossy(&link.stderr)
     );
-    for path in ["image.ondimage", "image.onddebug", "image.ondtest"] {
+    Executable::read(&fs::read(f.0.join("image.bin")).unwrap()).unwrap();
+    for path in ["image.onddebug", "image.ondtest"] {
         canonical(&fs::read(f.0.join(path)).unwrap());
     }
 }
@@ -96,6 +86,7 @@ impl Fixture {
         ));
         fs::create_dir(&p).unwrap();
         let f = Self(p);
+        f.put("ond.toml", LINK_SETTINGS);
 
         f.put(
             "game/main.ond",
@@ -309,18 +300,7 @@ fn manifest_resolve_ignore_excludes_generated_source_trees() {
             .contains("excluded from source discovery by ond.toml resolve.ignore")
     );
 }
-const LINK: &[&str] = &[
-    "link",
-    "-",
-    "--ram",
-    "0x1000:64KiB",
-    "--stack",
-    "8KiB",
-    "--return-to",
-    "0",
-    "-o",
-    "-",
-];
+const LINK: &[&str] = &["link", "-", "-o", "-"];
 #[test]
 fn files_default_output_cache_stdout_and_stdin_link() {
     let f = Fixture::new();
@@ -344,30 +324,19 @@ fn files_default_output_cache_stdout_and_stdin_link() {
         "{}",
         String::from_utf8_lossy(&linked.stderr)
     );
-    let _: LinkedImage = serde_json::from_slice(&linked.stdout).unwrap();
+    let _: Executable = Executable::read(&linked.stdout).unwrap();
     let file = run(
         &f.0,
-        &[
-            "link",
-            "game/target/build.ondbuild",
-            "--ram",
-            "4096:65536",
-            "--stack",
-            "8192",
-            "--return-to",
-            "0",
-            "-o",
-            "image.ondimage",
-        ],
+        &["link", "game/target/build.ondbuild", "-o", "image.bin"],
         None,
     );
     assert!(file.status.success());
     assert!(file.stdout.is_empty());
-    assert_eq!(fs::read(f.0.join("image.ondimage")).unwrap(), linked.stdout);
-    let image: LinkedImage = serde_json::from_slice(&linked.stdout).unwrap();
+    assert_eq!(fs::read(f.0.join("image.bin")).unwrap(), linked.stdout);
+    Executable::read(&linked.stdout).unwrap();
     let debug: DebugInfo =
         serde_json::from_slice(&fs::read(f.0.join("image.onddebug")).unwrap()).unwrap();
-    assert_eq!(image.build_id, debug.build_id);
+    assert_eq!(binary_hash(&linked.stdout), debug.build_id);
     assert!(!debug.functions.is_empty());
     let cwd = run(&f.0.join("game"), &["compile", "-o", "-"], None);
     assert!(cwd.status.success());
@@ -403,7 +372,7 @@ fn pipe_connects_real_processes_without_wrapping_requests() {
         "{}",
         String::from_utf8_lossy(&linked.stderr)
     );
-    serde_json::from_slice::<LinkedImage>(&linked.stdout).unwrap();
+    Executable::read(&linked.stdout).unwrap();
 }
 
 #[cfg(windows)]
@@ -423,58 +392,32 @@ fn git(directory: &Path, arguments: &[&str]) {
 #[test]
 fn errors_are_stderr_only_and_preserve_previous_outputs() {
     let f = Fixture::new();
-    f.put("previous.ondimage", "previous");
+    f.put("previous.bin", "previous");
     let bad = run(
         &f.0,
-        &[
-            "link",
-            "-",
-            "--ram",
-            "0:64KiB",
-            "--stack",
-            "8KiB",
-            "--return-to",
-            "0",
-            "-o",
-            "previous.ondimage",
-        ],
+        &["link", "-", "-o", "previous.bin"],
         Some(b"not a manifest"),
     );
     assert_eq!(bad.status.code(), Some(1));
     assert!(bad.stdout.is_empty());
     assert!(String::from_utf8_lossy(&bad.stderr).contains("invalid compilation manifest"));
-    assert_eq!(
-        fs::read(f.0.join("previous.ondimage")).unwrap(),
-        b"previous"
-    );
+    assert_eq!(fs::read(f.0.join("previous.bin")).unwrap(), b"previous");
     for args in [
-        vec!["link", "-"],
+        vec!["link", "--ram", "0:16"],
         vec!["compile", "--bogus"],
         vec!["compile", "-o"],
         vec!["compile", "-o", "x", "-o", "y"],
-        vec![
-            "link",
-            "-",
-            "--ram",
-            "0:4294967296",
-            "--stack",
-            "8KiB",
-            "--return-to",
-            "0",
-        ],
+        vec!["link", "--stack", "4"],
     ] {
         let out = run(&f.0, &args, None);
         assert_eq!(out.status.code(), Some(2));
         assert!(out.stdout.is_empty());
     }
     f.put("game/main.ond", "package main\nfunc main(){ unknown() }");
-    let bad = run(&f.0, &["compile", "game", "-o", "previous.ondimage"], None);
+    let bad = run(&f.0, &["compile", "game", "-o", "previous.bin"], None);
     assert_eq!(bad.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&bad.stderr).contains("unknown"));
-    assert_eq!(
-        fs::read(f.0.join("previous.ondimage")).unwrap(),
-        b"previous"
-    );
+    assert_eq!(fs::read(f.0.join("previous.bin")).unwrap(), b"previous");
 }
 #[test]
 fn dependency_names_and_unused_packages() {
@@ -618,34 +561,14 @@ fn test_build_defaults_sidecars_and_stdout_contract() {
         if test {
             assert_eq!(manifest["tests"]["cases"].as_array().unwrap().len(), 3);
         }
-        let image = if test {
-            "test.ondimage"
-        } else {
-            "normal.ondimage"
-        };
-        let output = run(
-            &f.0,
-            &[
-                "link",
-                path,
-                "--ram",
-                "4096:262144",
-                "--stack",
-                "65536",
-                "--return-to",
-                "0",
-                "-o",
-                image,
-            ],
-            None,
-        );
+        let image = if test { "test.bin" } else { "normal.bin" };
+        let output = run(&f.0, &["link", path, "-o", image], None);
         assert!(
             output.status.success(),
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        let linked: LinkedImage =
-            serde_json::from_slice(&fs::read(f.0.join(image)).unwrap()).unwrap();
+        let _linked: Executable = Executable::read(&fs::read(f.0.join(image)).unwrap()).unwrap();
         assert!(f.0.join(image).with_extension("onddebug").exists());
         assert_eq!(f.0.join(image).with_extension("ondtest").exists(), test);
         if test {
@@ -654,47 +577,20 @@ fn test_build_defaults_sidecars_and_stdout_contract() {
             )
             .unwrap();
             assert_eq!(sidecar.as_object().unwrap().len(), 2);
-            assert_eq!(sidecar["build_id"], linked.build_id);
+            assert_eq!(
+                sidecar["build_id"],
+                binary_hash(&fs::read(f.0.join(image)).unwrap())
+            );
             for case in sidecar["cases"].as_array().unwrap() {
                 assert_eq!(case.as_object().unwrap().len(), 3);
                 assert!(case["entry_point"].is_u64());
             }
-            let output = run(
-                &f.0,
-                &[
-                    "link",
-                    path,
-                    "--ram",
-                    "4096:262144",
-                    "--stack",
-                    "65536",
-                    "--return-to",
-                    "0",
-                    "-o",
-                    "-",
-                ],
-                None,
-            );
+            let output = run(&f.0, &["link", path, "-o", "-"], None);
             assert!(output.status.success());
-            let _: LinkedImage = serde_json::from_slice(&output.stdout).unwrap();
+            let _: Executable = Executable::read(&output.stdout).unwrap();
             assert!(!f.0.join("-.ondtest").exists());
             for collision in ["bad.ondtest", "bad.onddebug"] {
-                let output = run(
-                    &f.0,
-                    &[
-                        "link",
-                        path,
-                        "--ram",
-                        "4096:262144",
-                        "--stack",
-                        "65536",
-                        "--return-to",
-                        "0",
-                        "-o",
-                        collision,
-                    ],
-                    None,
-                );
+                let output = run(&f.0, &["link", path, "-o", collision], None);
                 assert!(!output.status.success());
                 assert!(!f.0.join(collision).exists());
             }
@@ -718,18 +614,7 @@ fn test_build_defaults_sidecars_and_stdout_contract() {
     assert!(
         run(
             &f.0,
-            &[
-                "link",
-                "game/target/test.ondbuild",
-                "--ram",
-                "4096:262144",
-                "--stack",
-                "65536",
-                "--return-to",
-                "0",
-                "-o",
-                "empty.ondimage"
-            ],
+            &["link", "game/target/test.ondbuild", "-o", "empty.bin"],
             None
         )
         .status
@@ -749,6 +634,7 @@ fn artifact_path_case(mode: &str) {
     let cwd = f.0.join("run");
     fs::create_dir_all(&build).unwrap();
     fs::create_dir_all(&cwd).unwrap();
+    fs::write(cwd.join("ond.toml"), LINK_SETTINGS).unwrap();
     for reference in &mut manifest.packages {
         let name = reference.path.file_name().unwrap().to_owned();
         let base = if mode == "stdin" { &cwd } else { &build };
@@ -781,7 +667,7 @@ fn artifact_path_case(mode: &str) {
         "ART-01.path-{mode}: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    serde_json::from_slice::<LinkedImage>(&output.stdout).unwrap();
+    Executable::read(&output.stdout).unwrap();
     if mode == "absolute" {
         let stdin = run(&cwd, LINK, Some(&bytes));
         assert!(
@@ -789,7 +675,7 @@ fn artifact_path_case(mode: &str) {
             "ART-01.path-absolute stdin: {}",
             String::from_utf8_lossy(&stdin.stderr)
         );
-        serde_json::from_slice::<LinkedImage>(&stdin.stdout).unwrap();
+        Executable::read(&stdin.stdout).unwrap();
     }
 }
 #[test]
@@ -836,22 +722,7 @@ fn dependency_root_roles_and_subpackages_are_preserved_in_test_links() {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        let linked = run(
-            &f.0,
-            &[
-                "link",
-                "-",
-                "--ram",
-                "4096:65536",
-                "--stack",
-                "8192",
-                "--return-to",
-                "0",
-                "-o",
-                "-",
-            ],
-            Some(&output.stdout),
-        );
+        let linked = run(&f.0, &["link", "-", "-o", "-"], Some(&output.stdout));
         assert!(
             linked.status.success(),
             "{}",
@@ -891,22 +762,7 @@ fn dependency_root_roles_and_subpackages_are_preserved_in_test_links() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let linked = run(
-        &f.0,
-        &[
-            "link",
-            "-",
-            "--ram",
-            "4096:65536",
-            "--stack",
-            "8192",
-            "--return-to",
-            "0",
-            "-o",
-            "-",
-        ],
-        Some(&output.stdout),
-    );
+    let linked = run(&f.0, &["link", "-", "-o", "-"], Some(&output.stdout));
     assert!(
         linked.status.success(),
         "{}",
@@ -956,26 +812,17 @@ fn dependency_main_subpackage_keeps_its_qualified_function_namespace() {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        let linked = run(
-            &f.0,
-            &[
-                "link",
-                "-",
-                "--ram",
-                "4096:65536",
-                "--stack",
-                "8192",
-                "--return-to",
-                "0",
-                "-o",
-                "-",
-            ],
-            Some(&output.stdout),
-        );
+        let linked = run(&f.0, &["link", "-", "-o", "-"], Some(&output.stdout));
         assert!(
             linked.status.success(),
             "{}",
             String::from_utf8_lossy(&linked.stderr)
         );
     }
+}
+
+const LINK_SETTINGS: &str = "[project]\nname='run'\n[link]\nstartup='external'\nstack-size=65536\n[link.ram]\nbase=4096\nsize=262144\n[link.exit]\nmode='jump'\naddress=0\n";
+fn binary_hash(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest(bytes))
 }

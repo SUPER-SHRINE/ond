@@ -22,6 +22,7 @@ struct GenerationCache {
 /// Compile with a fingerprint covering this compiler and its runtime implementation.
 /// Production callers should use `compiler_identity()`; a version string is insufficient.
 pub fn compile(request: CompileRequest, compiler_id: &str) -> DriverResult<CompileResult> {
+    let settings = crate::settings::read_settings(&request.project_root)?;
     let source_loaded = input::load(&request)?;
     let mut loaded = source_loaded.clone();
     let application_root = input::logical_packages(&mut loaded)?;
@@ -36,7 +37,7 @@ pub fn compile(request: CompileRequest, compiler_id: &str) -> DriverResult<Compi
                 loaded.root.join(p)
             }
         })
-        .unwrap_or_else(|| loaded.root.join("target/ond-cache"));
+        .unwrap_or_else(|| loaded.root.join(settings.compile.cache_dir));
     fs::create_dir_all(&directory).map_err(|e| vec![e.to_string()])?;
     let directory = directory.canonicalize().map_err(|e| vec![e.to_string()])?;
     let manifest_bytes = fs::read(&loaded.manifest_path).map_err(|e| vec![e.to_string()])?;

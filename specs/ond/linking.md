@@ -1,7 +1,9 @@
 # Object linking 契約
 <!-- ond-spec-id: linking/v1 -->
 
-この章はObject列とcaller指定LinkPlanからLinkedImageを生成する外部契約を定義する。
+この章はObject列の検査、symbol解決、配置とrelocationの外部契約を定義する。\
+通常/testとself/externalの全組合せに本章の共通規則を適用し、file配置・実行時配置・ロードは[実行可能バイナリ](./artifacts.md#実行可能バイナリ)に従う。\
+LinkPlanとLinkedImageは[論理モデル](./artifacts.md#linkplanとlinkedimage)として配置入力と解決結果を表す。
 
 ## Symbol解決と配置
 <!-- ond-spec-id: linking/symbol-resolution -->
@@ -31,15 +33,28 @@ LinkPlanのRAM baseとstack_sizeは4-byte aligned、checked計算したRAM_END�
 read_onlyは正のsize、4-byte alignedなbase/endを持ち、RAMと分離する。\
 LinkPlanがRAM base/size、stack reservation、optional read-only region、entry/heap/stack境界symbolを指定し、section配置とaddress/offset arithmeticはchecked範囲で行う。\
 容量不足は指定RAM/stack容量に対するlink errorとなる。\
-Text、Rodata、Data、Bssの順で配置し、各Objectのsectionを入力Object順で`max(alignment, 4)`へ揃える。\
+同kindのsectionは入力Object順に結合し、各Objectの開始を`max(alignment, 4)`へ揃える。\
 同kindの結合sectionのalignmentは入力の`max(alignment, 4)`の最大値とする。\
 read_only領域を指定した場合はText/Rodataをそこへ、Data/BssをRAMへ配置し、両領域は分離する。\
 entry_symbol、heap_base_symbol、stack_bottom_symbolは非空で互いに異なる。\
 heap/stack境界名と入力ObjectのLocal/Exported定義との衝突はlink errorとなる。\
 entryはExported Functionであり、branch relocationの解決先は実行可能なText内である。\
 reserved runtime symbolとの衝突、不正なimport定義、checked address overflowもlink errorとなる。\
-LinkedImageは最終load address、initialized bytes、section memory size、entry point、heap/stack boundaries、resolved symbolsを記録する。\
-loaderはdataをloadし、各sectionのdata末尾からmemory_sizeまでをzero初期化する。
+解決結果は最終load address、patch済みinitialized bytes、section memory size、entry point、heap/stack boundaries、resolved symbolsを含む。
+
+## 最終配置とstartup
+<!-- ond-spec-id: linking/final-binary-placement -->
+
+実行可能バイナリの配置は、固定ヘッダ、セクション表、selfの前置起動処理を予約した最終addressで確定する。\
+symbol、relocation、entry、debug addressはすべてこの実行時addressに対して解決し、file offsetをrelocationのaddress値として使わない。\
+ヘッダを含まない配置のpatch結果へヘッダや前置起動処理を追加した値は、最終配置の解決結果として扱わない。\
+loaderによる再配置は行わない。
+
+入力Object列は[manifestのpackages順](./build/commands.md#ond-link)を保持する。\
+各Object内のsection配置とsymbolの所属は本章の規則に従い、通常startup、test wrapper、runtime helperの供給は[command契約](./build/commands.md#ond-link)による。\
+通常startupはProgramMetadata.initializersの順にinitializerを呼び、最後にprogram.entry_symbolを呼ぶ。\
+この呼出し順はObject入力順とは別の列であり、[言語の初期化順](./language/v1/execution.md#初期化とエントリ)を保持する。\
+test wrapperの呼出し順と終了経路は[test起動入口](./build/test-build.md#buildと起動入口)に従う。
 
 ## relocationと中継slot
 <!-- ond-spec-id: linking/relocation-slots -->
@@ -67,10 +82,11 @@ CallSlot/JumpSlotは[固定長slot規範](#固定長slot規範)と[正確なtemp
 
 呼出側と実行環境の役割は[責務の定義](./build/packages.md#責務)に従う。\
 ProgramMetadataがinitializer orderとmainをlink入力へ渡す。\
-共有startupはruntime ABI glueを生成し、termination instructionsはcallerが指定する。\
-呼出側はRAM範囲とstack量をLinkPlanへ指定し、正常終了後の制御経路をtermination instructionsとして指定する。\
+共有startupはruntime ABI glueを生成する。\
+CLIの呼出側は[link設定](./build/packages.md#compileとlink設定)へRAM範囲、stack量、正常終了後の制御経路を指定する。\
+配置・命令の個別検査では、caller指定のLinkPlan論理値とtermination instructionsを入力にできる。\
 実行環境はmemory mapとdevice構成を定め、loaderはsection load、zero初期化、SP設定、entryへの制御移行を行う。\
-配布ツールはLinkedImageとassetsを配布形式またはROMへまとめる。
+配布ツールは実行可能バイナリとassetsを配布形式またはROMへまとめる。
 
 ## 固定長slot規範
 <!-- ond-spec-id: targets/kagura-v1/long-branch-relocation-slots -->

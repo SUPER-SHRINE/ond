@@ -110,9 +110,24 @@ p/lib.Box[{"Defined":{"arguments":["U8"],"name":"Box","package":"p/lib"}}]
 <!-- ond-spec-id: conformance/interface-values/executable-root-package -->
 
 要件は`PKG-01`、`ART-01`、`HASH-01`とし、[実行rootの論理path](../../language/v1/names-and-scopes.md#packageとimport)、[成果物schema](../../artifacts.md#packageartifactとcompilationmanifest)、[具体化identity](../../build/cache.md#意味型具体化定数の正規化)、[test metadata](../../build/test-build.md#buildと起動入口)を適用する。\
-独立projectのmanifest全文は`[project]`、`name = "p"`の2行をLFで連結し、末尾LFを付ける。\
+独立projectのmanifest全文は次の内容とし、LF区切り・末尾LFありとする。
+
+```toml
+[project]
+name = "p"
+[link]
+startup = "external"
+stack-size = 0x100000
+[link.ram]
+base = 0x10002000
+size = 0x03ffe000
+[link.exit]
+mode = "jump"
+address = 0x10000000
+```
+
 依存project、既存cacheは持たず、次の2fileをUTF-8、LF、各末尾LFありで置く。\
-test側は`ond compile --test . -o target/test.ondbuild`に続けて`ond link target/test.ondbuild --ram 0x10002000:0x03ffe000 --stack 1MiB --return-to 0x10000000 -o target/test.ondimage`を実行してsidecarを読む。
+project rootをcwdとし、test側は`ond compile --test . -o target/test.ondbuild`に続けて`ond link target/test.ondbuild -o target/test.bin`を実行してsidecarを読む。
 
 `main.ond`:
 

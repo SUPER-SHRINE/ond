@@ -1,15 +1,14 @@
 mod args;
 mod json;
-use ond_cli::{CompileRequest, LinkRequest};
+mod publish;
+use ond_cli::CompileRequest;
 use ond_protocol::{CompilationManifest, Contract};
 use std::io::{self, Read, Write};
-
 fn execute(command: args::Command) -> Result<(), Vec<String>> {
     match command {
         args::Command::Compile {
             root,
             output,
-            cache,
             verbose,
             test,
         } => {
@@ -19,6 +18,7 @@ fn execute(command: args::Command) -> Result<(), Vec<String>> {
             } else {
                 root
             };
+            let settings = ond_cli::settings::read_settings(&root)?;
             let result = ond_cli::compile(
                 CompileRequest {
                     test,
@@ -26,7 +26,7 @@ fn execute(command: args::Command) -> Result<(), Vec<String>> {
                     contract: Contract::default(),
                     project_root: root.clone(),
                     sources: Default::default(),
-                    cache_dir: cache,
+                    cache_dir: Some(root.join(&settings.compile.cache_dir)),
                 },
                 &ond_cli::compiler_identity()?,
             )?;
@@ -36,19 +36,25 @@ fn execute(command: args::Command) -> Result<(), Vec<String>> {
             }
             let output = output.unwrap_or_else(|| {
                 root.join(if test {
-                    "target/test.ondbuild"
+                    settings.compile.test_output
                 } else {
-                    "target/build.ondbuild"
+                    settings.compile.output
                 })
             });
             write(&output, &json::encode(&result.manifest)?)
         }
         args::Command::Link {
             input,
+            project,
             output,
-            layout,
-            return_to,
         } => {
+            let root = project.canonicalize().map_err(|e| vec![e.to_string()])?;
+            let settings = ond_cli::settings::read_settings(&root)?;
+            let link = settings
+                .link
+                .ok_or_else(|| vec!["missing [link] settings".into()])?;
+            link.layout()?;
+            let input = input.unwrap_or_else(|| root.join(settings.compile.output));
             let bytes = if input == std::path::Path::new("-") {
                 let mut bytes = Vec::new();
                 io::stdin()
@@ -68,36 +74,29 @@ fn execute(command: args::Command) -> Result<(), Vec<String>> {
                     }
                 }
             }
-            let linked = ond_cli::link_with_debug(LinkRequest {
-                manifest,
-                layout,
-                main_return_address: return_to,
-            })?;
-            let image_bytes = json::encode(&linked.image)?;
-            let debug_bytes = json::encode(&linked.debug)?;
+            let output = output.unwrap_or_else(|| {
+                root.join(if manifest.tests.is_some() {
+                    &link.test_output
+                } else {
+                    &link.output
+                })
+            });
+            let (linked, bytes) = ond_cli::link_executable(manifest, &link)?;
             if output == std::path::Path::new("-") {
-                write(&output, &image_bytes)?;
+                write(&output, &bytes)
             } else {
-                let debug_output = output.with_extension("onddebug");
-                if output
-                    .extension()
-                    .and_then(|extension| extension.to_str())
-                    .is_some_and(|extension| {
-                        extension.eq_ignore_ascii_case("onddebug")
-                            || (linked.tests.is_some() && extension.eq_ignore_ascii_case("ondtest"))
-                    })
-                {
-                    return Err(vec![
-                        "image output path conflicts with a sidecar path".into(),
-                    ]);
+                let mut files = vec![
+                    (output.clone(), bytes),
+                    (
+                        output.with_extension("onddebug"),
+                        json::encode(&linked.debug)?,
+                    ),
+                ];
+                if let Some(tests) = linked.tests {
+                    files.push((output.with_extension("ondtest"), json::encode(&tests)?));
                 }
-                write(&debug_output, &debug_bytes)?;
-                if let Some(tests) = &linked.tests {
-                    write(&output.with_extension("ondtest"), &json::encode(tests)?)?;
-                }
-                write(&output, &image_bytes)?;
+                publish::publish(&files)
             }
-            Ok(())
         }
         args::Command::Help => {
             println!("{}", args::HELP);
@@ -112,8 +111,10 @@ fn write(path: &std::path::Path, bytes: &[u8]) -> Result<(), Vec<String>> {
             .write_all(bytes)
             .map_err(|e| vec![e.to_string()])
     } else {
-        let absolute = std::path::absolute(path).map_err(|e| vec![e.to_string()])?;
-        ond_cli::write_artifact(&absolute, bytes)
+        ond_cli::write_artifact(
+            &std::path::absolute(path).map_err(|e| vec![e.to_string()])?,
+            bytes,
+        )
     }
 }
 fn main() {

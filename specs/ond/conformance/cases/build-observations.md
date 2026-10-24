@@ -7,7 +7,22 @@
 ## Project入力と初期状態
 <!-- ond-spec-id: conformance/build-observations/project-input -->
 
-`ond.toml`は`[project]`と`name = "test"`の2行（LF区切り・末尾LFあり）とする。\
+`ond.toml`は次の全文（LF区切り・末尾LFあり）とする。
+
+```toml
+[project]
+name = "test"
+[link]
+startup = "external"
+stack-size = 0x10000
+[link.ram]
+base = 0x1000
+size = 0x40000
+[link.exit]
+mode = "jump"
+address = 0
+```
+
 通常build、manifest記載のprojectだけ、既存cacheなしの状態から始め、同じcompiler executableを全操作で用いる。\
 各sourceは次の内容であり、入力欄の改行は[共通復元規則](./README.md#入力と期待結果の読み方)に従う。
 
@@ -22,13 +37,12 @@
 ## 操作と比較
 <!-- ond-spec-id: conformance/build-observations/operations -->
 
-link設定はread_only=null、RAM=`0x1000:0x40000`、stack size=`0x10000`、main正常return先address=0とし、entry、heap base、stack bottomは[CLIのprogram指定](../../build/commands.md#ond-link)に従う。\
-正常linkの観測はLinkedImageの全fieldとsection bytesの一致とする。
+project rootをcwdとして`ond compile .`、`ond link`を行い、正常linkは実行可能バイナリの全bytesとsidecarのJSON値を比較する。
 
 | 操作 | 期待 |
 | --- | --- |
 | cold compile後、manifestと参照artifactを読みlink | compile/link成功 |
-| source・設定・compiler不変でwarm compileしlink | coldと同じLinkedImage |
+| source・設定・compiler不変でwarm compileしlink | coldと同じバイナリ全bytesとsidecarのJSON値 |
 | cold manifestのpackagesからtest/leafのArtifactRefを除去してlink | 依存入力不足のlink error、CLI終了code 1 |
 | cold manifestのcontract.revisionを7へ変更してlink | 版不適合のlink error、CLI終了code 1 |
 | cold manifestのcompiler_idの先頭hex digitだけを別値へ変更（0なら1、他は0）してlink | 生成元不一致のlink error、CLI終了code 1 |
@@ -42,7 +56,10 @@ link設定はread_only=null、RAM=`0x1000:0x40000`、stack size=`0x10000`、main
 
 要件は`PKG-01`、`PKG-02`とし、[manifest依存](../../build/packages.md#manifestとsource探索)、[packageとimport](../../language/v1/names-and-scopes.md#packageとimport)、[生成source入力](../../build/commands.md#入出力と失敗時)を適用する。\
 各caseは独立した新しいdirectoryで行い、表の全fileをUTF-8、LF、末尾LFありで置く。表の`<br>`は共通復元規則でLFへ戻す。\
-通常compileと`--test` compileをそれぞれ行い、成功時は各manifestを前節と同じ設定でlinkする。成功はcompile/linkの終了code 0、compile errorは終了code 1とstderr診断で比較する。
+各caseのp/ond.tomlへ、[共有project入力](#project入力と初期状態)のlink・link.ram・link.exit tableを末尾に追記する。\
+依存projectのmanifestにはlink設定を追加しない。\
+pをcwdとして通常compileと`--test` compileをそれぞれ行い、成功時は各manifestを位置引数に明示してlinkする。\
+成功はcompile/linkの終了code 0、compile errorは終了code 1とstderr診断で比較する。
 
 共通fileは`p/main_test.ond`の全文`package main`、`func TestRoot(){}`の2行とする。
 

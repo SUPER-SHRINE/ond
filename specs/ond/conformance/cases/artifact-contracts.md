@@ -75,7 +75,8 @@ test関数の成立条件は[test source規則](../../build/test-build.md#source
 | `func TestRoot(){}` | 成功。manifestとroot artifactのcase列はpackage=`test`、name=`TestRoot`、symbol=`main.TestRoot`の1件。test-only宣言は公開interfaceへ追加しない |
 
 正常入力の`main.ond`に`func TestOrdinary(x:u32){}`を追加した場合も、case列はTestRootの1件とする。\
-正常入力に`left/left.ond`（`package left`、`func Value(){}`の2行）を追加してtest compileし、同じcompiler executableと[cache/link入力のlink設定](./build-observations.md#操作と比較)でlinkすると成功する。\
+linkを含む操作ではrootのond.tomlへ[cache/link入力](./build-observations.md#project入力と初期状態)のlink・link.ram・link.exit tableを追記してからcompileする。\
+正常入力に`left/left.ond`（`package left`、`func Value(){}`の2行）を追加してtest compileし、同じcompiler executableでrootをcwdとして`ond link target/test.ondbuild`を行うと成功する。\
 各操作はこのcompile出力の独立したcopyへ適用し、変更artifactの元bytesからcontent_hashを再計算してArtifactRefも更新する。\
 root artifactのcaseを空にして同caseを`test/left` artifactへ移した入力、およびroot artifactのcaseを同artifact内で複製した入力は、manifestのcase列を維持したままlinkし、それぞれ所属不一致と重複のlink errorを比較する。
 
@@ -83,7 +84,8 @@ root artifactのcaseを空にして同caseを`test/left` artifactへ移した入
 <!-- ond-spec-id: conformance/artifact-contracts/linking -->
 
 要件は`LINK-01`、定義元は[linking](../../linking.md)と[symbol集合](../../artifacts.md#linkplanとlinkedimage)とする。\
-共有LinkPlan Lは次の全JSON値とする。
+共有LinkPlan Lの論理値を次の記法で表す。\
+この節は配置済みTextの先頭addressを4096に指定したsymbol・patch計算の個別検査であり、ONDXの生成やLinkPlanのJSON wire読出しを操作へ含めない。
 
 ```json
 {"read_only":null,"memory_base":4096,"memory_size":65536,"stack_size":8192,"entry_symbol":"main.main","heap_base_symbol":"heap","stack_bottom_symbol":"bottom"}
