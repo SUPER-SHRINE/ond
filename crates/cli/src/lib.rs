@@ -7,12 +7,13 @@ mod dependencies;
 mod graph;
 mod input;
 mod requests;
+pub mod settings;
 pub use requests::{CompileRequest, CompileResult, LinkRequest, LinkResult};
 mod link;
 pub use cache::atomic_write as write_artifact;
 pub use compile::compile;
 pub use dependencies::{ResolvedDependencies, resolve_dependencies, resolve_project_sources};
-pub use link::{link, link_with_debug};
+pub use link::{link, link_executable, link_with_debug};
 pub type DriverResult<T> = Result<T, Vec<String>>;
 
 pub fn compiler_identity() -> DriverResult<String> {

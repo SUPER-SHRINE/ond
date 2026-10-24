@@ -1,3 +1,14 @@
 
 [project]
 name = "hello"
+
+[link]
+startup = "external"
+stack-size = 8192
+
+[link.ram]
+base = 4096
+size = 65536
+
+[link.exit]
+mode = "loop"

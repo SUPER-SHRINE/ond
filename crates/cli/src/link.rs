@@ -8,6 +8,29 @@ pub fn link(request: LinkRequest) -> DriverResult<LinkedImage> {
 }
 
 pub fn link_with_debug(request: LinkRequest) -> DriverResult<LinkResult> {
+    link_impl(request, None).map(|(result, _)| result)
+}
+
+pub fn link_executable(
+    manifest: ond_protocol::CompilationManifest,
+    settings: &crate::settings::LinkSettings,
+) -> DriverResult<(LinkResult, Vec<u8>)> {
+    let request = LinkRequest {
+        manifest,
+        layout: settings.layout()?,
+        main_return_address: match settings.exit {
+            crate::settings::Exit::Loop => 0,
+            crate::settings::Exit::Jump { address } => address,
+        },
+    };
+    let (result, bytes) = link_impl(request, Some(settings))?;
+    Ok((result, bytes.expect("executable link")))
+}
+
+fn link_impl(
+    request: LinkRequest,
+    settings: Option<&crate::settings::LinkSettings>,
+) -> DriverResult<(LinkResult, Option<Vec<u8>>)> {
     request.manifest.contract.validate().map_err(|e| vec![e])?;
     if request.manifest.compiler_id != crate::compiler_identity()? {
         return Err(vec![
@@ -154,7 +177,11 @@ pub fn link_with_debug(request: LinkRequest) -> DriverResult<LinkResult> {
         .iter()
         .map(|reference| artifacts[&reference.package].debug.clone())
         .collect::<Vec<_>>();
-    let termination = ond_compiler::kagura_encoding::absolute_thunk(request.main_return_address);
+    let termination = if settings.is_some_and(|s| matches!(s.exit, crate::settings::Exit::Loop)) {
+        vec![ond_compiler::kagura_encoding::word(12, 0, 0, 0, -1)]
+    } else {
+        ond_compiler::kagura_encoding::absolute_thunk(request.main_return_address).to_vec()
+    };
     let mut wrappers = Vec::new();
     if let Some(tests) = &request.manifest.tests {
         let mut seen = std::collections::BTreeSet::new();
@@ -252,9 +279,47 @@ pub fn link_with_debug(request: LinkRequest) -> DriverResult<LinkResult> {
         .iter()
         .zip(&generated.debug)
         .collect::<Vec<_>>();
-    let mut linked = ond_compiler::linker::link_object_pairs_with_debug(&pairs, &request.layout)
+    let (mut linked, bytes) = if let Some(settings) = settings {
+        let kinds = generated
+            .objects
+            .iter()
+            .flat_map(|o| &o.sections)
+            .filter(|s| s.memory_size != 0)
+            .map(|s| s.kind)
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let boot = settings.startup == crate::settings::Startup::SelfStarting;
+        let prefix_size = if boot {
+            ond_compiler::linker::self_boot_prefix(&kinds, 0).len() as u32
+        } else {
+            0
+        };
+        let (linked, executable) = ond_compiler::linker::link_executable_pairs_with_debug(
+            &pairs,
+            &request.layout,
+            prefix_size,
+        )
         .map_err(|e| vec![e.to_string()])?;
-    let build_id = cache::hash(&cache::encode(&linked.image)?);
+        let mut bytes = if boot {
+            ond_compiler::linker::self_boot_prefix(&kinds, prefix_size)
+        } else {
+            Vec::new()
+        };
+        bytes.extend(executable.write().map_err(|e| vec![e])?);
+        (linked, Some(bytes))
+    } else {
+        (
+            ond_compiler::linker::link_object_pairs_with_debug(&pairs, &request.layout)
+                .map_err(|e| vec![e.to_string()])?,
+            None,
+        )
+    };
+    let build_id = if let Some(bytes) = &bytes {
+        cache::hash(bytes)
+    } else {
+        cache::hash(&cache::encode(&linked.image)?)
+    };
     linked.image.build_id = build_id.clone();
     linked.debug.build_id = build_id.clone();
     let tests = request
@@ -274,9 +339,12 @@ pub fn link_with_debug(request: LinkRequest) -> DriverResult<LinkResult> {
                 })
                 .collect(),
         });
-    Ok(LinkResult {
-        tests,
-        image: linked.image,
-        debug: linked.debug,
-    })
+    Ok((
+        LinkResult {
+            tests,
+            image: linked.image,
+            debug: linked.debug,
+        },
+        bytes,
+    ))
 }

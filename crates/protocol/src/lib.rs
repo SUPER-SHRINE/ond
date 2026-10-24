@@ -4,6 +4,7 @@ use std::{collections::BTreeMap, path::PathBuf};
 mod bytes;
 pub mod debug;
 mod enum_wire;
+pub mod executable;
 pub mod link;
 pub mod object;
 pub use ond_interface as interface;
