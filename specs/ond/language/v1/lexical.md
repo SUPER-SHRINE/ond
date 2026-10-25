@@ -26,7 +26,7 @@ package import const var type func struct return defer
 break continue if else for true false nil as new
 ```
 
-`operator`、`trap`、`len`は文脈により構文またはbuiltinを表すidentifierであり、bindingの成立条件は[scope規則](./names-and-scopes.md)に従う。\
+`operator`、`trap`、`len`、`role`は文脈により構文またはbuiltinを表すidentifierであり、bindingの成立条件は[scope規則](./names-and-scopes.md)に従う。\
 構文を構成するoperatorとpunctuationは次のとおりである。
 
 ```text
@@ -103,7 +103,8 @@ EBNFの`{ X }`は0回以上、`[ X ]`は省略可能、`|`は選択、引用符�
 
 | Production群 | 定義元 |
 | --- | --- |
-| SourceFile、PackageClause、ImportDecl、QualifiedIdent | [package/import](./names-and-scopes.md#構文) |
+| SourceFile、SourceItem、PackageClause、ImportDecl、QualifiedIdent | [package/import](./names-and-scopes.md#構文) |
+| RoleDecl、RoleDeclBlock、RoleStmt、RoleNames | [role](./roles.md#構文) |
 | 宣言、receiver、signature、型parameter、IdentifierList | [宣言](./declarations.md#構文) |
 | Type、型argument、関数型、TypeList | [型](./types.md#構文) |
 | Block、Statement、assignment、if/for、return/defer/trap | [文](./statements.md#構文) |

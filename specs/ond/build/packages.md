@@ -28,6 +28,8 @@ sourceのpackage/import/公開名は[言語規則](../language/v1/names-and-scop
 実行projectのroot packageとentryは[言語規則](../language/v1/execution.md#初期化とエントリ)に従う。\
 library rootのpackage構成は[package規則](../language/v1/names-and-scopes.md#packageとimport)に従い、libraryの編集・依存利用とtest compileはこのpackageを扱う。
 
+省略可能な`[roles]`設定、projectごとの選択role、依存との境界は[project role契約](./roles.md)に従う。
+
 `[dependencies]`のkeyはmanifest内の登録名であり、import pathの先頭には依存先`[project].name`を使う。\
 import pathは[packageとimport](../language/v1/names-and-scopes.md#packageとimport)に従う。\
 依存先を異なる登録名で参照した場合も、解決先directoryが同じなら同じ依存とする。\
@@ -127,7 +129,7 @@ absolute path、`..`、globを含むignore入力はerrorとなる。\
 
 1 packageにつき1個のUTF-8 JSON `.ondpkg`を生成し、CompilationManifestが各fileを参照する。\
 section dataはBase64文字列、他のfieldは通常のJSONである。\
-依存sourceを含むproject全体で型と名前を検査し、具体化したgeneric宣言も通常の型・関数成果物に含める。\
+依存sourceを含むproject全体で[role検査範囲](../language/v1/roles.md#検査範囲とimport)に従って型と名前を検査し、具体化したgeneric宣言も通常の型・関数成果物に含める。\
 公開interfaceは成果物local型番号とnominal名を使い、[interface schema](../artifacts.md#公開interface)に従う。\
 通常/test compileでsource集合とcache entryを区別する。
 

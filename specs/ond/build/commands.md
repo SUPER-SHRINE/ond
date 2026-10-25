@@ -19,7 +19,7 @@ ond compile . -o - | ond link - --project . -o game.bin
 ### ond compile
 <!-- ond-spec-id: build/compile-command -->
 
-`ond compile [PROJECT] [--test] [-o FILE|-] [-v]`
+`ond compile [PROJECT] [--test] [--role NAME] [-o FILE|-] [-v]`
 
 PROJECT省略時はcurrent directoryを選び、[manifestとsource探索](./packages.md#manifestとsource探索)に従ってprojectと依存sourceを収集する。\
 通常compileは実行project、`--test`は実行projectまたはlibrary projectのtest buildを選ぶ。\
@@ -31,6 +31,7 @@ PROJECT省略時はcurrent directoryを選び、[manifestとsource探索](./pack
 | `-o -` | CompilationManifestをstdoutへ出力 |
 | 出力省略 | compile設定のoutputまたはtest-output |
 | `-v` | 再生成/再利用package名をstderrへ表示 |
+| `--role NAME` | 操作対象の実行projectの選択roleを指定。指定可能な対象と省略時の選択は[role選択](./roles.md#compile時の選択)に従う |
 
 package `.ondpkg`の保存先はcompile.cache-dirとする。\
 相対引数pathは呼出時current directory基準、設定の相対pathはond.tomlの親directory基準である。\
@@ -76,6 +77,8 @@ compile/link失敗時は指定先の以前の成果物を保持する。\
 受理するoptionは各commandの構文に列挙したものとhelpだけであり、未知optionはexit 2となる。\
 `--ram`、`--stack`、`--read-only`、`--return-to`、`--cache-dir`も未知optionとして扱う。\
 同じoptionの重複、option値の欠落、構文を超える位置引数も引数errorとする。
+
+`--role`の重複、値欠落とlibrary projectへの指定はexit 2、role設定不正、role定義欠落とnamesにないNAMEの指定はcompile入力のerrorとしてexit 1とする。
 
 追加sourceを生成するbuild toolは、一意な専用directoryに[manifest](./packages.md#manifestとsource探索)を持つprojectを生成し、利用側manifestのpath依存へ登録する。\
 生成sourceを含むcompileの完了後に一時directoryを削除する。\

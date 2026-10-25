@@ -34,11 +34,13 @@ debug/test sidecarのbuild_idにはこの識別子を使い、sidecar bytesをha
 sidecar利用者は対象バイナリの全bytesから識別子を求め、不一致のsidecar全体を使用拒否する。
 
 package build_idは次のPackageBuildInputをcanonical JSON化したbytesのSHA-256とする。\
-以下のobjectも閉schemaで全fieldを必須とし、mapのentry集合は対応する規則に従う。
+以下のobjectも閉schemaとし、PackageBuildInput.rolesだけを後述の条件付きfieldとする。\
+他の全fieldは必須であり、mapのentry集合は対応する規則に従う。
 
 | 型 | Field |
 | --- | --- |
-| PackageBuildInput | `contract: Contract`, `compiler_id: string`, `manifest_hash: string`, `mode: BuildMode`, `package: string`, `sources: SourceHash[]`, `dependencies: map<string,string>`, `generation: Generation` |
+| PackageBuildInput | `contract: Contract`, `compiler_id: string`, `manifest_hash: string`, `mode: BuildMode`, `package: string`, `sources: SourceHash[]`, `dependencies: map<string,string>`, `generation: Generation`, 条件付き`roles: RoleBuildInput` |
+| RoleBuildInput | `names: string[]`, `primary: string`, `selected: string` |
 | BuildMode | `"normal"`または`"test"` |
 | SourceHash | `path: string`, `content_hash: string` |
 | Generation | `instances: Instance[]`, `types: TypeExpr[]`, `nominals: Nominal[]`, `constants: OwnedConstant[]`, `interface: NormalizedInterface` |
@@ -48,8 +50,19 @@ BOMと改行を含む入力bytesを保持し、pathはpackageを構成するsour
 sourcesはpathのUnicode scalar辞書順、dependenciesは直接import先の論理package pathからそのbuild_idへのmapとする。\
 modeは通常/test source集合が同じ場合もそれぞれnormal/testを用いる。
 
+rolesは当該packageの所属projectが[roles設定](./roles.md#manifest設定)を持つ場合に必須とし、roleなしprojectではfieldを省略する。\
+nullは受理せず、namesは当該projectの宣言role集合をUnicode scalar辞書順に並べ、primaryはその設定値、selectedは[compile時に選択したrole](./roles.md#compile時の選択)とする。\
+依存packageも自身のprojectの値を用いる。\
+roles以外の既存入力とcanonical JSON規則を維持し、roleなしprojectの入力へ追加fieldを挿入しない。\
+異なる選択roleは選択後の生成集合が同じ場合も異なるPackageBuildInputとなる。\
+この入力はhash計算用であり、PackageArtifact、Object、CompilationManifest、Contractのfieldとrevisionを追加・変更しない。
+
 ### 意味型・具体化・定数の正規化
 <!-- ond-spec-id: build/normalized-generation -->
+
+本節のsource、宣言、式、importの母集団は、各所属projectで[role選択](../language/v1/roles.md#対象集合と選択)を行った後の集合とする。\
+全nongeneric宣言、全source式とruntime conditionの両branchという記述も、この母集団内へ適用する。\
+source hashは選択前の原文全bytesを対象とし、非選択部分の編集もsource内容の変更として扱う。
 
 TypeExprは次の外部tag表現とし、構成要素の順序を型同一性の規則に対応づける。\
 primitiveは`"Bool"`、`"U8"`、`"I8"`、`"U16"`、`"I16"`、`"U32"`、`"I32"`、`"F32"`とする。
@@ -171,6 +184,8 @@ Object生成の永続キャッシュは[パッケージ成果物・独立コン�
 test sourceの意味解析は、自packageの通常sourceとtest source、およびimportした依存packageの通常sourceを参照環境とする。\
 名前の公開範囲、同一packageのprivate declarationへのアクセス、test sourceの判定は[テストビルド仕様](./test-build.md)に従う。
 
+各参照環境には[role可視性](../language/v1/roles.md#名前解決とscope)を併せて適用し、依存境界は[project境界規則](./roles.md#project境界)に従う。
+
 test sourceから通常functionを呼んでも、そのfunctionの定義とbodyは通常sourceの参照環境を維持する。\
 通常sourceに定義されたgeneric function、method、operatorの特殊化にも、定義元の参照環境を適用する。\
 型、constant、globalの解決にも同じ規則を使う。
@@ -184,6 +199,9 @@ test sourceだけの変更では、不変な通常sourceと通常依存関係の
 再利用の判定にはsourceの内容とidentity、および参照する通常sourceの依存関係を用いる。\
 同じ内容と参照環境を再利用条件とする。\
 依存関係には型、constant、generic定義と同一packageのprivate declarationを含め、それらすべての内容と参照環境の一致を再利用条件とする。
+
+参照環境のrole設定、選択role、source位置のrole文脈と依存primaryの変更は[role cache入力](./roles.md#cache入力)に従って失効へ反映する。\
+永続cache、frontend省略を判断する索引、LSPの名前索引と失敗診断にも同じ一致条件を適用する。
 
 test sourceだけが変わった場合、対象packageのtest解析結果を失効させる。\
 通常sourceと通常依存関係が不変なら、そのpackageと他packageの通常解析結果を再利用できる。\

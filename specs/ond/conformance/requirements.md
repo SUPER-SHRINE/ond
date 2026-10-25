@@ -153,3 +153,16 @@
 | CLI-01 | TOML設定元、入力省略、path、通常/test出力、引数error | [commands](../build/commands.md)、[設定](../build/packages.md#compileとlink設定) | [CLI](./cases/executable-binaries.md#cliのprojectとpath) |
 | TEST-01 | test metadata、共通binary形式、guard、wrapper、終了経路 | [test build](../build/test-build.md) | [test生成](./cases/executable-binaries.md#test生成と個別入口) |
 | FAULT-01 | KaguraのCPU faultとOndの意味分類 | [fault対応](../targets/kagura-v1/machine.md#faultと観測結果) | [debug-fault-contracts](./cases/debug-fault-contracts.md) |
+
+## Project role
+<!-- ond-spec-id: conformance/requirements-roles -->
+
+| ID | 要件の要約 | 規範定義元 | 対応するcase入力・期待 |
+| --- | --- | --- | --- |
+| ROLE-01 | 任意roles tableの閉schema、明示primary、単一CLI roleとerror | [role設定](../build/roles.md#manifest設定)、[command](../build/commands.md#入出力と失敗時) | [設定とCLI](./cases/roles.md#設定とcli) |
+| ROLE-02 | OR、補集合else、入れ子積集合、project独立選択とtest軸 | [集合と選択](../language/v1/roles.md#対象集合と選択)、[project選択](../build/roles.md#compile時の選択) | [選択](./cases/roles.md#role選択と生成)、[依存とtest](./cases/roles.md#依存primaryとtest軸) |
+| ROLE-03 | 全branch字句・構文・role名検査と選択後意味検査・import採用 | [検査範囲](../language/v1/roles.md#検査範囲とimport) | [branch検査](./cases/roles.md#全branch検査と非選択部分)、[import](./cases/roles.md#条件付きimport) |
+| ROLE-04 | 通常/role文脈、対象集合包含、scope、同名宣言とproject境界 | [名前解決](../language/v1/roles.md#名前解決とscope)、[境界](../build/roles.md#project境界) | [可視性](./cases/roles.md#名前解決とscopeと補完)、[依存](./cases/roles.md#依存primaryとtest軸) |
+| ROLE-05 | カーソル位置の全role文脈による補完と通常/test可視性 | [LSP](../language/v1/roles.md#lspの補完と診断) | [補完](./cases/roles.md#名前解決とscopeと補完)、[test文脈](./cases/roles.md#依存primaryとtest軸) |
+| ROLE-06 | 非選択コード・data・初期化の生成除外と原文位置 | [生成と位置](../build/roles.md#生成と位置) | [生成](./cases/roles.md#role選択と生成) |
+| ROLE-07 | role付き公開hash入力、依存primaryと全cache・索引の失効 | [公開hash](../build/cache.md#公開識別子)、[cache入力](../build/roles.md#cache入力) | [hashと失効](./cases/roles.md#hashとcacheの失効) |

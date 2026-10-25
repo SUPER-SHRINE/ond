@@ -21,6 +21,7 @@ Statement     = DeclStmt
               | ContinueStmt
               | IfStmt
               | ForStmt
+              | RoleStmt
               | Block .
 DeclStmt      = ConstDecl | VarDecl .
 SimpleStmt    = EmptyStmt | ExpressionStmt | Assignment | IncDecStmt | ShortVarDecl .
@@ -90,8 +91,10 @@ getterは[operator解決](./expressions.md#user-defined-operator)で選んだind
   - `for {}`とconditionを省略した3 clause forは、当該loopを対象とする構文上到達可能なbreakがない場合に後続文への経路を持たない
   - 内側loopを対象とするbreakは外側loopの退出経路を作らない
   - 呼出先の本体や実行時の定数真偽で構文上の経路を追加・削除しない
-- 到達判定で経路に寄与しない文にも、構文・名前・型など他の成立条件を適用する
+- role選択後の到達判定で経路に寄与しない文にも、構文・名前・型など他の成立条件を適用する
   - `asm noreturn`は後続文へ通常継続しない終端経路とする
+
+RoleStmtの選択、block scopeと検査範囲は[role規則](./roles.md)に従う。
 
 ## 文と制御構文
 <!-- ond-spec-id: statements/control-flow -->

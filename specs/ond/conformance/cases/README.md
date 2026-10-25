@@ -83,6 +83,7 @@ allocatorの外部観測は[言語のheap契約](../../language/v1/execution.md#
 - [Kagura回帰の外部観測](./kagura-regression-observations.md)
 - [Stackとstartup storageの外部観測](./memory-placement.md)
 - [cacheとlink](./build-observations.md)
+- [Roleの設定・選択・可視性・補完・cache](./roles.md)
 
 ## Kagura backendの実行入力
 <!-- ond-spec-id: conformance/kagura-case-inventory -->

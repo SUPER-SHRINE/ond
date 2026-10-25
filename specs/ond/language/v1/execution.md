@@ -27,6 +27,9 @@ bounds checkの失敗は追加のstack frameやheap allocationに依存しない
 ## 初期化とエントリ
 <!-- ond-spec-id: runtime/initialization-and-entry -->
 
+本節の宣言集合、import列と初期化順は[role選択](./roles.md#対象集合と選択)後のsourceへ適用する。\
+除外した宣言を`main`の個数やglobal集合へ数えず、選択部分の元のsource順を保持する。
+
 - package-level `var` は initializer を省略した zero value、または compile-time constant initializer だけを持てる
   - runtime 呼び出しを伴う initializer は compile error とする
 - compilerはglobal initializerを適用する内部関数を生成できる

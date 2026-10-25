@@ -11,6 +11,9 @@ basenameが`test.ond`または`_test.ond`で終わるfileをtest sourceとする
 通常buildの入力は通常source、test buildの入力は通常sourceと対象project全packageのtest sourceであり、import到達性によらず対象projectのtestを収集する。\
 依存projectは通常sourceを入力として提供する。
 
+source集合内の宣言、文、importとtest caseは[role規則](../language/v1/roles.md)で選択し、操作対象と依存それぞれの選択roleは[compile時の選択](./roles.md#compile時の選択)に従う。\
+本章の通常/test可視性はrole可視性と同時に適用する。
+
 test caseはtest source内の`Test` prefixを持つtop-level function宣言であり、signatureはparameter 0個、result 0個、型parameter 0個、receiverなしを成立条件とする。\
 `Test` prefixのfunction/method宣言で条件に違反するとcompile errorとなる。\
 他のfunctionはhelper、type/var/constはそれぞれの宣言として扱う。
