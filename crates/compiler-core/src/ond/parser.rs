@@ -1,4 +1,5 @@
 struct Parser {
+    source: String,
     file_id: FileId,
     tokens: Vec<Token>,
     cursor: usize,
@@ -7,8 +8,9 @@ struct Parser {
 }
 
 impl Parser {
-    fn new(file_id: FileId, tokens: Vec<Token>) -> Self {
+    fn new(file_id: FileId, tokens: Vec<Token>, source: &str) -> Self {
         Self {
+            source: source.into(),
             file_id,
             tokens,
             cursor: 0,
@@ -446,6 +448,9 @@ impl Parser {
     }
 
     fn parse_statement(&mut self) -> Result<ast::Stmt, Diagnostics> {
+        if self.asm_start() {
+            return self.parse_asm().map(ast::Stmt::InlineAssembly);
+        }
         match self.current().kind {
             TokenKind::Const => Ok(ast::Stmt::Const(self.parse_const_decl()?)),
             TokenKind::Var => Ok(ast::Stmt::Var(self.parse_var_decl()?)),
@@ -1222,6 +1227,7 @@ fn stmt_span(stmt: &ast::Stmt) -> Span {
         ast::Stmt::Return(decl) => decl.span,
         ast::Stmt::Break(span) | ast::Stmt::Continue(span) => *span,
         ast::Stmt::Defer(statement) => statement.span,
+        ast::Stmt::InlineAssembly(statement) => statement.span,
         ast::Stmt::Trap { span, .. } => *span,
         ast::Stmt::Block(block) => block.span,
         ast::Stmt::If(stmt) => stmt.span,

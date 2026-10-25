@@ -576,6 +576,7 @@ fn collect_stmt(
     type_parameters: &BTreeSet<String>,
 ) {
     match stmt {
+        ast::Stmt::InlineAssembly(_) => {}
         ast::Stmt::Const(decl) => collect_const_decl(decl, declarations),
         ast::Stmt::Var(decl) => {
             for spec in &decl.specs {

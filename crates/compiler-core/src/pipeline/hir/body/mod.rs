@@ -15,6 +15,7 @@ mod expressions;
 pub(super) use expressions::{index_type_argument, type_argument_index};
 mod generation;
 mod globals;
+mod inline_asm;
 mod integer_literal;
 mod intrinsics;
 mod memory;

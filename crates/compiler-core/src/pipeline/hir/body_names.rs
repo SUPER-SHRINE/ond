@@ -366,6 +366,14 @@ impl<'a> NameValidator<'a> {
 
     fn statement(&mut self, statement: &ast::Stmt) {
         match statement {
+            ast::Stmt::InlineAssembly(statement) => {
+                for diagnostic in crate::inline_asm::validate_source(statement) {
+                    self.diagnostics.push(diagnostic);
+                }
+                for binding in &statement.bindings {
+                    self.expr(&binding.value);
+                }
+            }
             ast::Stmt::Const(declaration) => {
                 for spec in &declaration.specs {
                     if let Some(ty) = &spec.ty {

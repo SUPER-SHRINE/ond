@@ -20,6 +20,7 @@ Kagura 上の具体的な実行契約は [Ond for Kagura v1](../../targets/kagur
 - [宣言と関数](./declarations.md)
 - [式、演算、定数評価](./expressions.md)
 - [文と制御構文](./statements.md)
+- [Inline assembly](./inline-assembly.md)
 - [builtin](./builtins.md)
 - [memory、初期化、entry](./execution.md)
 

@@ -15,6 +15,9 @@ pub(super) fn operands(kind: &InstructionKind) -> Vec<ValueId> {
         }
     }
     match kind {
+        InstructionKind::InlineAssembly { inputs, .. } => {
+            values.extend(inputs.iter().map(|(_, value)| *value))
+        }
         InstructionKind::Constant(_) => {}
         InstructionKind::Unary { operand, .. } | InstructionKind::Cast { value: operand, .. } => {
             values.push(*operand)

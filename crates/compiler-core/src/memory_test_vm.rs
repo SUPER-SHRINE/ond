@@ -184,6 +184,9 @@ fn run(
         let current = &function.blocks[block.0 as usize];
         for instruction in &current.instructions {
             let results = match &instruction.kind {
+                InstructionKind::InlineAssembly { .. } => {
+                    return Err("Kagura inline assembly is unsupported by MemoryVm");
+                }
                 InstructionKind::Constant(Constant::Zero(ty)) => vec![zero(&project.types, *ty)],
                 InstructionKind::Constant(Constant::Integer { bits, .. }) => {
                     vec![Value::Number(*bits)]
