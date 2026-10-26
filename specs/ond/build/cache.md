@@ -40,7 +40,7 @@ package build_idは次のPackageBuildInputをcanonical JSON化したbytesのSHA-
 | 型 | Field |
 | --- | --- |
 | PackageBuildInput | `contract: Contract`, `compiler_id: string`, `manifest_hash: string`, `mode: BuildMode`, `package: string`, `sources: SourceHash[]`, `dependencies: map<string,string>`, `generation: Generation`, 条件付き`roles: RoleBuildInput` |
-| RoleBuildInput | `names: string[]`, `primary: string`, `selected: string` |
+| RoleBuildInput | `names: string[]`, `selected: string or null` |
 | BuildMode | `"normal"`または`"test"` |
 | SourceHash | `path: string`, `content_hash: string` |
 | Generation | `instances: Instance[]`, `types: TypeExpr[]`, `nominals: Nominal[]`, `constants: OwnedConstant[]`, `interface: NormalizedInterface` |
@@ -50,10 +50,11 @@ BOMと改行を含む入力bytesを保持し、pathはpackageを構成するsour
 sourcesはpathのUnicode scalar辞書順、dependenciesは直接import先の論理package pathからそのbuild_idへのmapとする。\
 modeは通常/test source集合が同じ場合もそれぞれnormal/testを用いる。
 
-rolesは当該packageの所属projectが[roles設定](./roles.md#manifest設定)を持つ場合に必須とし、roleなしprojectではfieldを省略する。\
-nullは受理せず、namesは当該projectの宣言role集合をUnicode scalar辞書順に並べ、primaryはその設定値、selectedは[compile時に選択したrole](./roles.md#compile時の選択)とする。\
-依存packageも自身のprojectの値を用いる。\
-roles以外の既存入力とcanonical JSON規則を維持し、roleなしprojectの入力へ追加fieldを挿入しない。\
+rolesは当該packageの所属projectが[roles設定](./roles.md#manifest設定)を持つ場合に必須とし、roles tableを省略したprojectではfieldを省略する。\
+roles field全体のnullは受理しない。\
+namesは当該projectの宣言済み追加role集合をUnicode scalar辞書順に並べ、selectedは[compile時の選択](./roles.md#compile時の選択)がrole未指定の構成ならnull、名前付きroleならその名前のstringとする。\
+依存packageのnamesも自身のprojectの設定値とし、selectedは[依存edgeの選択](./roles.md#依存edgeのrole選択)を同じ表現へ変換する。\
+roles以外の既存入力とcanonical JSON規則を維持し、roles table省略projectの入力へ追加fieldを挿入しない。\
 異なる選択roleは選択後の生成集合が同じ場合も異なるPackageBuildInputとなる。\
 この入力はhash計算用であり、PackageArtifact、Object、CompilationManifest、Contractのfieldとrevisionを追加・変更しない。
 
@@ -158,6 +159,7 @@ private cache keyのbyte表現・hash方式・保存形式・file名・保存範
 
 再利用の前提はsource内容、manifest、compiler_id、contract、import graph、依存build_idとartifact checksumの一致である。\
 source読込、構文解析、依存graph収集はcompileごとに行う。\
+[登録依存graphの成立条件](./roles.md#登録依存graphの成立条件)はcacheの一致によらず検証する。\
 全package artifactの一致を検証できた場合は型付きfrontendとObject生成を省略できる。\
 一つでも不一致ならproject全体に型付きfrontendを実行し、Object生成は再計算したpackage build_idの変化に応じて行う。\
 `frontend_ran`は型付きfrontendを実行したことを示す。
@@ -200,7 +202,7 @@ test sourceだけの変更では、不変な通常sourceと通常依存関係の
 同じ内容と参照環境を再利用条件とする。\
 依存関係には型、constant、generic定義と同一packageのprivate declarationを含め、それらすべての内容と参照環境の一致を再利用条件とする。
 
-参照環境のrole設定、選択role、source位置のrole文脈と依存primaryの変更は[role cache入力](./roles.md#cache入力)に従って失効へ反映する。\
+参照環境のfinal・role設定、依存edgeの明示roleと解決した選択role、source位置のrole文脈の変更は[role cache入力](./roles.md#cache入力)に従って失効へ反映する。\
 永続cache、frontend省略を判断する索引、LSPの名前索引と失敗診断にも同じ一致条件を適用する。
 
 test sourceだけが変わった場合、対象packageのtest解析結果を失効させる。\
