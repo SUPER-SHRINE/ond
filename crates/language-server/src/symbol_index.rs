@@ -69,33 +69,71 @@ impl ProjectSymbolIndex {
         let mut last_good_sources = BTreeMap::new();
         let mut failed_files = BTreeSet::new();
         let mut sources = SourceDb::default();
+        sources.set_dependency_inputs(loaded.sources.dependency_inputs().clone());
         let mut parsed_files = BTreeMap::new();
         for (index, source) in loaded.sources.files().iter().enumerate() {
             let path = source.path().to_path_buf();
             let text = source.text().to_string();
             let file_id = FileId(index);
-            let indexed_text = match compiler::parse_source_file(file_id, &text) {
-                Ok(file) => {
-                    last_good_sources.insert(path.clone(), text.clone());
-                    parsed_files.insert(file_id, file);
-                    text
-                }
-                Err(_) => {
-                    failed_files.insert(path.clone());
-                    if let Some(previous) =
-                        previous.and_then(|previous| previous.last_good_sources.get(&path))
-                    {
-                        last_good_sources.insert(path.clone(), previous.clone());
-                        if let Ok(file) = compiler::parse_source_file(file_id, previous) {
-                            parsed_files.insert(file_id, file);
-                        }
-                        previous.clone()
-                    } else {
+            let indexed_text =
+                match compiler::ond::parse_context_file(&loaded.sources, file_id, true) {
+                    Ok(file) => {
+                        last_good_sources.insert(path.clone(), text.clone());
+                        parsed_files.insert(file_id, file);
                         text
                     }
-                }
-            };
-            sources.add_file(path, indexed_text);
+                    Err(_) => {
+                        failed_files.insert(path.clone());
+                        if let Some(previous) = previous
+                            .filter(|previous| {
+                                if previous.loaded.sources.dependency_inputs()
+                                    != loaded.sources.dependency_inputs()
+                                {
+                                    return false;
+                                }
+                                previous
+                                    .loaded
+                                    .sources
+                                    .files()
+                                    .iter()
+                                    .position(|source| source.path() == path)
+                                    .is_some_and(|index| {
+                                        previous.loaded.sources.roles(FileId(index))
+                                            == loaded.sources.roles(file_id)
+                                    })
+                            })
+                            .and_then(|previous| previous.last_good_sources.get(&path))
+                        {
+                            last_good_sources.insert(path.clone(), previous.clone());
+                            let mut prior = compiler::source::SourceDb::default();
+                            for source in loaded.sources.files().iter().take(index + 1) {
+                                prior.add_file(
+                                    source.path().into(),
+                                    if source.path() == path {
+                                        previous.clone()
+                                    } else {
+                                        source.text().into()
+                                    },
+                                );
+                            }
+                            if let Some(roles) = loaded.sources.roles(file_id) {
+                                prior.set_roles(file_id, roles.clone());
+                            }
+                            if let Ok(file) =
+                                compiler::ond::parse_context_file(&prior, file_id, true)
+                            {
+                                parsed_files.insert(file_id, file);
+                            }
+                            previous.clone()
+                        } else {
+                            text
+                        }
+                    }
+                };
+            let id = sources.add_file(path, indexed_text);
+            if let Some(roles) = loaded.sources.roles(file_id) {
+                sources.set_roles(id, roles.clone());
+            }
         }
 
         let mut loaded = loaded;
@@ -141,6 +179,38 @@ impl ProjectSymbolIndex {
                     )
                 });
             }
+        }
+        Self::with_file_state(
+            self.loaded,
+            self.ast,
+            self.last_good_sources,
+            self.failed_files,
+        )
+    }
+
+    pub(crate) fn for_position(
+        mut self,
+        path: &std::path::Path,
+        line: u32,
+        character: u32,
+    ) -> Self {
+        if let Some((index, source)) = self
+            .loaded
+            .sources
+            .files()
+            .iter()
+            .enumerate()
+            .find(|(_, source)| crate::util::same_path(source.path(), path))
+            && let Ok(offset) = crate::protocol::lsp_offset(
+                source.text(),
+                &crate::protocol::Position { line, character },
+            )
+        {
+            self.ast = crate::role_context::project_at(
+                &self.ast,
+                &self.loaded.sources,
+                compiler::source::Span::new(FileId(index), offset, offset),
+            );
         }
         Self::with_file_state(
             self.loaded,

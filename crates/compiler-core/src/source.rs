@@ -95,9 +95,49 @@ impl SourceFile {
 #[derive(Debug, Clone, Default)]
 pub struct SourceDb {
     files: Vec<SourceFile>,
+    roles: std::collections::BTreeMap<FileId, crate::roles::SourceRoles>,
+    dependency_inputs: crate::roles::DependencyInputs,
 }
 
 impl SourceDb {
+    pub fn dependency_inputs(&self) -> &crate::roles::DependencyInputs {
+        &self.dependency_inputs
+    }
+    pub fn set_dependency_inputs(&mut self, inputs: crate::roles::DependencyInputs) {
+        self.dependency_inputs = inputs;
+    }
+    pub fn roles(&self, file: FileId) -> Option<&crate::roles::SourceRoles> {
+        self.roles.get(&file)
+    }
+    pub fn set_roles(&mut self, file: FileId, roles: crate::roles::SourceRoles) {
+        self.roles.insert(file, roles);
+    }
+    pub fn select_role(&mut self, project: &Path, role: &str) -> Result<(), String> {
+        let mut found = false;
+        for source in self
+            .roles
+            .values_mut()
+            .filter(|source| source.project == project)
+        {
+            let configuration = source
+                .configuration
+                .as_mut()
+                .ok_or_else(|| "project has no role definitions".to_string())?;
+            if !configuration.names.contains(role) {
+                return Err(format!("unknown role `{role}`"));
+            }
+            configuration.selected = Some(role.into());
+            found = true;
+        }
+        if found {
+            self.dependency_inputs
+                .selected_roles
+                .insert(project.to_path_buf(), Some(role.into()));
+            Ok(())
+        } else {
+            Err("project has no role definitions".into())
+        }
+    }
     pub fn add_file(&mut self, path: PathBuf, text: String) -> FileId {
         let id = FileId(self.files.len());
         self.files.push(SourceFile::new(path, text));

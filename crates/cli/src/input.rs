@@ -4,20 +4,24 @@ use std::collections::BTreeMap;
 
 pub fn load(request: &CompileRequest) -> DriverResult<LoadedProject> {
     request.contract.validate().map_err(|error| vec![error])?;
-    let loader = if request.test {
-        ond_compiler_core::load_project_with_test_inputs
-    } else {
-        ond_compiler_core::load_project_with_inputs
-    };
-    let resolved = crate::resolve_dependencies(&request.project_root)?;
+    let resolved = crate::dependencies::resolve_dependencies_with_role(
+        &request.project_root,
+        request.role.as_deref(),
+    )?;
     let mut excluded_dirs = request.excluded_dirs.clone();
     excluded_dirs.extend(resolved.ignored_directories);
-    let mut loaded = loader(
+    let mut loaded = ond_compiler_core::load_project_with_role_inputs(
         &request.project_root,
         &BTreeMap::new(),
         &excluded_dirs,
         &request.sources,
         &resolved.sources,
+        ond_compiler_core::RoleLoadOptions {
+            test: request.test,
+            selected: request.role.clone(),
+            dependencies: resolved.role_inputs,
+            ..Default::default()
+        },
     )
     .map_err(|error| {
         error

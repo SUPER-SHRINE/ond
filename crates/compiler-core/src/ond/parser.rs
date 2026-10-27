@@ -5,6 +5,8 @@ struct Parser {
     cursor: usize,
     diagnostics: Diagnostics,
     header: HeaderMode,
+    roles: Option<crate::roles::SourceRoles>,
+    all_roles: bool,
 }
 
 impl Parser {
@@ -16,6 +18,8 @@ impl Parser {
             cursor: 0,
             diagnostics: Diagnostics::new(),
             header: HeaderMode::None,
+            roles: None,
+            all_roles: false,
         }
     }
 
@@ -25,23 +29,10 @@ impl Parser {
         self.expect_semi()?;
 
         let mut imports = Vec::new();
-        while self.at(TokenKind::Import) {
-            let start = self.bump().span;
-            let alias = self.at(TokenKind::Identifier).then(|| self.expect_ident()).transpose()?;
-            let path = self.expect_string_lit()?;
-            let end = self.expect_semi()?;
-            imports.push(ast::ImportDecl {
-                alias,
-                path,
-                span: join_spans(start, end),
-            });
-        }
-
         let mut decls = Vec::new();
-        while !self.at(TokenKind::Eof) {
-            decls.push(self.parse_top_level_decl()?);
-            self.expect_semi()?;
-        }
+        self.source_items(&mut imports, &mut decls, false)?;
+        self.validate_import_order(&imports, &decls)?;
+        self.project_items(&mut imports, &mut decls);
 
         let end = self.current().span;
         if self.diagnostics.is_empty() {
@@ -448,6 +439,7 @@ impl Parser {
     }
 
     fn parse_statement(&mut self) -> Result<ast::Stmt, Diagnostics> {
+        if self.role_start() { return self.role_statement(); }
         if self.asm_start() {
             return self.parse_asm().map(ast::Stmt::InlineAssembly);
         }

@@ -185,10 +185,7 @@ impl<'a> BodyLowerer<'a> {
         self.universe
             .iter()
             .find(|package| package.id == self.package_id)?
-            .imports
-            .get(&span.file)?
-            .get(qualifier)
-            .copied()
+            .import_from(qualifier, span)
     }
 
     pub(super) fn new(

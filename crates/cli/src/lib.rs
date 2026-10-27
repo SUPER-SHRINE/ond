@@ -26,6 +26,8 @@ mod export_tests;
 #[cfg(test)]
 mod generation_tests;
 #[cfg(test)]
+mod role_tests;
+#[cfg(test)]
 mod tests;
 
 #[cfg(test)]

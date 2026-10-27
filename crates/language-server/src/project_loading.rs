@@ -58,12 +58,18 @@ pub(super) fn load_project(
         synthetic_entry = Some(synthetic_main);
         excluded_library_roots.extend(self_sources.ignored_directories);
     }
-    let mut project = compiler::load_project_with_inputs_allow_incomplete(
+    let mut project = compiler::load_project_with_role_inputs(
         root,
         overrides,
         &excluded_library_roots,
         &BTreeMap::new(),
         &libraries,
+        compiler::RoleLoadOptions {
+            test: true,
+            allow_incomplete: true,
+            dependencies: resolved.role_inputs,
+            ..Default::default()
+        },
     )
     .map_err(render_frontend_error)?;
     if let Some(namespace) = library_namespace

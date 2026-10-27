@@ -25,6 +25,7 @@ pub mod mir;
 pub mod ond;
 pub mod project;
 mod project_input;
+pub mod roles;
 pub mod semantic;
 pub mod source;
 /// Decode an import path using the language's string-literal rules.
@@ -41,8 +42,9 @@ pub use project::{
     load_project_with_overrides_and_exclusions,
 };
 pub use project_input::{
-    ExternalSource, ExternalSources, load_project_with_inputs,
-    load_project_with_inputs_allow_incomplete, load_project_with_test_inputs,
+    ExternalSource, ExternalSources, RoleLoadOptions, load_project_with_inputs,
+    load_project_with_inputs_allow_incomplete, load_project_with_role_inputs,
+    load_project_with_test_inputs,
 };
 
 #[derive(Debug, Clone)]
@@ -213,6 +215,8 @@ mod operator_overload_tests;
 mod project_contract_tests;
 #[cfg(test)]
 mod review_regression_tests;
+#[cfg(test)]
+mod role_tests;
 #[cfg(test)]
 mod semantic_tests;
 #[cfg(test)]

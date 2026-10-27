@@ -1,5 +1,5 @@
 //! Test-only interpreter for by-value aggregates and aliased memory.
-use crate::mir::*;
+use super::mir::*;
 type Globals = std::collections::BTreeMap<String, Rc<RefCell<Value>>>;
 use std::{cell::RefCell, rc::Rc};
 
@@ -111,6 +111,24 @@ pub(super) fn execute(
     name: &str,
     input: &[u64],
 ) -> Result<Vec<u64>, &'static str> {
+    execute_observed(project, name, input, None)
+}
+
+/// Test-only external observation after one function call on fresh memory.
+pub(super) fn execute_with_global(
+    project: &Project,
+    name: &str,
+    global: &str,
+) -> Result<Vec<u64>, &'static str> {
+    execute_observed(project, name, &[], Some(global))
+}
+
+fn execute_observed(
+    project: &Project,
+    name: &str,
+    input: &[u64],
+    global: Option<&str>,
+) -> Result<Vec<u64>, &'static str> {
     let args = input
         .iter()
         .map(|value| Value::Number(*value))
@@ -149,8 +167,12 @@ pub(super) fn execute(
             run(project, &init.name, Vec::new(), &globals, &mut budget)?;
         }
     }
-    run(project, name, args, &globals, &mut budget)
-        .map(|values| values.iter().map(Value::number).collect())
+    let values = run(project, name, args, &globals, &mut budget)?;
+    if let Some(global) = global {
+        Ok(vec![globals[global].borrow().number()])
+    } else {
+        Ok(values.iter().map(Value::number).collect())
+    }
 }
 
 fn run(

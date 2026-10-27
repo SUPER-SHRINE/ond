@@ -1033,9 +1033,7 @@ fn constant_is_string_literal(
             let Some(owner) = universe
                 .iter()
                 .find(|package| package.id == package_id)
-                .and_then(|package| package.imports.get(&path.span.file))
-                .and_then(|imports| imports.get(&qualifier.name))
-                .copied()
+                .and_then(|package| package.import_from(&qualifier.name, path.span))
             else {
                 return false;
             };
