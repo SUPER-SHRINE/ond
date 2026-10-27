@@ -5,7 +5,7 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 struct Project(PathBuf);
-const SETTINGS: &str = "[project]\nname='app'\n[compile]\noutput='meta/build.ondbuild'\ntest-output='meta/test.ondbuild'\ncache-dir='cache'\n[link]\noutput='out/game.bin'\ntest-output='out/tests.bin'\nstartup='external'\nstack-size=256\n[link.ram]\nbase=0x10000000\nsize=65536\n[link.exit]\nmode='loop'\n";
+const SETTINGS: &str = "[project]\nname='app'\n[compile]\noutput='meta/build.ondbuild'\ncache-dir='cache'\n[link]\noutput='out/game.bin'\nstartup='external'\nstack-size=256\n[link.ram]\nbase=0x10000000\nsize=65536\n[link.exit]\nmode='loop'\n";
 impl Project {
     fn new() -> Self {
         static N: AtomicU64 = AtomicU64::new(0);
@@ -92,6 +92,25 @@ fn cli_01_closed_settings_reject_unknown_and_invalid_values() {
     }
 }
 #[test]
+fn removed_test_output_settings_are_unknown_keys() {
+    let p = Project::new();
+    for text in [
+        SETTINGS.replace(
+            "cache-dir='cache'",
+            "cache-dir='cache'\ntest-output='meta/tests.ondbuild'",
+        ),
+        SETTINGS.replace(
+            "startup='external'",
+            "startup='external'\ntest-output='out/tests.bin'",
+        ),
+    ] {
+        p.put("ond.toml", &text);
+        let output = p.run(&["compile", "../app"]);
+        assert_eq!(output.status.code(), Some(1), "{text}");
+        assert!(String::from_utf8_lossy(&output.stderr).contains("test-output"));
+    }
+}
+#[test]
 fn cli_01_selection_argument_errors_and_no_automatic_compile() {
     let p = Project::new();
     p.ok(&["compile", "../app"]);
@@ -154,7 +173,7 @@ fn hash_01_fixed_binary_vectors() {
     );
 }
 #[test]
-fn bin_03_and_test_01_all_startups_sidecars_and_final_addresses() {
+fn bin_03_all_startups_debug_sidecars_and_final_addresses() {
     use ond_protocol::{executable::Executable, object::SectionKind};
     for startup in ["ram", "rom", "self"] {
         let p = Project::new();
@@ -178,13 +197,19 @@ fn bin_03_and_test_01_all_startups_sidecars_and_final_addresses() {
             "dep/dep.ond",
             "package dep\nvar Seed:u32=7\nfunc Value()->u32{return Seed}\n",
         );
-        p.ok(&["compile", "../app", "--test"]);
+        p.ok(&["compile", "../app"]);
         let manifest: ond_protocol::CompilationManifest =
-            serde_json::from_slice(&fs::read(p.0.join("app/meta/test.ondbuild")).unwrap()).unwrap();
-        assert_eq!(manifest.tests.as_ref().unwrap().cases.len(), 2);
+            serde_json::from_slice(&fs::read(p.0.join("app/meta/build.ondbuild")).unwrap())
+                .unwrap();
+        assert!(
+            serde_json::to_value(&manifest)
+                .unwrap()
+                .get("tests")
+                .is_none()
+        );
         assert_eq!(manifest.program.initializers.len(), 2);
-        p.ok(&["link", "../app/meta/test.ondbuild", "--project", "../app"]);
-        let bytes = fs::read(p.0.join("app/out/tests.bin")).unwrap();
+        p.ok(&["link", "../app/meta/build.ondbuild", "--project", "../app"]);
+        let bytes = fs::read(p.0.join("app/out/game.bin")).unwrap();
         let prefix = if startup == "self" { 172 } else { 0 };
         let wire = Executable::read(&bytes[prefix..]).unwrap();
         let text = wire
@@ -193,19 +218,9 @@ fn bin_03_and_test_01_all_startups_sidecars_and_final_addresses() {
             .find(|s| s.kind == SectionKind::Text)
             .unwrap();
         let debug: ond_protocol::debug::DebugInfo =
-            serde_json::from_slice(&fs::read(p.0.join("app/out/tests.onddebug")).unwrap()).unwrap();
-        let tests: ond_protocol::TestSidecar =
-            serde_json::from_slice(&fs::read(p.0.join("app/out/tests.ondtest")).unwrap()).unwrap();
+            serde_json::from_slice(&fs::read(p.0.join("app/out/game.onddebug")).unwrap()).unwrap();
         assert_eq!(debug.build_id, hash(&bytes));
-        assert_eq!(tests.build_id, hash(&bytes));
-        assert_eq!(tests.cases.len(), 2);
-        for case in tests.cases {
-            assert!(
-                case.entry_point >= text.memory_address
-                    && case.entry_point < text.memory_address + text.memory_size
-            );
-            assert!(case.entry_point.is_multiple_of(4));
-        }
+        assert!(!p.0.join("app/out/game.ondtest").exists());
         for function in debug.functions {
             assert!(
                 function.address >= text.memory_address
@@ -241,23 +256,17 @@ fn bin_03_and_test_01_all_startups_sidecars_and_final_addresses() {
         }
         let stdout = p.ok(&[
             "link",
-            "../app/meta/test.ondbuild",
+            "../app/meta/build.ondbuild",
             "--project",
             "../app",
             "-o",
             "-",
         ]);
         assert_eq!(stdout.stdout, bytes);
-        p.put("main_test.ond", "package main\n");
-        p.ok(&["compile", "../app", "--test"]);
-        p.ok(&["link", "../app/meta/test.ondbuild", "--project", "../app"]);
-        let tests: ond_protocol::TestSidecar =
-            serde_json::from_slice(&fs::read(p.0.join("app/out/tests.ondtest")).unwrap()).unwrap();
-        assert!(tests.cases.is_empty());
     }
 }
 #[test]
-fn cli_01_compile_only_and_test_fallback_and_library() {
+fn cli_01_compile_only_and_library_requires_an_application_entry() {
     let p = Project::new();
     p.put("ond.toml", "[project]\nname='app'\n");
     p.ok(&["compile", "../app"]);
@@ -266,71 +275,43 @@ fn cli_01_compile_only_and_test_fallback_and_library() {
         Some(1)
     );
     p.put("ond.toml", SETTINGS);
-    p.ok(&["compile", "../app", "--test"]);
-    assert_eq!(
-        p.run(&["link", "--project", "../app"]).status.code(),
-        Some(1)
-    );
     fs::remove_file(p.0.join("app/main.ond")).unwrap();
     p.put("lib.ond", "package app\nvar Value:u32=3\n");
     p.put(
         "lib_test.ond",
-        "package app\nfunc TestValue(){*(536871168 as u32 as *u32)=Value}\n",
+        "package app\nfunc TestValue()->u32{return Value}\n",
     );
-    p.ok(&["compile", "../app", "--test"]);
-    p.ok(&["link", "../app/meta/test.ondbuild", "--project", "../app"]);
+    assert_eq!(p.run(&["compile", "../app"]).status.code(), Some(1));
 }
 #[test]
-fn cli_01_failures_preserve_binary_and_sidecars() {
+fn cli_01_failures_preserve_binary_and_debug_sidecar() {
     let p = Project::new();
     p.put("main_test.ond", "package main\nfunc TestOne(){}\n");
-    p.ok(&["compile", "../app", "--test"]);
-    p.ok(&["link", "../app/meta/test.ondbuild", "--project", "../app"]);
-    let paths = [
-        "app/out/tests.bin",
-        "app/out/tests.onddebug",
-        "app/out/tests.ondtest",
-    ];
+    p.ok(&["compile", "../app"]);
+    p.ok(&["link", "--project", "../app"]);
+    let paths = ["app/out/game.bin", "app/out/game.onddebug"];
     let previous = paths.map(|path| fs::read(p.0.join(path)).unwrap());
-    for output in ["../app/out/tests.onddebug", "../app/out/tests.ondtest"] {
-        assert_eq!(
-            p.run(&[
-                "link",
-                "../app/meta/test.ondbuild",
-                "--project",
-                "../app",
-                "-o",
-                output
-            ])
-            .status
-            .code(),
-            Some(1)
-        );
-    }
+    assert_eq!(
+        p.run(&[
+            "link",
+            "--project",
+            "../app",
+            "-o",
+            "../app/out/game.onddebug"
+        ])
+        .status
+        .code(),
+        Some(1)
+    );
     p.put("ond.toml", &SETTINGS.replace("size=65536", "size=256"));
     assert_eq!(
-        p.run(&["link", "../app/meta/test.ondbuild", "--project", "../app"])
-            .status
-            .code(),
+        p.run(&["link", "--project", "../app"]).status.code(),
         Some(1)
     );
     for (path, bytes) in paths.iter().zip(&previous) {
         assert_eq!(fs::read(p.0.join(path)).unwrap(), *bytes);
     }
-    p.put("ond.toml", SETTINGS);
-    fs::remove_file(p.0.join(paths[2])).unwrap();
-    fs::create_dir(p.0.join(paths[2])).unwrap();
-    assert_eq!(
-        p.run(&["link", "../app/meta/test.ondbuild", "--project", "../app"])
-            .status
-            .code(),
-        Some(1)
-    );
-    for i in 0..2 {
-        assert_eq!(fs::read(p.0.join(paths[i])).unwrap(), previous[i]);
-    }
 }
-
 #[cfg(windows)]
 #[test]
 fn cli_01_publish_io_failure_restores_already_replaced_binary() {

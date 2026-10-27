@@ -192,41 +192,21 @@ fn role_01_default_override_and_role_07_three_selected_hashes() {
     f.accept(&["--role", "Release"]);
 }
 #[test]
-fn role_02_library_option_and_test_metadata() {
+fn role_02_library_option_remains_an_argument_error() {
     let f = Fixture::new("");
     fs::remove_file(f.0.join("main.ond")).unwrap();
     f.put(
         "ond.toml",
         "[project]\nname=\"library\"\n[roles]\nnames=[\"Internal\",\"Public\"]\n",
     );
-    f.put("lib.ond", "package library\n");
-    f.put("lib_test.ond","package library\nfunc TestPublic(){}\nrole Internal {func TestInternal(){}}\nrole Public {func TestAlternate(){}}\n");
-    let manifest = f.accept(&["--test"]);
-    assert_eq!(
-        manifest
-            .tests
-            .unwrap()
-            .cases
-            .into_iter()
-            .map(|case| case.name)
-            .collect::<Vec<_>>(),
-        ["TestPublic"],
-        "ROLE-02.library-test"
+    f.put(
+        "lib_test.ond",
+        "package library\nfunc TestPublic(){}\nrole Internal {func TestInternal(){}}\n",
     );
     assert_eq!(
-        f.compile(&["--test", "--role", "Public"]).status.code(),
+        f.compile(&["--role", "Public"]).status.code(),
         Some(2),
         "ROLE-02.library-option"
-    );
-    f.put(
-        "lib.ond",
-        "package library\nfunc ordinary(){testHelper()}\n",
-    );
-    f.put("lib_test.ond", "package library\nfunc testHelper(){}\n");
-    assert_eq!(
-        f.compile(&["--test"]).status.code(),
-        Some(1),
-        "ROLE-05.test-visibility"
     );
 }
 #[test]
@@ -284,7 +264,7 @@ fn role_03_override_controls_external_import_reachability() {
 fn role_01_invalid_configuration_without_source_is_not_ignored() {
     let f = Fixture::new("[roles]\nnames=[]\n");
     fs::remove_file(f.0.join("main.ond")).unwrap();
-    let output = f.compile(&["--test"]);
+    let output = f.compile(&[]);
     assert_eq!(output.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&output.stderr).contains("role"));
 }

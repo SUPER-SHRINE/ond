@@ -175,7 +175,7 @@ fn role_04_conditional_import_alias_and_definition_obey_cursor_context() {
 }
 
 #[test]
-fn role_05_test_only_names_stay_hidden_from_normal_sources() {
+fn role_05_common_names_are_visible_across_all_source_filenames() {
     let fixture = Fixture::new();
     fixture.put(
         "ond.toml",
@@ -188,7 +188,7 @@ fn role_05_test_only_names_stay_hidden_from_normal_sources() {
     let normal_uri = fixture.open(&mut state, "lib.ond", normal);
     let test_uri = fixture.open(&mut state, "lib_test.ond", tests);
     for (uri, source, marker, visible) in [
-        (&normal_uri, normal, "// normal", false),
+        (&normal_uri, normal, "// normal", true),
         (&test_uri, tests, "// common-testing", true),
         (&test_uri, tests, "// role-testing", true),
     ] {
@@ -197,7 +197,7 @@ fn role_05_test_only_names_stay_hidden_from_normal_sources() {
         assert_eq!(
             completions.iter().any(|item| item["label"] == "testHelper"),
             visible,
-            "ROLE-05.test-visibility: {completions:?}"
+            "ROLE-05 common source visibility: {completions:?}"
         );
     }
 }

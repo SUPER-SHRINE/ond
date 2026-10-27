@@ -42,7 +42,7 @@ fn changed(cache: &SemanticCache) -> Vec<(&str, bool)> {
 }
 
 #[test]
-fn warm_edits_recompute_only_the_affected_source_group() {
+fn warm_edits_recompute_only_the_affected_package() {
     let files = [
         ("main.ond", "package main\nfunc main() {}\n"),
         ("a/api.ond", "package a\nfunc private() {}\n"),
@@ -52,31 +52,7 @@ fn warm_edits_recompute_only_the_affected_source_group() {
     ];
     let mut cache = SemanticCache::default();
     cache.validate(&project(&files)).unwrap();
-    assert_eq!(
-        changed(&cache),
-        [
-            (".", false),
-            ("a", false),
-            ("a", true),
-            ("b", false),
-            ("b", true)
-        ]
-    );
-    let (test_hir, _) = cache.entries[&("a".into(), true)].result.as_ref().unwrap();
-    let functions = test_hir
-        .packages
-        .iter()
-        .flat_map(|package| &package.items)
-        .filter_map(|item| match item {
-            hir::Item::Func(function) => Some(function.name.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(
-        functions,
-        ["TestOK"],
-        "ordinary bodies must not be lowered again for a test entry"
-    );
+    assert_eq!(changed(&cache), [(".", false), ("a", false), ("b", false),]);
     cache.validate(&project(&files)).unwrap();
     assert!(changed(&cache).is_empty());
     let mut edited = files;
@@ -85,10 +61,10 @@ fn warm_edits_recompute_only_the_affected_source_group() {
     assert_eq!(changed(&cache), [(".", false)]);
     edited[2].1 = "package a\nfunc TestOK() { private(); private() }\n";
     cache.validate(&project(&edited)).unwrap();
-    assert_eq!(changed(&cache), [("a", true)]);
+    assert_eq!(changed(&cache), [("a", false)]);
     edited[1].1 = "package a\nfunc private() {}\n\n";
     cache.validate(&project(&edited)).unwrap();
-    assert_eq!(changed(&cache), [("a", false), ("a", true)]);
+    assert_eq!(changed(&cache), [("a", false),]);
 }
 
 #[test]
@@ -146,17 +122,15 @@ fn test_entries_reuse_private_normal_declarations_and_preserve_main_requirement(
     ]);
     SemanticCache::default().validate(&valid).unwrap();
     crate::compile_loaded_project(valid).unwrap();
-    for files in [
-        vec![
-            ("main.ond", "package main\n"),
-            ("test.ond", "package main\nfunc main() {}\n"),
-        ],
-        vec![("test.ond", "package main\nfunc TestOnly() {}\n")],
-    ] {
-        let loaded = project(&files);
-        assert!(SemanticCache::default().validate(&loaded).is_err());
-        assert!(crate::compile_loaded_project(loaded).is_err());
-    }
+    let moved_entry = project(&[
+        ("main.ond", "package main\n"),
+        ("test.ond", "package main\nfunc main() {}\n"),
+    ]);
+    SemanticCache::default().validate(&moved_entry).unwrap();
+    crate::compile_loaded_project(moved_entry).unwrap();
+    let missing_entry = project(&[("test.ond", "package main\nfunc TestOnly() {}\n")]);
+    assert!(SemanticCache::default().validate(&missing_entry).is_err());
+    assert!(crate::compile_loaded_project(missing_entry).is_err());
     let library = project(&[("dep/api.ond", "package dep\nfunc Run() {}\n")]);
     SemanticCache::default().validate(&library).unwrap();
     assert!(crate::compile_loaded_project(library).is_err());
@@ -187,7 +161,10 @@ fn dependency_constants_types_and_generic_bodies_invalidate_consumers() {
     cache.validate(&project(&files)).unwrap();
     files[2].1 = "package dep\nfunc TestDep() {}\nfunc OnlyTest() {}\n";
     cache.validate(&project(&files)).unwrap();
-    assert_eq!(changed(&cache), [("dep", true)]);
+    assert_eq!(
+        changed(&cache),
+        [(".", false), ("client", false), ("dep", false)]
+    );
     for dependency in [
         "package dep\nconst Value = 2\ntype Number u32\nfunc Identity[T](value: T) -> T { return value }\n",
         "package dep\nconst Value = 2\ntype Number u16\nfunc Identity[T](value: T) -> T { return value }\n",
@@ -197,19 +174,13 @@ fn dependency_constants_types_and_generic_bodies_invalidate_consumers() {
         cache.validate(&project(&files)).unwrap();
         assert_eq!(
             changed(&cache),
-            [
-                (".", false),
-                ("client", false),
-                ("client", true),
-                ("dep", false),
-                ("dep", true)
-            ]
+            [(".", false), ("client", false), ("dep", false),]
         );
     }
 }
 
 #[test]
-fn normal_errors_do_not_resolve_against_new_test_declarations() {
+fn failed_results_resolve_against_new_package_declarations() {
     let mut cache = SemanticCache::default();
     let normal = "package main\nfunc main() { helper() }\n";
     let first = project(&[("main.ond", normal)]);
@@ -218,19 +189,13 @@ fn normal_errors_do_not_resolve_against_new_test_declarations() {
         ("main.ond", normal),
         ("test.ond", "package main\nfunc helper() {}\n"),
     ]);
-    let error = cache.validate(&second).unwrap_err();
-    assert_eq!(changed(&cache), [(".", true)]);
-    assert!(
-        error
-            .diagnostics()
-            .iter()
-            .any(|diagnostic| diagnostic.message.contains("helper"))
-    );
-    assert!(crate::compile_loaded_project(second).is_err());
+    cache.validate(&second).unwrap();
+    assert_eq!(changed(&cache), [(".", false)]);
+    crate::compile_loaded_project(second).unwrap();
 }
 
 #[test]
-fn generic_definitions_keep_definition_site_visibility_when_called_from_tests() {
+fn generic_definitions_share_package_scope_across_source_filenames() {
     for normal in [
         "package main\nfunc main() {}\nfunc Normal[T](value: T) { testHelper() }\n",
         "package main\nfunc main() {}\nfunc Normal[T](value: T) { var x: TestType; _ = x }\n",
@@ -242,8 +207,8 @@ fn generic_definitions_keep_definition_site_visibility_when_called_from_tests() 
                 "package main\ntype TestType u32\nfunc testHelper() {}\nfunc TestCall() { Normal[u32](1) }\n",
             ),
         ]);
-        assert!(SemanticCache::default().validate(&loaded).is_err());
-        assert!(crate::compile_loaded_project(loaded).is_err());
+        SemanticCache::default().validate(&loaded).unwrap();
+        crate::compile_loaded_project(loaded).unwrap();
     }
 }
 
@@ -284,7 +249,7 @@ fn diagnostic_labels_rebind_after_file_ids_change_and_clear_on_recovery() {
 }
 
 #[test]
-fn test_visibility_covers_imported_types_constants_methods_and_generics() {
+fn all_source_filenames_export_public_types_constants_methods_and_generics() {
     for body in [
         "_ = dep.TestValue",
         "var value: dep.TestType; _ = value",
@@ -301,11 +266,8 @@ fn test_visibility_covers_imported_types_constants_methods_and_generics() {
                 "package dep\nconst TestValue = 1\ntype TestType u32\nfunc OnlyGeneric[T](x: T) {}\nfunc (x: Value) OnlyMethod() {}\n",
             ),
         ]);
-        assert!(
-            SemanticCache::default().validate(&loaded).is_err(),
-            "{body}"
-        );
-        assert!(crate::compile_loaded_project(loaded).is_err(), "{body}");
+        SemanticCache::default().validate(&loaded).unwrap();
+        crate::compile_loaded_project(loaded).unwrap();
     }
 }
 
@@ -328,7 +290,7 @@ fn import_alias_conflicts_include_unselected_visible_declarations() {
         files[1].1 = "package main\nimport \"dep\"\nfunc TestOK() {}\n";
         let loaded = project(&files);
         let warm = cache.validate(&loaded).unwrap_err();
-        assert_eq!(changed(&cache), [(".", true)]);
+        assert_eq!(changed(&cache), [(".", false)]);
         let cold = crate::compile_loaded_project(loaded.clone()).unwrap_err();
         assert_eq!(warm.diagnostics(), cold.diagnostics(), "{declaration}");
         assert_eq!(warm.diagnostics().len(), 1);
@@ -340,7 +302,7 @@ fn import_alias_conflicts_include_unselected_visible_declarations() {
         let fresh = SemanticCache::default().validate(&loaded).unwrap_err();
         assert_eq!(fresh.diagnostics(), cold.diagnostics());
     }
-    // A test-only name stays hidden from an ordinary file's import environment.
+    // 同じpackageの宣言はfile名によらずimport aliasと衝突する。
     let loaded = project(&[
         (
             "main.ond",
@@ -352,8 +314,8 @@ fn import_alias_conflicts_include_unselected_visible_declarations() {
         ),
         ("dep/api.ond", "package dep\nfunc Run() {}\n"),
     ]);
-    SemanticCache::default().validate(&loaded).unwrap();
-    crate::compile_loaded_project(loaded).unwrap();
+    assert!(SemanticCache::default().validate(&loaded).is_err());
+    assert!(crate::compile_loaded_project(loaded).is_err());
 }
 
 #[test]
@@ -373,7 +335,7 @@ fn whole_project_test_import_cycles_are_checked_on_cache_hits_and_recovery() {
     files[4].1 = "package b\nimport \"a\"\nfunc TestB() { a.A() }\n";
     let loaded = project(&files);
     let warm = cache.validate(&loaded).unwrap_err();
-    assert_eq!(changed(&cache), [("b", true)]);
+    assert_eq!(changed(&cache), [("a", false), ("b", false)]);
     let cold = crate::compile_loaded_project(loaded.clone()).unwrap_err();
     assert_eq!(warm.diagnostics(), cold.diagnostics());
     assert_eq!(warm.diagnostics().len(), 1);
@@ -395,5 +357,5 @@ fn whole_project_test_import_cycles_are_checked_on_cache_hits_and_recovery() {
     );
     files[4].1 = "package b\nfunc TestB() {}\n";
     cache.validate(&project(&files)).unwrap();
-    assert_eq!(changed(&cache), [("b", true)]);
+    assert_eq!(changed(&cache), [("a", false), ("b", false)]);
 }

@@ -339,10 +339,10 @@ fn is_exported(name: &str) -> bool {
 }
 
 #[cfg(test)]
-mod test_build_tests {
+mod source_filename_tests {
     use super::*;
     #[test]
-    fn test_build_index_keeps_same_package_private_context_and_hides_test_exports() {
+    fn source_index_keeps_package_private_context_and_exports_public_declarations() {
         let root = std::path::Path::new("test-build-index").to_path_buf();
         let mut sources = SourceDb::default();
         let main = sources.add_file(
@@ -383,7 +383,7 @@ mod test_build_tests {
             normal
                 .package_symbols(".")
                 .iter()
-                .all(|s| s.name != "Helper" && s.name != "TestLocal")
+                .any(|s| s.name == "Helper" && s.exported)
         );
         let test = index.for_source(&root.join("main_test.ond"));
         assert!(
@@ -394,8 +394,12 @@ mod test_build_tests {
         assert!(
             test.package_symbols(".")
                 .iter()
-                .any(|s| s.name == "Helper" && !s.exported)
+                .any(|s| s.name == "Helper" && s.exported)
         );
-        assert!(test.package_symbols("other").is_empty());
+        assert!(
+            test.package_symbols("other")
+                .iter()
+                .any(|s| s.name == "TestOther" && s.exported)
+        );
     }
 }
