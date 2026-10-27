@@ -172,7 +172,12 @@ pub(super) fn import_declaration_conflicts(
     for (file, imports) in imports {
         for name in imports.keys() {
             if let Some(declaration) = names.get(name.as_str())
-                && owner.visible_from(*declaration, Span::new(*file, 0, 0))
+                && owner
+                    .import_spans
+                    .get(&(*file, name.clone()))
+                    .is_some_and(|import| {
+                        owner.declaration_conflicts_with_import(*declaration, *import)
+                    })
             {
                 diagnostics.push(Diagnostic::error(
                     *declaration,

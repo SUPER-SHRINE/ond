@@ -150,13 +150,13 @@ fn is_exported(name: &str) -> bool {
 
 fn symbol_at(
     project: &ast::Project,
-    package: &ast::Package,
+    _package: &ast::Package,
     file: &ast::File,
     sources: &SourceDb,
     position: &Position,
 ) -> Option<SymbolAt> {
     let offset = lsp_offset(sources.file(file.file_id).text(), position).ok()?;
-    if let Some(resolved) = resolve_reference(project, package, file, offset)
+    if let Some(resolved) = crate::role_context::resolve_reference(project, sources, file, offset)
         && let ResolvedTarget::Declaration(target) = resolved.target
         && resolved.reference.start <= offset
         && offset < resolved.reference.end
@@ -190,8 +190,11 @@ fn occurrences(project: &ast::Project, sources: &SourceDb, target: Span) -> Vec<
     for package in &project.packages {
         for file in &package.files {
             for span in identifier_spans(file) {
-                let resolved_target = resolve_reference(project, package, file, span.start)
-                    .and_then(|resolved| (resolved.reference == span).then_some(resolved.target));
+                let resolved_target =
+                    crate::role_context::resolve_reference(project, sources, file, span.start)
+                        .and_then(|resolved| {
+                            (resolved.reference == span).then_some(resolved.target)
+                        });
                 let matches = match resolved_target {
                     Some(ResolvedTarget::Declaration(declaration)) => declaration == target,
                     Some(ResolvedTarget::Package(_)) => false,
@@ -214,6 +217,9 @@ fn target_visible_from(
     target: Span,
     occurrence: Span,
 ) -> bool {
+    if !compiler::roles::visible(sources, target, occurrence) {
+        return false;
+    }
     if !compiler::project::is_test_source(sources.file(target.file).path()) {
         return true;
     }
@@ -272,6 +278,7 @@ fn reject_direct_conflict(
         record.span != target
             && record.scope == target_record.scope
             && record.name == new_name
+            && compiler::roles::overlap(sources, record.span, target)
             && (!record.short || short_declaration_introduces(project, record.span))
     }) {
         let path = sources.file(target.file).path();

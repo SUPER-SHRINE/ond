@@ -21,13 +21,19 @@ struct Inputs {
     root: PathBuf,
     ignored_paths: Vec<String>,
     packages: Vec<PackageInput>,
+    dependencies: crate::roles::DependencyInputs,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 struct PackageInput {
     logical: String,
     directory: Option<PathBuf>,
-    files: Vec<(PathBuf, String, Option<String>)>,
+    files: Vec<(
+        PathBuf,
+        String,
+        Option<String>,
+        Option<crate::roles::SourceRoles>,
+    )>,
 }
 
 #[derive(Debug)]
@@ -135,6 +141,7 @@ fn collect_inputs(loaded: &LoadedProject, ast: &ast::Project, owner: &str, test:
                     source.path().to_path_buf(),
                     source.text().to_string(),
                     source.display_path().map(str::to_string),
+                    loaded.sources.roles(file.file_id).cloned(),
                 )
             })
             .collect::<Vec<_>>();
@@ -154,6 +161,7 @@ fn collect_inputs(loaded: &LoadedProject, ast: &ast::Project, owner: &str, test:
         root: loaded.root.clone(),
         ignored_paths: loaded.ignored_paths.clone(),
         packages,
+        dependencies: loaded.sources.dependency_inputs().clone(),
     }
 }
 
@@ -165,6 +173,9 @@ fn validate_entry(inputs: Inputs, key: &(String, bool)) -> Entry {
         sources: SourceDb::default(),
         packages: Vec::new(),
     };
+    loaded
+        .sources
+        .set_dependency_inputs(inputs.dependencies.clone());
     let mut selected = BTreeSet::new();
     for package in &inputs.packages {
         let Some(directory) = &package.directory else {
@@ -173,7 +184,7 @@ fn validate_entry(inputs: Inputs, key: &(String, bool)) -> Entry {
         let files = package
             .files
             .iter()
-            .map(|(path, text, display_path)| {
+            .map(|(path, text, display_path, roles)| {
                 let id = if let Some(display_path) = display_path {
                     loaded.sources.add_file_with_display_path(
                         path.clone(),
@@ -183,6 +194,9 @@ fn validate_entry(inputs: Inputs, key: &(String, bool)) -> Entry {
                 } else {
                     loaded.sources.add_file(path.clone(), text.clone())
                 };
+                if let Some(roles) = roles {
+                    loaded.sources.set_roles(id, roles.clone());
+                }
                 if package.logical == key.0 && is_test_source(path) == key.1 {
                     selected.insert(id);
                 }

@@ -130,6 +130,7 @@ pub fn load_project_with_test_sources(
         .map(|path| format!("{project_name}/{}", path_to_logical(path)))
         .collect();
 
+    crate::roles::capture(&mut sources, &root)?;
     Ok(LoadedProject {
         root,
         manifest_path,

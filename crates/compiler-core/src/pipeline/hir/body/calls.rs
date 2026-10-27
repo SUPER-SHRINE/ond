@@ -373,7 +373,7 @@ impl BodyLowerer<'_> {
         if !package.visible_from(source.span, span) {
             return self.fail(
                 span,
-                format!("test-only function `{name}` is not visible here"),
+                package.visibility_error("function", name, source.span, span),
             );
         }
         let symbol = super::super::canonical_symbol_name(&package.logical_path, name);
@@ -570,7 +570,7 @@ impl BodyLowerer<'_> {
                 if !package.visible_from(declaration.span, span) {
                     return self.fail(
                         span,
-                        format!("test-only function `{}` is not visible here", name.name),
+                        package.visibility_error("function", &name.name, declaration.span, span),
                     );
                 }
                 (package.id, package.logical_path.clone(), declaration)
@@ -593,7 +593,7 @@ impl BodyLowerer<'_> {
                 if !package.visible_from(declaration.span, span) {
                     return self.fail(
                         span,
-                        format!("test-only function `{}` is not visible here", name.name),
+                        package.visibility_error("function", &name.name, declaration.span, span),
                     );
                 }
                 (package.id, package.logical_path.clone(), declaration)
@@ -724,12 +724,11 @@ impl BodyLowerer<'_> {
                 .universe
                 .iter()
                 .find(|package| package.id == self.package_id)
-                .and_then(|package| package.imports.get(&path.span.file))
-                .and_then(|imports| imports.get(&qualifier.name))
+                .and_then(|package| package.import_from(&qualifier.name, path.span))
                 .and_then(|package_id| {
                     self.universe
                         .iter()
-                        .find(|package| package.id == *package_id)
+                        .find(|package| package.id == package_id)
                 })
                 .is_some_and(|package| {
                     package

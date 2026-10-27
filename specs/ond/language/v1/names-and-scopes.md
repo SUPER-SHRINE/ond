@@ -10,11 +10,14 @@
 他章のproductionは[文法索引](./lexical.md#文法の定義元)を参照する。
 
 ```ebnf
-SourceFile    = PackageClause ";" { ImportDecl ";" } { TopLevelDecl ";" } .
+SourceFile    = PackageClause ";" { SourceItem ";" } .
+SourceItem    = ImportDecl | TopLevelDecl | RoleDecl .
 PackageClause = "package" identifier .
 ImportDecl    = "import" [ identifier ] string_lit .
 QualifiedIdent= identifier "." identifier .
 ```
+
+SourceItemのimport順序とRoleDeclによる展開は[roleの検査規則](./roles.md#検査範囲とimport)に従う。
 
 ## Sourceとproject
 <!-- ond-spec-id: language/source-and-packages -->
@@ -58,6 +61,7 @@ package-qualified name は `packageName.ExportedName` とする。
 <!-- ond-spec-id: syntax/scope-and-shadowing -->
 
 - package-level declaration は package scope に属し、同一 package 内の全 file から見える
+  - role限定宣言、import aliasと同じprojectのpackage-qualified参照には[role可視性](./roles.md#名前解決とscope)を併せて適用する
 - import 名の scope は宣言した file に限る
   - 同じ package の別 file でも、使用する package は各 file で import する
 - 同一 import path は file ごとに異なる alias で宣言できる
@@ -65,10 +69,9 @@ package-qualified name は `packageName.ExportedName` とする。
 - import 名と package-level declaration が衝突した場合は compile error とする
 - 関数 parameter、method receiver、関数本体直下の local declaration は、その関数本体の block scope に属する
 - 内側の block で宣言した名前は、外側の block、import 名、package-level declaration を shadow できる
-- 同一 block 内で同名の `var`、`const`、parameter を重複宣言してはならない
-- 同一 package scope 内で同名の top-level declaration を重複宣言してはならない
+- 同一 block 内の同名の `var`、`const`、parameterと、同一 package scope 内の同名の top-level declarationには[role対象集合を含む重複規則](./roles.md#名前解決とscope)を適用する
 - method名はreceiverのbase named typeごとのnamespaceに属する
-  - 同じbase typeではvalue/pointer receiverを通して一意名とし、top-level関数名のnamespaceから独立する
+  - 同じbase typeではvalue/pointer receiverを通して[role対象集合を含む重複規則](./roles.md#名前解決とscope)を適用し、top-level関数名のnamespaceから独立する
 - `_` は blank identifier とし、宣言または代入の値を破棄する位置で使える
   - 値として参照できず、binding を作らない
 - `:=` は現在の block に未宣言の `_` 以外の名前を 1 個以上含まなければならない

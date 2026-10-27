@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
+mod roles;
 
 #[derive(Debug, Default, Deserialize)]
 struct Manifest {
@@ -13,11 +14,17 @@ struct Manifest {
     dependencies: BTreeMap<String, Dependency>,
     #[serde(default)]
     resolve: Resolve,
+    #[serde(skip)]
+    roles: Option<ond_compiler_core::roles::RoleConfiguration>,
+    #[serde(skip)]
+    text: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct Project {
     name: String,
+    #[serde(default, rename = "final")]
+    final_project: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -28,6 +35,7 @@ enum Dependency {
         path: Option<PathBuf>,
         git: Option<String>,
         rev: Option<String>,
+        role: Option<toml::Value>,
     },
 }
 
@@ -71,9 +79,17 @@ struct LockedGit {
 pub struct ResolvedDependencies {
     pub sources: ExternalSources,
     pub ignored_directories: Vec<PathBuf>,
+    pub role_inputs: ond_compiler_core::roles::DependencyInputs,
 }
 
 pub fn resolve_dependencies(project_root: &Path) -> DriverResult<ResolvedDependencies> {
+    resolve_dependencies_with_role(project_root, None)
+}
+
+pub fn resolve_dependencies_with_role(
+    project_root: &Path,
+    selected: Option<&str>,
+) -> DriverResult<ResolvedDependencies> {
     let canonical_root = project_root
         .canonicalize()
         .map_err(|error| vec![format!("project {}: {error}", project_root.display())])?;
@@ -82,7 +98,10 @@ pub fn resolve_dependencies(project_root: &Path) -> DriverResult<ResolvedDepende
     let manifest = read_manifest(&manifest_path)?;
     let own_namespace = project_namespace(project_root, &manifest)?;
     let existing_lock = read_lock(&project_root.join("ond.lock"))?;
+    let mut role_graph = roles::RoleGraph::default();
+    role_graph.root(project_root, &manifest, &own_namespace, selected)?;
     let mut resolver = Resolver {
+        role_graph,
         project_root,
         existing_lock,
         new_lock: LockFile {
@@ -98,6 +117,7 @@ pub fn resolve_dependencies(project_root: &Path) -> DriverResult<ResolvedDepende
     Ok(ResolvedDependencies {
         sources: resolver.sources,
         ignored_directories: ignored_directories(project_root, &manifest.resolve)?,
+        role_inputs: resolver.role_graph.inputs,
     })
 }
 
@@ -112,10 +132,12 @@ pub fn resolve_project_sources(project_root: &Path) -> DriverResult<ResolvedDepe
     Ok(ResolvedDependencies {
         sources,
         ignored_directories: ignored_directories(&root, &manifest.resolve)?,
+        role_inputs: Default::default(),
     })
 }
 
 struct Resolver<'a> {
+    role_graph: roles::RoleGraph,
     project_root: &'a Path,
     existing_lock: LockFile,
     new_lock: LockFile,
@@ -141,6 +163,8 @@ impl Resolver<'_> {
             }
             let dependency_manifest = read_manifest(&canonical.join("ond.toml"))?;
             let namespace = dependency_namespace(key, &canonical, &dependency_manifest)?;
+            self.role_graph
+                .edge(owner, manifest, key, &canonical, &dependency_manifest)?;
             if let Some(previous) = self
                 .roots_by_namespace
                 .insert(namespace.clone(), canonical.clone())
@@ -182,6 +206,7 @@ impl Resolver<'_> {
                 path: Some(path),
                 git: None,
                 rev: None,
+                ..
             } => Ok(if path.is_absolute() {
                 path.clone()
             } else {
@@ -191,6 +216,7 @@ impl Resolver<'_> {
                 path: None,
                 git: Some(git),
                 rev,
+                ..
             } => self.git_dependency(owner_name, name, git, rev.as_deref()),
             _ => Err(vec![format!(
                 "dependency `{name}` must specify exactly one of `path` or `git`; `rev` is valid only with `git`"
@@ -338,8 +364,12 @@ impl Resolver<'_> {
 fn read_manifest(path: &Path) -> DriverResult<Manifest> {
     let text = fs::read_to_string(path)
         .map_err(|error| vec![format!("failed to read `{}`: {error}", path.display())])?;
-    toml::from_str(&text)
-        .map_err(|error| vec![format!("invalid manifest `{}`: {error}", path.display())])
+    let mut manifest: Manifest = toml::from_str(&text)
+        .map_err(|error| vec![format!("invalid manifest `{}`: {error}", path.display())])?;
+    manifest.roles = ond_compiler_core::roles::configuration_from_text(path, &text)
+        .map_err(|error| vec![error])?;
+    manifest.text = text;
+    Ok(manifest)
 }
 
 fn read_lock(path: &Path) -> DriverResult<LockFile> {

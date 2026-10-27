@@ -11,6 +11,7 @@ fn execute(command: args::Command) -> Result<(), Vec<String>> {
             output,
             verbose,
             test,
+            role,
         } => {
             let root = root.canonicalize().map_err(|e| vec![e.to_string()])?;
             let root = if root.is_file() {
@@ -22,6 +23,7 @@ fn execute(command: args::Command) -> Result<(), Vec<String>> {
             let result = ond_cli::compile(
                 CompileRequest {
                     test,
+                    role,
                     excluded_dirs: Vec::new(),
                     contract: Contract::default(),
                     project_root: root.clone(),
@@ -125,6 +127,20 @@ fn main() {
             std::process::exit(2);
         }
     };
+    if let args::Command::Compile {
+        root,
+        role: Some(_),
+        ..
+    } = &command
+        && let Ok(loaded) = ond_compiler_core::load_project(root)
+        && !loaded
+            .packages
+            .iter()
+            .any(|package| package.logical_path == ".")
+    {
+        eprintln!("--role is only valid for an executable project");
+        std::process::exit(2);
+    }
     if let Err(diagnostics) = execute(command) {
         for diagnostic in diagnostics {
             eprintln!("{diagnostic}");

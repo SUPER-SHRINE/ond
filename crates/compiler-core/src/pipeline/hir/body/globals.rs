@@ -18,7 +18,7 @@ impl BodyLowerer<'_> {
         if !package.visible_from(spec.span, span) {
             return self.fail(
                 span,
-                format!("test-only global `{name}` is not visible here"),
+                package.visibility_error("global", name, spec.span, span),
             );
         }
         let symbol = super::super::canonical_symbol_name(&package.logical_path, name);

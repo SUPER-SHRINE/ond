@@ -150,7 +150,7 @@ impl BodyLowerer<'_> {
         if !package.visible_from(source.span(), span) {
             return self.fail(
                 span,
-                format!("test-only constant `{name}` is not visible here"),
+                package.visibility_error("constant", name, source.span(), span),
             );
         }
         let key = (package_id, name.to_string());

@@ -27,6 +27,18 @@ pub fn compile(request: CompileRequest, compiler_id: &str) -> DriverResult<Compi
     let mut loaded = source_loaded.clone();
     let application_root = input::logical_packages(&mut loaded)?;
     let graph = Graph::load(&loaded, application_root.as_deref())?;
+    let roles: BTreeMap<_, _> = loaded
+        .packages
+        .iter()
+        .map(|package| {
+            let configuration = package
+                .files
+                .iter()
+                .find_map(|file| loaded.sources.roles(*file))
+                .and_then(|roles| roles.configuration.clone());
+            (package.logical_path.clone(), configuration)
+        })
+        .collect();
     let directory = request
         .cache_dir
         .as_ref()
@@ -74,6 +86,8 @@ pub fn compile(request: CompileRequest, compiler_id: &str) -> DriverResult<Compi
         &context,
         &project_sources,
         &graph.imports,
+        &roles,
+        loaded.sources.dependency_inputs(),
     ))?);
     if let Some(mut result) = load_project_cache(&directory, &project_key, &context, &graph) {
         legacy_labels(&mut result, application_root.as_deref());
@@ -87,8 +101,14 @@ pub fn compile(request: CompileRequest, compiler_id: &str) -> DriverResult<Compi
             cached.key == project_key && cached.packages.keys().eq(graph.imports.keys())
         });
     if let Some(cached) = cached_generation
-        && let Some(mut result) =
-            reuse_generation(&cached, &directory, &context, &project_sources, &graph)?
+        && let Some(mut result) = reuse_generation(
+            &cached,
+            &directory,
+            &context,
+            &project_sources,
+            &graph,
+            &roles,
+        )?
     {
         legacy_labels(&mut result, application_root.as_deref());
         return Ok(result);
@@ -117,7 +137,14 @@ pub fn compile(request: CompileRequest, compiler_id: &str) -> DriverResult<Compi
     for path in &graph.order {
         let sources = &project_sources[path];
         let deps = dependency_ids(path, &graph, &ids);
-        let id = package_id(&context, path, sources, &deps, &generation.packages[path])?;
+        let id = package_id(
+            &context,
+            path,
+            sources,
+            &deps,
+            &generation.packages[path],
+            roles[path].as_ref(),
+        )?;
         if let Some((reference, artifact)) =
             cache::lookup(&directory, &id).filter(|(_, artifact)| {
                 artifact.compiler_id == compiler_id
@@ -268,14 +295,17 @@ fn package_id(
     sources: &[(String, String)],
     deps: &BTreeMap<String, String>,
     generation: &serde_json::Value,
+    roles: Option<&ond_compiler_core::roles::RoleConfiguration>,
 ) -> DriverResult<String> {
     let sources = sources
         .iter()
         .map(|(path, content_hash)| serde_json::json!({"path":path,"content_hash":content_hash}))
         .collect::<Vec<_>>();
-    Ok(cache::hash(&cache::encode(
-        &serde_json::json!({"contract":context.0,"compiler_id":context.1,"manifest_hash":context.2,"mode":if context.3 {"test"} else {"normal"},"package":path,"sources":sources,"dependencies":deps,"generation":generation}),
-    )?))
+    let mut input = serde_json::json!({"contract":context.0,"compiler_id":context.1,"manifest_hash":context.2,"mode":if context.3 {"test"} else {"normal"},"package":path,"sources":sources,"dependencies":deps,"generation":generation});
+    if let Some(roles) = roles {
+        input["roles"] = serde_json::to_value(roles).map_err(|error| vec![error.to_string()])?;
+    }
+    Ok(cache::hash(&cache::encode(&input)?))
 }
 
 fn reuse_generation(
@@ -284,13 +314,21 @@ fn reuse_generation(
     context: &(&ond_protocol::Contract, &str, String, bool),
     sources: &BTreeMap<String, Vec<(String, String)>>,
     graph: &Graph,
+    roles: &BTreeMap<String, Option<ond_compiler_core::roles::RoleConfiguration>>,
 ) -> DriverResult<Option<CompileResult>> {
     let mut ids = BTreeMap::new();
     let mut references = Vec::new();
     let mut artifacts = BTreeMap::new();
     for path in &graph.order {
         let deps = dependency_ids(path, graph, &ids);
-        let id = package_id(context, path, &sources[path], &deps, &cached.packages[path])?;
+        let id = package_id(
+            context,
+            path,
+            &sources[path],
+            &deps,
+            &cached.packages[path],
+            roles[path].as_ref(),
+        )?;
         let Some((reference, artifact)) = cache::lookup(directory, &id) else {
             return Ok(None);
         };

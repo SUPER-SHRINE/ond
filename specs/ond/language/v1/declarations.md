@@ -126,9 +126,9 @@ Kagura target の関数呼び出し規約は [Ond ABI for Kagura v1](../../targe
 ## 診断と成功結果
 <!-- ond-spec-id: language/v1-diagnostics -->
 
-sourceの名前、型、定数値、構文の成立条件を満たすprojectに対して成功結果を返す。\
+[roleの検査範囲](./roles.md#検査範囲とimport)に従ってsourceの名前、型、定数値、構文の成立条件を満たすprojectに対して成功結果を返す。\
 sourceの不成立はsource位置付きのcompile errorとなり、独立した後続エラーも収集する。\
 失敗した宣言名への依存だけで生じる派生診断は元の原因に対応づける。\
-成功結果は全宣言の意味検査を完了した全体を表し、失敗したprojectはerrorを返す。\
+成功結果は[role選択と検査範囲](./roles.md#検査範囲とimport)に従って対象となる全宣言の意味検査を完了した全体を表し、失敗したprojectはerrorを返す。\
 source位置はUTF-8 byte範囲に対応づけ、表示位置は当該fileのline/columnで示す。\
 generic具体化の主位置と関連位置は[generic規則](./types.md#型parameter)に従う。

@@ -100,7 +100,10 @@ impl ServerState {
             root.display(),
             overrides.len()
         ));
-        let project = self.load_project(root, &overrides)?;
+        let project = self.load_project(root, &overrides).inspect_err(|_| {
+            self.symbol_indexes
+                .remove(&normalize_path(root.to_path_buf()));
+        })?;
         self.refresh_symbol_index(root, project.clone());
         let mut diagnostics_by_path = BTreeMap::<PathBuf, Vec<Value>>::new();
 
@@ -235,7 +238,10 @@ impl ServerState {
         root: &Path,
         overrides: &BTreeMap<PathBuf, String>,
     ) -> Result<ProjectSymbolIndex, String> {
-        let project = self.load_project(root, overrides)?;
+        let project = self.load_project(root, overrides).inspect_err(|_| {
+            self.symbol_indexes
+                .remove(&normalize_path(root.to_path_buf()));
+        })?;
         Ok(self.refresh_symbol_index(root, project))
     }
 
@@ -299,7 +305,11 @@ impl ServerState {
             let Some(project_root) = find_project_root(&path) else {
                 return Ok(Vec::new());
             };
-            return self.project_import_path_completions(&path, &project_root, &text, &context);
+            return self
+                .project_import_path_completions(&path, &project_root, &text, &context)
+                .inspect_err(|_| {
+                    self.symbol_indexes.remove(&normalize_path(project_root));
+                });
         }
         if let Some(project_root) = find_project_root(&path) {
             self.project_completions(&path, &project_root, line, character)
@@ -309,14 +319,15 @@ impl ServerState {
     }
 
     fn project_import_path_completions(
-        &self,
+        &mut self,
         path: &Path,
         root: &Path,
         text: &str,
         context: &crate::completion::ImportPathCompletion,
     ) -> Result<Vec<Value>, String> {
         let overrides = self.collect_overrides();
-        let project = self.load_project(root, &overrides)?;
+        let index = self.symbol_index(root, &overrides)?;
+        let project = &index.loaded;
         let current_package = project.packages.iter().find_map(|package| {
             package
                 .files
@@ -364,11 +375,12 @@ impl ServerState {
                 {
                     indexed_file_found = true;
                     if index.loaded.sources.file(file.file_id).text() == document.text {
-                        return Ok(project_semantic_tokens(
+                        return Ok(crate::semantic_tokens::snapshot_semantic_tokens(
                             &document.text,
                             &index.ast,
                             package,
                             file,
+                            &index.loaded.sources,
                         ));
                     }
                 }
@@ -406,7 +418,10 @@ impl ServerState {
         character: u32,
     ) -> Result<Vec<Value>, String> {
         let base_overrides = self.collect_overrides();
-        let cached_index = self.symbol_index(root, &base_overrides)?.for_source(path);
+        let cached_index = self
+            .symbol_index(root, &base_overrides)?
+            .for_source(path)
+            .for_position(path, line, character);
         let mut overrides = base_overrides;
         let completion_marker = self.documents.get(path).and_then(|document| {
             completion_text_with_placeholder(&document.text, line, character).map(
@@ -430,8 +445,9 @@ impl ServerState {
             self.load_project(root, &overrides)
                 .ok()
                 .and_then(|project| {
-                    let repaired =
-                        ProjectSymbolIndex::refresh(project, Some(&cached_index)).for_source(path);
+                    let repaired = ProjectSymbolIndex::refresh(project, Some(&cached_index))
+                        .for_source(path)
+                        .for_position(path, line, character);
                     let current_file_parsed = !repaired.file_failed_to_parse(path)
                         && repaired
                             .ast
@@ -786,7 +802,10 @@ impl ServerState {
         character: u32,
     ) -> Result<Value, String> {
         let overrides = self.collect_overrides();
-        let index = self.symbol_index(root, &overrides)?.for_source(path);
+        let index = self
+            .symbol_index(root, &overrides)?
+            .for_source(path)
+            .for_position(path, line, character);
         let project = &index.loaded;
         let ast = &index.ast;
         for package in &ast.packages {
@@ -839,7 +858,10 @@ impl ServerState {
         character: u32,
     ) -> Result<Value, String> {
         let overrides = self.collect_overrides();
-        let index = self.symbol_index(root, &overrides)?.for_source(path);
+        let index = self
+            .symbol_index(root, &overrides)?
+            .for_source(path)
+            .for_position(path, line, character);
         if index.file_failed_to_parse(path) {
             return Ok(Value::Null);
         }
@@ -1048,6 +1070,8 @@ fn project_error_diagnostic(message: &str) -> Value {
 
 #[cfg(test)]
 mod project_contract_tests;
+#[cfg(test)]
+mod role_tests;
 #[cfg(test)]
 impl ServerState {
     fn with_dependencies(root: &Path, roots: Vec<PathBuf>) -> Self {

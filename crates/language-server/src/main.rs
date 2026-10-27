@@ -5,6 +5,7 @@ mod navigation;
 mod protocol;
 mod rename;
 mod rename_state;
+mod role_context;
 mod semantic_tokens;
 mod state;
 mod symbol_index;
