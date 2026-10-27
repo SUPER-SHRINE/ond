@@ -1,8 +1,6 @@
 //! 全source fileを通常のpackage入力として扱う契約。
 use super::*;
-use ond_compiler_core::mir;
-#[path = "../../compiler-core/src/memory_test_vm.rs"]
-mod memory_vm;
+use crate::memory_vm;
 
 const MAIN: &str = "package main\nvar Result:u32\nfunc main(){var value:Device;_=value.secret;Result=TestArgument(TestResult())+TestGeneric[u32](2)+value.TestMethod()+Collect()}\n";
 const TEST: &str = "package main\ntype Device struct{secret:u32}\nfunc TestArgument(x:u32)->u32{return x}\nfunc TestResult()->u32{return 1}\nfunc TestGeneric[T](x:T)->T{return x}\nfunc(x:Device) TestMethod()->u32{return x.secret+3}\nfunc privateHelper()->u32{return 4}\n";

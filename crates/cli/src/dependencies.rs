@@ -445,7 +445,6 @@ fn scan_directory(
             scan_directory(name, root, &path, ignored, sources)?;
         } else if file_type.is_file()
             && path.extension().and_then(|extension| extension.to_str()) == Some("ond")
-            && !ond_compiler_core::project::is_test_source(&path)
         {
             let relative = path
                 .strip_prefix(root)

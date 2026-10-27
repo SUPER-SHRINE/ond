@@ -10,7 +10,6 @@ fn execute(command: args::Command) -> Result<(), Vec<String>> {
             root,
             output,
             verbose,
-            test,
             role,
         } => {
             let root = root.canonicalize().map_err(|e| vec![e.to_string()])?;
@@ -22,7 +21,6 @@ fn execute(command: args::Command) -> Result<(), Vec<String>> {
             let settings = ond_cli::settings::read_settings(&root)?;
             let result = ond_cli::compile(
                 CompileRequest {
-                    test,
                     role,
                     excluded_dirs: Vec::new(),
                     contract: Contract::default(),
@@ -36,13 +34,7 @@ fn execute(command: args::Command) -> Result<(), Vec<String>> {
                 eprintln!("rebuilt: {}", result.rebuilt.join(", "));
                 eprintln!("reused: {}", result.reused.join(", "));
             }
-            let output = output.unwrap_or_else(|| {
-                root.join(if test {
-                    settings.compile.test_output
-                } else {
-                    settings.compile.output
-                })
-            });
+            let output = output.unwrap_or_else(|| root.join(settings.compile.output));
             write(&output, &json::encode(&result.manifest)?)
         }
         args::Command::Link {
@@ -76,27 +68,18 @@ fn execute(command: args::Command) -> Result<(), Vec<String>> {
                     }
                 }
             }
-            let output = output.unwrap_or_else(|| {
-                root.join(if manifest.tests.is_some() {
-                    &link.test_output
-                } else {
-                    &link.output
-                })
-            });
+            let output = output.unwrap_or_else(|| root.join(&link.output));
             let (linked, bytes) = ond_cli::link_executable(manifest, &link)?;
             if output == std::path::Path::new("-") {
                 write(&output, &bytes)
             } else {
-                let mut files = vec![
+                let files = vec![
                     (output.clone(), bytes),
                     (
                         output.with_extension("onddebug"),
                         json::encode(&linked.debug)?,
                     ),
                 ];
-                if let Some(tests) = linked.tests {
-                    files.push((output.with_extension("ondtest"), json::encode(&tests)?));
-                }
                 publish::publish(&files)
             }
         }

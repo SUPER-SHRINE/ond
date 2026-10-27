@@ -6,7 +6,6 @@ use std::{collections::BTreeMap, fs};
 fn request(f: &ProjectFixture, selected: Option<&str>) -> CompileRequest {
     CompileRequest {
         role: selected.map(str::to_string),
-        test: false,
         excluded_dirs: vec![],
         contract: Contract::default(),
         project_root: f.root.clone(),
@@ -225,7 +224,7 @@ fn role_07_dependency_selected_input_and_edge_reset_invalidate() {
         let loaded = crate::input::load(&request(&f, None)).unwrap();
         let (_, generation) =
             ond_compiler_core::compile_loaded_project_with_generation(loaded).unwrap();
-        let input = serde_json::json!({"compiler_id":"0".repeat(64),"contract":Contract::default(),"dependencies":{},"generation":serde_json::from_str::<serde_json::Value>(&generation.packages["child"]).unwrap(),"manifest_hash":cache::hash(&fs::read(f.root.join("ond.toml")).unwrap()),"mode":"normal","package":"child","roles":{"names":["Test"],"selected":selected},"sources":[{"content_hash":cache::hash(&raw),"path":"lib.ond"}]});
+        let input = serde_json::json!({"compiler_id":"0".repeat(64),"contract":Contract::default(),"dependencies":{},"generation":serde_json::from_str::<serde_json::Value>(&generation.packages["child"]).unwrap(),"manifest_hash":cache::hash(&fs::read(f.root.join("ond.toml")).unwrap()),"package":"child","roles":{"names":["Test"],"selected":selected},"sources":[{"content_hash":cache::hash(&raw),"path":"lib.ond"}]});
         assert_eq!(
             id(&compiled, "child"),
             cache::hash(&cache::encode(&input).unwrap()),

@@ -1,6 +1,5 @@
 //! ROLE-02、06、07: 共通構成、公開hashと生成集合。
 use crate::{CompileRequest, CompileResult, cache, compile};
-use ond_compiler_core::mir;
 use ond_protocol::{Contract, PackageArtifact};
 use serde_json::{Value, json};
 use std::{
@@ -11,8 +10,7 @@ use std::{
 };
 mod dependencies;
 mod fixtures;
-#[path = "../../compiler-core/src/memory_test_vm.rs"]
-mod memory_vm;
+use crate::memory_vm;
 struct Fixture(PathBuf, Option<String>);
 impl Fixture {
     fn new(selected: &str) -> Self {
@@ -39,7 +37,6 @@ impl Fixture {
     fn request(&self) -> CompileRequest {
         CompileRequest {
             role: self.1.clone(),
-            test: false,
             excluded_dirs: vec![],
             contract: Contract::default(),
             project_root: self.0.clone(),
@@ -241,7 +238,7 @@ fn role_02_generation_and_role_06_original_positions() {
             [expected]
         );
         assert_eq!(
-            memory_vm::execute_with_global(&frontend.mir, "main.main", "main.Result").unwrap(),
+            memory_vm::execute_with_global(&frontend.mir, "main.main", "main.Result",).unwrap(),
             [expected],
             "ROLE-02 main Result {selected}"
         );

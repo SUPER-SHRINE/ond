@@ -46,7 +46,6 @@ impl Fixture {
     fn request(&self) -> CompileRequest {
         CompileRequest {
             role: None,
-            test: false,
             excluded_dirs: Vec::new(),
             contract: Contract::default(),
             project_root: self.0.clone(),

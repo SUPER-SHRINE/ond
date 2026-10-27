@@ -29,23 +29,7 @@ pub(crate) fn package_and_type_ids(
     };
     let mut exports = BTreeMap::new();
     let public = |s: &str| s.as_bytes().first().is_some_and(u8::is_ascii_uppercase);
-    let test_only = |span: crate::source::Span| {
-        package
-            .files
-            .iter()
-            .any(|file| file.file_id == span.file && file.test_only)
-    };
-
     for item in &package.items {
-        let span = match item {
-            hir::Item::Type(item) => item.span,
-            hir::Item::Func(item) => item.span,
-            hir::Item::Const(item) => item.span,
-            hir::Item::Var(item) => item.span,
-        };
-        if test_only(span) {
-            continue;
-        }
         match item {
             hir::Item::Type(item) if public(&item.name) => {
                 exports.insert(item.name.clone(), Export::Type(writer.ty(item.ty)?));
@@ -86,10 +70,7 @@ pub(crate) fn package_and_type_ids(
             let Some(receiver) = item.receiver else {
                 continue;
             };
-            if test_only(item.span)
-                || !public(&item.name)
-                || attached.contains(&item.canonical_name)
-            {
+            if !public(&item.name) || attached.contains(&item.canonical_name) {
                 continue;
             }
             let (base, pointer_receiver) = match project.types.get(receiver).map(|ty| &ty.kind) {

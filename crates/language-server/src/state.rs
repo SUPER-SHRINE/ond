@@ -420,7 +420,6 @@ impl ServerState {
         let base_overrides = self.collect_overrides();
         let cached_index = self
             .symbol_index(root, &base_overrides)?
-            .for_source(path)
             .for_position(path, line, character);
         let mut overrides = base_overrides;
         let completion_marker = self.documents.get(path).and_then(|document| {
@@ -446,7 +445,6 @@ impl ServerState {
                 .ok()
                 .and_then(|project| {
                     let repaired = ProjectSymbolIndex::refresh(project, Some(&cached_index))
-                        .for_source(path)
                         .for_position(path, line, character);
                     let current_file_parsed = !repaired.file_failed_to_parse(path)
                         && repaired
@@ -804,7 +802,6 @@ impl ServerState {
         let overrides = self.collect_overrides();
         let index = self
             .symbol_index(root, &overrides)?
-            .for_source(path)
             .for_position(path, line, character);
         let project = &index.loaded;
         let ast = &index.ast;
@@ -860,7 +857,6 @@ impl ServerState {
         let overrides = self.collect_overrides();
         let index = self
             .symbol_index(root, &overrides)?
-            .for_source(path)
             .for_position(path, line, character);
         if index.file_failed_to_parse(path) {
             return Ok(Value::Null);
@@ -908,7 +904,7 @@ impl ServerState {
 
     fn project_document_symbols(&mut self, path: &Path, root: &Path) -> Result<Value, String> {
         let overrides = self.collect_overrides();
-        let index = self.symbol_index(root, &overrides)?.for_source(path);
+        let index = self.symbol_index(root, &overrides)?;
         let project = &index.loaded;
 
         for package in &index.ast.packages {

@@ -14,16 +14,11 @@ pub struct Settings {
 pub struct CompileSettings {
     #[serde(default = "compile_output")]
     pub output: PathBuf,
-    #[serde(default = "compile_test_output")]
-    pub test_output: PathBuf,
     #[serde(default = "cache_dir")]
     pub cache_dir: PathBuf,
 }
 fn compile_output() -> PathBuf {
     "target/build.ondbuild".into()
-}
-fn compile_test_output() -> PathBuf {
-    "target/test.ondbuild".into()
 }
 fn cache_dir() -> PathBuf {
     "target/ond-cache".into()
@@ -31,14 +26,10 @@ fn cache_dir() -> PathBuf {
 fn link_output() -> PathBuf {
     "target/a.bin".into()
 }
-fn link_test_output() -> PathBuf {
-    "target/test.bin".into()
-}
 impl Default for CompileSettings {
     fn default() -> Self {
         Self {
             output: compile_output(),
-            test_output: compile_test_output(),
             cache_dir: cache_dir(),
         }
     }
@@ -78,8 +69,6 @@ impl<'de> Deserialize<'de> for Exit {
 pub struct LinkSettings {
     #[serde(default = "link_output")]
     pub output: PathBuf,
-    #[serde(default = "link_test_output")]
-    pub test_output: PathBuf,
     pub startup: Startup,
     pub stack_size: u32,
     pub rom: Option<MemoryRegion>,
@@ -138,13 +127,9 @@ pub fn read_settings(root: &Path) -> DriverResult<Settings> {
         std::fs::read_to_string(&path).map_err(|e| vec![format!("{}: {e}", path.display())])?;
     let settings: Settings =
         toml::from_str(&text).map_err(|e| vec![format!("{}: {e}", path.display())])?;
-    let mut paths = vec![
-        &settings.compile.output,
-        &settings.compile.test_output,
-        &settings.compile.cache_dir,
-    ];
+    let mut paths = vec![&settings.compile.output, &settings.compile.cache_dir];
     if let Some(link) = &settings.link {
-        paths.extend([&link.output, &link.test_output]);
+        paths.push(&link.output);
     }
     if paths.iter().any(|p| p.as_os_str().is_empty()) {
         return Err(vec!["output/cache paths must be nonempty".into()]);

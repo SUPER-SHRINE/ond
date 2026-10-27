@@ -160,7 +160,7 @@ fn symbol_at(
         && let ResolvedTarget::Declaration(target) = resolved.target
         && resolved.reference.start <= offset
         && offset < resolved.reference.end
-        && target_visible_from(project, sources, target, resolved.reference)
+        && compiler::roles::visible(sources, target, resolved.reference)
     {
         return Some(SymbolAt {
             target,
@@ -200,7 +200,7 @@ fn occurrences(project: &ast::Project, sources: &SourceDb, target: Span) -> Vec<
                     Some(ResolvedTarget::Package(_)) => false,
                     None => declarations.contains(&span) && span == target,
                 };
-                if matches && target_visible_from(project, sources, target, span) {
+                if matches && compiler::roles::visible(sources, target, span) {
                     result.insert(span);
                 }
             }
@@ -209,28 +209,6 @@ fn occurrences(project: &ast::Project, sources: &SourceDb, target: Span) -> Vec<
     let mut result = result.into_iter().collect::<Vec<_>>();
     result.sort_by_key(|span| (span.file, span.start, span.end));
     result
-}
-
-fn target_visible_from(
-    project: &ast::Project,
-    sources: &SourceDb,
-    target: Span,
-    occurrence: Span,
-) -> bool {
-    if !compiler::roles::visible(sources, target, occurrence) {
-        return false;
-    }
-    if !compiler::project::is_test_source(sources.file(target.file).path()) {
-        return true;
-    }
-    compiler::project::is_test_source(sources.file(occurrence.file).path())
-        && project.packages.iter().any(|package| {
-            package.files.iter().any(|file| file.file_id == target.file)
-                && package
-                    .files
-                    .iter()
-                    .any(|file| file.file_id == occurrence.file)
-        })
 }
 
 fn target_is_editable(target: Span, sources: &SourceDb, editable_root: Option<&Path>) -> bool {

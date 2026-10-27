@@ -5,7 +5,7 @@ use crate::{
 };
 use ond_compiler_core::mir;
 mod startup;
-pub use startup::{program_startup, test_startup};
+pub use startup::program_startup;
 
 pub(crate) fn initializer_symbol(package: &mir::Package) -> Option<String> {
     package

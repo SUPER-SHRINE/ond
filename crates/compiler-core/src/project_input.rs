@@ -17,7 +17,6 @@ pub type ExternalSources = BTreeMap<String, ExternalSource>;
 
 #[derive(Debug, Clone, Default)]
 pub struct RoleLoadOptions {
-    pub test: bool,
     pub allow_incomplete: bool,
     pub selected: Option<String>,
     pub dependencies: crate::roles::DependencyInputs,
@@ -57,28 +56,7 @@ pub fn load_project_with_inputs_allow_incomplete(
         required_sources,
         external_sources,
         RoleLoadOptions {
-            test: true,
             allow_incomplete: true,
-            ..Default::default()
-        },
-    )
-}
-
-pub fn load_project_with_test_inputs(
-    root: impl AsRef<Path>,
-    overrides: &BTreeMap<PathBuf, String>,
-    excluded_dirs: &[PathBuf],
-    required_sources: &BTreeMap<String, String>,
-    external_sources: &ExternalSources,
-) -> Result<LoadedProject, FrontendError> {
-    load_project_with_inputs_impl(
-        root,
-        overrides,
-        excluded_dirs,
-        required_sources,
-        external_sources,
-        RoleLoadOptions {
-            test: true,
             ..Default::default()
         },
     )
@@ -93,12 +71,8 @@ fn load_project_with_inputs_impl(
     external_sources: &ExternalSources,
     options: RoleLoadOptions,
 ) -> Result<LoadedProject, FrontendError> {
-    let mut loaded = crate::project::load_project_with_test_sources(
-        root,
-        overrides,
-        excluded_dirs,
-        options.test,
-    )?;
+    let mut loaded =
+        crate::project::load_project_with_overrides_and_exclusions(root, overrides, excluded_dirs)?;
     let project_name = crate::project::project_name(&loaded.manifest_path)?;
     loaded.packages.retain(|package| {
         !excluded_dirs
@@ -119,10 +93,7 @@ fn load_project_with_inputs_impl(
             .chain(
                 required_sources
                     .iter()
-                    .filter(|(name, _)| {
-                        !name.contains('/')
-                            && (options.test || !crate::project::is_test_source(Path::new(name)))
-                    })
+                    .filter(|(name, _)| !name.contains('/'))
                     .map(|(name, text)| (Path::new(name), text.as_str())),
             ),
     );
@@ -140,9 +111,6 @@ fn load_project_with_inputs_impl(
     let mut optional = BTreeSet::new();
 
     for (name, text) in required_sources {
-        if !options.test && crate::project::is_test_source(Path::new(name)) {
-            continue;
-        }
         validate_source_name(name)?;
         let path = loaded.root.join(name);
         merge_source(
@@ -241,13 +209,11 @@ fn merge_optional_packages(
 ) -> Result<(), FrontendError> {
     let mut external_packages = BTreeMap::<String, Vec<(&String, &ExternalSource)>>::new();
     for (name, source) in sources {
-        if !crate::project::is_test_source(Path::new(name)) {
-            validate_source_name(name)?;
-            external_packages
-                .entry(package_for_source_name(name))
-                .or_default()
-                .push((name, source));
-        }
+        validate_source_name(name)?;
+        external_packages
+            .entry(package_for_source_name(name))
+            .or_default()
+            .push((name, source));
     }
     for (package, files) in external_packages {
         if let Some(existing) = loaded
@@ -258,7 +224,6 @@ fn merge_optional_packages(
             let own_files = existing
                 .files
                 .iter()
-                .filter(|id| !crate::project::is_test_source(loaded.sources.file(**id).path()))
                 .map(|id| {
                     let source = loaded.sources.file(*id);
                     (

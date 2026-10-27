@@ -29,13 +29,12 @@ use types::{
     TypePackage, collect_type_universe, generic_method_receiver, method_receiver_name,
     resolve_all_defined_types, resolve_defined_type, resolve_method_signature, resolve_signature,
 };
-use validation::{report_duplicate_top_level, validate_test_signatures};
+use validation::report_duplicate_top_level;
 
 pub(crate) fn lower_to_hir(
     loaded: &LoadedProject,
     ast: &ast::Project,
 ) -> Result<hir::Project, FrontendError> {
-    validate_test_signatures(loaded, ast)?;
     lower_context_to_hir(loaded, ast, None)
 }
 
@@ -51,7 +50,6 @@ pub(crate) fn lower_to_hir_with_generation(
     loaded: &LoadedProject,
     ast: &ast::Project,
 ) -> Result<(hir::Project, generation::Collected), FrontendError> {
-    validate_test_signatures(loaded, ast)?;
     lower_context_with_generation(loaded, ast, None, true)
 }
 
@@ -68,7 +66,7 @@ fn lower_context_with_generation(
         logical_to_package.insert(package.logical_path.clone(), package.id);
     }
     let mut types = crate::semantic::TypeTable::new();
-    let symbols = validation::collect_symbols(loaded, ast, &logical_to_package);
+    let symbols = validation::collect_symbols(ast, &logical_to_package);
     let type_universe = collect_type_universe(loaded, ast, &logical_to_package, &mut types);
     for package in &type_universe {
         package.generation.borrow_mut().enabled = capture;
@@ -120,7 +118,6 @@ fn lower_context_with_generation(
             files.push(hir::File {
                 file_id: file.file_id,
                 package_name: file.package.name.clone(),
-                test_only: crate::project::is_test_source(loaded.sources.file(file.file_id).path()),
             });
             package_names.insert(file.package.name.clone());
             if file.package.name != expected_name {

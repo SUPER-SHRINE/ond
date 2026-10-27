@@ -55,9 +55,8 @@ fn public_json_outputs_use_canonical_bytes() {
         String::from_utf8_lossy(&link.stderr)
     );
     Executable::read(&fs::read(f.0.join("image.bin")).unwrap()).unwrap();
-    for path in ["image.onddebug"] {
-        canonical(&fs::read(f.0.join(path)).unwrap());
-    }
+    let path = "image.onddebug";
+    canonical(&fs::read(f.0.join(path)).unwrap());
 }
 #[test]
 fn no_arguments_prints_help_and_succeeds() {
@@ -675,20 +674,18 @@ fn dependency_root_roles_and_subpackages_are_preserved_in_links() {
         "package main\nimport \"hogeLib\"\nfunc main(){_=hogeLib.Value()}\n",
     );
     f.put("game/main_test.ond", "package main\nfunc TestRoot(){}\n");
-    for args in [["compile", "game", "-o", "-"]] {
-        let output = run(&f.0, &args, None);
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let linked = run(&f.0, &["link", "-", "-o", "-"], Some(&output.stdout));
-        assert!(
-            linked.status.success(),
-            "{}",
-            String::from_utf8_lossy(&linked.stderr)
-        );
-    }
+    let output = run(&f.0, &["compile", "game", "-o", "-"], None);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let linked = run(&f.0, &["link", "-", "-o", "-"], Some(&output.stdout));
+    assert!(
+        linked.status.success(),
+        "{}",
+        String::from_utf8_lossy(&linked.stderr)
+    );
     f.put(
         "libraries/executable/ond.toml",
         "[project]\nname=\"main\"\n",
@@ -761,20 +758,18 @@ fn dependency_main_subpackage_keeps_its_qualified_function_namespace() {
         "package main\nimport lib \"hogeLib/main\"\nfunc main(){_=lib.Value()}\n",
     );
     f.put("game/main_test.ond", "package main\nfunc TestRoot(){}\n");
-    for args in [["compile", "game", "-o", "-"]] {
-        let output = run(&f.0, &args, None);
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let linked = run(&f.0, &["link", "-", "-o", "-"], Some(&output.stdout));
-        assert!(
-            linked.status.success(),
-            "{}",
-            String::from_utf8_lossy(&linked.stderr)
-        );
-    }
+    let output = run(&f.0, &["compile", "game", "-o", "-"], None);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let linked = run(&f.0, &["link", "-", "-o", "-"], Some(&output.stdout));
+    assert!(
+        linked.status.success(),
+        "{}",
+        String::from_utf8_lossy(&linked.stderr)
+    );
 }
 
 const LINK_SETTINGS: &str = "[project]\nname='run'\n[link]\nstartup='external'\nstack-size=65536\n[link.ram]\nbase=4096\nsize=262144\n[link.exit]\nmode='jump'\naddress=0\n";

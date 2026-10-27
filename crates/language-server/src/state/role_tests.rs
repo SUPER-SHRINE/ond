@@ -103,7 +103,6 @@ fn role_05_candidates_use_entire_cursor_context_independently_of_optional_select
                 "{id}, selected={selected:?}"
             );
             let index = crate::symbol_index::ProjectSymbolIndex::refresh(snapshot.clone(), None)
-                .for_source(&fixture.0.join("main.ond"))
                 .for_position(&fixture.0.join("main.ond"), line, column);
             let indexed = index
                 .package_symbols(".")

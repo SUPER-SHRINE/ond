@@ -24,7 +24,12 @@ pub fn compiler_identity() -> DriverResult<String> {
 #[cfg(test)]
 mod export_tests;
 #[cfg(test)]
+use ond_compiler_core::mir;
+#[cfg(test)]
 mod generation_tests;
+#[cfg(test)]
+#[path = "../../compiler-core/src/memory_test_vm.rs"]
+mod memory_vm;
 #[cfg(test)]
 mod role_tests;
 #[cfg(test)]

@@ -33,12 +33,8 @@ fn project(files: &[(&str, &str)]) -> LoadedProject {
     loaded
 }
 
-fn changed(cache: &SemanticCache) -> Vec<(&str, bool)> {
-    cache
-        .recomputed
-        .iter()
-        .map(|(name, test)| (name.as_str(), *test))
-        .collect()
+fn changed(cache: &SemanticCache) -> Vec<&str> {
+    cache.recomputed.iter().map(String::as_str).collect()
 }
 
 #[test]
@@ -52,19 +48,19 @@ fn warm_edits_recompute_only_the_affected_package() {
     ];
     let mut cache = SemanticCache::default();
     cache.validate(&project(&files)).unwrap();
-    assert_eq!(changed(&cache), [(".", false), ("a", false), ("b", false),]);
+    assert_eq!(changed(&cache), [".", "a", "b",]);
     cache.validate(&project(&files)).unwrap();
     assert!(changed(&cache).is_empty());
     let mut edited = files;
     edited[0].1 = "package main\nfunc main() {}\n\n";
     cache.validate(&project(&edited)).unwrap();
-    assert_eq!(changed(&cache), [(".", false)]);
+    assert_eq!(changed(&cache), ["."]);
     edited[2].1 = "package a\nfunc TestOK() { private(); private() }\n";
     cache.validate(&project(&edited)).unwrap();
-    assert_eq!(changed(&cache), [("a", false)]);
+    assert_eq!(changed(&cache), ["a"]);
     edited[1].1 = "package a\nfunc private() {}\n\n";
     cache.validate(&project(&edited)).unwrap();
-    assert_eq!(changed(&cache), [("a", false),]);
+    assert_eq!(changed(&cache), ["a",]);
 }
 
 #[test]
@@ -83,7 +79,7 @@ fn source_membership_import_changes_and_parse_recovery_have_content_keys() {
         ("dep/api.ond", "package dep\nfunc Run() {}\n"),
     ]);
     cache.validate(&complete).unwrap();
-    assert_eq!(changed(&cache), [(".", false), ("dep", false)]);
+    assert_eq!(changed(&cache), [".", "dep"]);
     let renamed = project(&[
         ("dep/renamed.ond", "package dep\nfunc Run() {}\n"),
         (
@@ -92,13 +88,13 @@ fn source_membership_import_changes_and_parse_recovery_have_content_keys() {
         ),
     ]);
     cache.validate(&renamed).unwrap();
-    assert_eq!(changed(&cache), [(".", false), ("dep", false)]);
+    assert_eq!(changed(&cache), [".", "dep"]);
     let removed_import = project(&[
         ("main.ond", "package main\nfunc main() {}\n"),
         ("dep/renamed.ond", "package dep\nfunc Run() {}\n"),
     ]);
     cache.validate(&removed_import).unwrap();
-    assert_eq!(changed(&cache), [(".", false)]);
+    assert_eq!(changed(&cache), ["."]);
     assert!(
         cache
             .validate(&project(&[("main.ond", "package main\nfunc main(")]))
@@ -161,10 +157,7 @@ fn dependency_constants_types_and_generic_bodies_invalidate_consumers() {
     cache.validate(&project(&files)).unwrap();
     files[2].1 = "package dep\nfunc TestDep() {}\nfunc OnlyTest() {}\n";
     cache.validate(&project(&files)).unwrap();
-    assert_eq!(
-        changed(&cache),
-        [(".", false), ("client", false), ("dep", false)]
-    );
+    assert_eq!(changed(&cache), [".", "client", "dep"]);
     for dependency in [
         "package dep\nconst Value = 2\ntype Number u32\nfunc Identity[T](value: T) -> T { return value }\n",
         "package dep\nconst Value = 2\ntype Number u16\nfunc Identity[T](value: T) -> T { return value }\n",
@@ -172,10 +165,7 @@ fn dependency_constants_types_and_generic_bodies_invalidate_consumers() {
     ] {
         files[1].1 = dependency;
         cache.validate(&project(&files)).unwrap();
-        assert_eq!(
-            changed(&cache),
-            [(".", false), ("client", false), ("dep", false),]
-        );
+        assert_eq!(changed(&cache), [".", "client", "dep",]);
     }
 }
 
@@ -190,7 +180,7 @@ fn failed_results_resolve_against_new_package_declarations() {
         ("test.ond", "package main\nfunc helper() {}\n"),
     ]);
     cache.validate(&second).unwrap();
-    assert_eq!(changed(&cache), [(".", false)]);
+    assert_eq!(changed(&cache), ["."]);
     crate::compile_loaded_project(second).unwrap();
 }
 
@@ -229,7 +219,7 @@ fn diagnostic_labels_rebind_after_file_ids_change_and_clear_on_recovery() {
         ("main.ond", invalid),
     ]);
     let error = cache.validate(&shifted).unwrap_err();
-    assert_eq!(changed(&cache), [("a", false)]);
+    assert_eq!(changed(&cache), ["a"]);
     for diagnostic in error.diagnostics() {
         for span in std::iter::once(diagnostic.primary.span)
             .chain(diagnostic.related.iter().map(|label| label.span))
@@ -244,7 +234,7 @@ fn diagnostic_labels_rebind_after_file_ids_change_and_clear_on_recovery() {
     }
     let fixed = project(&[("main.ond", "package main\nfunc main() {}\n")]);
     cache.validate(&fixed).unwrap();
-    assert_eq!(changed(&cache), [(".", false)]);
+    assert_eq!(changed(&cache), ["."]);
     assert_eq!(cache.entries.len(), 1);
 }
 
@@ -290,7 +280,7 @@ fn import_alias_conflicts_include_unselected_visible_declarations() {
         files[1].1 = "package main\nimport \"dep\"\nfunc TestOK() {}\n";
         let loaded = project(&files);
         let warm = cache.validate(&loaded).unwrap_err();
-        assert_eq!(changed(&cache), [(".", false)]);
+        assert_eq!(changed(&cache), ["."]);
         let cold = crate::compile_loaded_project(loaded.clone()).unwrap_err();
         assert_eq!(warm.diagnostics(), cold.diagnostics(), "{declaration}");
         assert_eq!(warm.diagnostics().len(), 1);
@@ -335,7 +325,7 @@ fn whole_project_test_import_cycles_are_checked_on_cache_hits_and_recovery() {
     files[4].1 = "package b\nimport \"a\"\nfunc TestB() { a.A() }\n";
     let loaded = project(&files);
     let warm = cache.validate(&loaded).unwrap_err();
-    assert_eq!(changed(&cache), [("a", false), ("b", false)]);
+    assert_eq!(changed(&cache), ["a", "b"]);
     let cold = crate::compile_loaded_project(loaded.clone()).unwrap_err();
     assert_eq!(warm.diagnostics(), cold.diagnostics());
     assert_eq!(warm.diagnostics().len(), 1);
@@ -357,5 +347,5 @@ fn whole_project_test_import_cycles_are_checked_on_cache_hits_and_recovery() {
     );
     files[4].1 = "package b\nfunc TestB() {}\n";
     cache.validate(&project(&files)).unwrap();
-    assert_eq!(changed(&cache), [("a", false), ("b", false)]);
+    assert_eq!(changed(&cache), ["a", "b"]);
 }
