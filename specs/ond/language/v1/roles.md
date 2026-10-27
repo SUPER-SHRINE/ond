@@ -47,7 +47,7 @@ role構文自体はloopまたはdeferの境界を追加しない。
 ## 検査範囲とimport
 <!-- ond-spec-id: language/role-validation -->
 
-通常/testのcompile modeと[package採用規則](../../build/packages.md#source探索境界)に従って収集したsource全体を字句解析・構文解析し、全role blockのrole名とRoleNamesの成立条件を検査する。\
+[package採用規則](../../build/packages.md#source探索境界)に従って収集したsource全体を字句解析・構文解析し、全role blockのrole名とRoleNamesの成立条件を検査する。\
 非選択のrole blockの未知role名、構文errorと不正tokenもcompile errorとなる。\
 通常の名前解決、型検査、定数検査と宣言重複検査は選択後のsourceに適用する。\
 非選択部分の未解決名、型不一致、定数errorはそのcompileの失敗原因にしない。
@@ -66,7 +66,7 @@ source上でrole blockの内側にない位置を通常role文脈、内側にあ
 Rの全要素を指定したrole blockもrole文脈であり、通常role文脈と区別する。\
 role内の関数、method、operatorとgeneric宣言の本体、signature、initializerは定義位置の文脈を継承し、call元や具体化要求元の文脈で置換しない。
 
-同じproject内の名前解決では、既存のscope、公開/private、型parameterと通常/test可視性を満たす宣言のうち、次の条件を満たすものを候補とする。\
+同じproject内の名前解決では、既存のscope、公開/private、型parameterの制約を満たす宣言のうち、次の条件を満たすものを候補とする。\
 import aliasにも同じ条件を適用する。
 
 | 参照位置 | 通常role文脈の宣言 | role内の宣言（実効対象集合D） |
@@ -93,8 +93,7 @@ RoleStmtのblockは独立したblock scopeであり、そのlocal宣言はblock�
 ## LSPの補完と診断
 <!-- ond-spec-id: language/role-language-service -->
 
-LSPはカーソル位置の通常/test文脈とrole文脈において、前節の名前解決で候補となる宣言を補完候補とする。\
-通常sourceからtest-only宣言を隠す条件とrole可視性の条件を同時に満たす必要がある。\
+LSPはカーソル位置のrole文脈において、前節の名前解決で候補となる宣言を補完候補とする。\
 role文脈内では通常宣言とCのすべてのroleで同一宣言として成立する候補を示し、通常role文脈ではrole限定宣言を示さない。\
 local名、private名、member、genericの既存のscopeと型制約を保つ。
 

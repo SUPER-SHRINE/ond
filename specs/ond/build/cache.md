@@ -30,7 +30,7 @@ content_hashの照合時は入力file bytesをそのままhashし、再encodeし
 
 image build_idは、出力する実行可能バイナリの全bytesのSHA-256とする。\
 externalは標準実行バイナリ全体、selfは前置起動処理を含む出力全体がhash入力である。\
-debug/test sidecarのbuild_idにはこの識別子を使い、sidecar bytesをhash入力へ加えない。\
+debug sidecarのbuild_idにはこの識別子を使い、sidecar bytesをhash入力へ加えない。\
 sidecar利用者は対象バイナリの全bytesから識別子を求め、不一致のsidecar全体を使用拒否する。
 
 package build_idは次のPackageBuildInputをcanonical JSON化したbytesのSHA-256とする。\
@@ -39,16 +39,14 @@ package build_idは次のPackageBuildInputをcanonical JSON化したbytesのSHA-
 
 | 型 | Field |
 | --- | --- |
-| PackageBuildInput | `contract: Contract`, `compiler_id: string`, `manifest_hash: string`, `mode: BuildMode`, `package: string`, `sources: SourceHash[]`, `dependencies: map<string,string>`, `generation: Generation`, 条件付き`roles: RoleBuildInput` |
+| PackageBuildInput | `contract: Contract`, `compiler_id: string`, `manifest_hash: string`, `package: string`, `sources: SourceHash[]`, `dependencies: map<string,string>`, `generation: Generation`, 条件付き`roles: RoleBuildInput` |
 | RoleBuildInput | `names: string[]`, `selected: string or null` |
-| BuildMode | `"normal"`または`"test"` |
 | SourceHash | `path: string`, `content_hash: string` |
 | Generation | `instances: Instance[]`, `types: TypeExpr[]`, `nominals: Nominal[]`, `constants: OwnedConstant[]`, `interface: NormalizedInterface` |
 
 manifest_hashは全packageに共通して今回compileするproject rootのond.tomlの全file bytesのSHA-256、SourceHash.content_hashはsource fileの全bytesのSHA-256とする。\
 BOMと改行を含む入力bytesを保持し、pathはpackageを構成するsource directory（依存packageもそのpackage directory）からの相対pathを`/`で区切る。\
-sourcesはpathのUnicode scalar辞書順、dependenciesは直接import先の論理package pathからそのbuild_idへのmapとする。\
-modeは通常/test source集合が同じ場合もそれぞれnormal/testを用いる。
+sourcesはpathのUnicode scalar辞書順、dependenciesは直接import先の論理package pathからそのbuild_idへのmapとする。
 
 rolesは当該packageの所属projectが[roles設定](./roles.md#manifest設定)を持つ場合に必須とし、roles tableを省略したprojectではfieldを省略する。\
 roles field全体のnullは受理しない。\
@@ -56,7 +54,7 @@ namesは当該projectの宣言済み追加role集合をUnicode scalar辞書順�
 依存packageのnamesも自身のprojectの設定値とし、selectedは[依存edgeの選択](./roles.md#依存edgeのrole選択)を同じ表現へ変換する。\
 roles以外の既存入力とcanonical JSON規則を維持し、roles table省略projectの入力へ追加fieldを挿入しない。\
 異なる選択roleは選択後の生成集合が同じ場合も異なるPackageBuildInputとなる。\
-この入力はhash計算用であり、PackageArtifact、Object、CompilationManifest、Contractのfieldとrevisionを追加・変更しない。
+roles fieldはhash計算用であり、PackageArtifact、Object、CompilationManifest、Contractのfield集合と版識別は[成果物schema](../artifacts.md#版識別と互換条件)に従う。
 
 ### 意味型・具体化・定数の正規化
 <!-- ond-spec-id: build/normalized-generation -->
@@ -110,7 +108,8 @@ Generation.instancesは今回compileに含まれる全source packageの、静的
 generic function/method/operatorの使用から[型parameterの具体化経路の成立条件](../language/v1/types.md#型parameter)に従って本体内の使用へ推移閉包を取り、宣言owner packageごとに各InstanceIdを1個収録する。\
 Generation.typesの母集団は当該packageの全nongeneric宣言とinstancesの全具体化とし、その宣言型、function signature自体のFunction型、parameter/result、receiver、field、local宣言、各source式に確定した型を集合として収録する。\
 この集合をPointerの参照先、Arrayの要素、Functionのparameter/result、Structのfield、Definedの型argumentとunderlyingの構成型へ再帰的に閉じる。\
-言語の明示変換とreceiver調整後の型も含める。型構文内の配列長式は確定したArray.lengthにだけ反映し、その式のoperand/演算結果型は独立したtypes要素へ加えない。\
+言語の明示変換とreceiver調整後の型も含める。\
+型構文内の配列長式は確定したArray.lengthにだけ反映し、その式のoperand/演算結果型は独立したtypes要素へ加えない。\
 NominalIdを参照する位置ではunderlyingを展開せず、Generation.nominalsへsignature、本体型、公開interfaceから到達するnominalの閉包を各identityにつき1個収録する。\
 すべての名前付き型はDefined参照で表し、underlyingはNominal表だけで展開する。\
 nongeneric宣言型それ自体とそこで使う構成型もtypes/nominalsへ収録し、type宣言内の配列長等は型構造に含めてconstantsへ重複収録しない。\
@@ -175,41 +174,32 @@ source読込、構文解析、依存graph収集はcompileごとに行う。\
 ### 意味解析cache
 <!-- ond-spec-id: build/semantic-cache -->
 
-意味解析結果を再利用するキャッシュは、packageごとに通常sourceとtest sourceを別の単位として扱う。\
+意味解析結果を再利用するキャッシュは、packageを単位として扱う。\
 ここでの再利用は同一processまたは解析session内の結果に適用する。\
 Object生成の永続キャッシュは[パッケージ成果物・独立コンパイラ契約](./packages.md)に従う。
 
 ### 参照環境
 <!-- ond-spec-id: build/semantic-cache-visibility -->
 
-通常sourceの意味解析は、自packageとimportした依存packageの通常sourceだけを参照する。\
-test sourceの意味解析は、自packageの通常sourceとtest source、およびimportした依存packageの通常sourceを参照環境とする。\
-名前の公開範囲、同一packageのprivate declarationへのアクセス、test sourceの判定は[テストビルド仕様](./test-build.md)に従う。
+意味解析は、自packageとimportした依存packageのsourceを参照環境とする。\
+名前の公開範囲と同一packageのprivate declarationへのアクセスは[名前規則](../language/v1/names-and-scopes.md#scopeとshadowing)に従う。
 
 各参照環境には[role可視性](../language/v1/roles.md#名前解決とscope)を併せて適用し、依存境界は[project境界規則](./roles.md#project境界)に従う。
 
-test sourceから通常functionを呼んでも、そのfunctionの定義とbodyは通常sourceの参照環境を維持する。\
-通常sourceに定義されたgeneric function、method、operatorの特殊化にも、定義元の参照環境を適用する。\
+function、method、operatorの呼出しとgeneric宣言の特殊化では、定義元の参照環境を維持する。\
 型、constant、globalの解決にも同じ規則を使う。
-
-通常sourceの型付きbodyと名前解決の検証結果は、test sourceの検証結果から独立して再利用できるものとする。\
-test sourceだけの変更では、不変な通常sourceと通常依存関係の解析結果を引き続き再利用できる。
 
 ### 同一性と失効
 <!-- ond-spec-id: build/semantic-cache-invalidation -->
 
-再利用の判定にはsourceの内容とidentity、および参照する通常sourceの依存関係を用いる。\
+再利用の判定にはsourceの内容とidentity、および参照するsourceの依存関係を用いる。\
 同じ内容と参照環境を再利用条件とする。\
 依存関係には型、constant、generic定義と同一packageのprivate declarationを含め、それらすべての内容と参照環境の一致を再利用条件とする。
 
 参照環境のfinal・role設定、依存edgeの明示roleと解決した選択role、source位置のrole文脈の変更は[role cache入力](./roles.md#cache入力)に従って失効へ反映する。\
 永続cache、frontend省略を判断する索引、LSPの名前索引と失敗診断にも同じ一致条件を適用する。
 
-test sourceだけが変わった場合、対象packageのtest解析結果を失効させる。\
-通常sourceと通常依存関係が不変なら、そのpackageと他packageの通常解析結果を再利用できる。\
-他packageのtest解析結果は、参照環境が変わらない限り失効させない。
-
-通常sourceが変わった場合、そのpackageの通常解析結果とtest解析結果、および変更された通常sourceを参照する解析結果を失効させる。\
+sourceが変わった場合、そのpackageの解析結果、および変更されたsourceを参照する解析結果を失効させる。\
 importの追加・削除、fileの追加・削除・renameでも、変更後の参照環境に基づいて再利用を判定する。
 
 source列挙順や解析snapshotが変化した後も、再利用した診断のprimary labelと関連labelを現在のsourceへ対応づける。\
@@ -220,5 +210,5 @@ source列挙順や解析snapshotが変化した後も、再利用した診断の
 
 意味解析キャッシュの保持期間は、それを所有するprocessまたは解析sessionの範囲内とする。\
 キャッシュを破棄した場合も、再解析によって同じ意味解析結果を得られなければならない。\
-LSPでは連続する編集の検証間でpackageごとの通常解析結果とtest解析結果を再利用する。\
+LSPでは連続する編集の検証間でpackageごとの解析結果を再利用する。\
 再利用と再解析は同じ可視性、診断、生成物の意味を与える。

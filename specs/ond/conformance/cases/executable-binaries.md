@@ -1,7 +1,7 @@
 # 実行可能バイナリと生成入口の契約case
 <!-- ond-spec-id: conformance/cases/executable-binaries -->
 
-適用版はOnd Language v1、target `kagura-v1`、ABI `ond-kagura-v1`、ONDX version 1、artifact Contract revision 6とする。\
+適用版はOnd Language v1、target `kagura-v1`、ABI `ond-kagura-v1`、ONDX version 1、artifact Contract revision 7とする。\
 各caseは独立したfile・memory状態から開始し、同一case内では同じcompiler executableを使用する。\
 本書の実行操作は生成物の適合を確認する試験手順であり、利用者のtest実行方法や合否判定を定めるものではない。\
 各表の要件IDは[要件索引](../requirements.md#成果物buildtarget)に対応する。
@@ -95,12 +95,10 @@ projectのsourceは`main.ond`の全文`package main`と`func main(){}`の2行、
 [project]
 name = "app"
 [compile]
-output = "meta/normal.ondbuild"
-test-output = "meta/tests.ondbuild"
+output = "meta/build.ondbuild"
 cache-dir = "cache"
 [link]
 output = "out/game.bin"
-test-output = "out/tests.bin"
 startup = "external"
 stack-size = 0x100
 [link.ram]
@@ -116,15 +114,14 @@ file出力の成功行ではdebug sidecarの生成と、バイナリ全bytesの�
 
 | Case ID | 操作・入力変更 | 期待 |
 | --- | --- | --- |
-| CLI-01.project | `ond link --project ../app` | `/work/app/out/game.bin`とgame.onddebugを生成。入力はapp/meta/normal.ondbuild、cacheはapp/cache |
+| CLI-01.project | `ond link --project ../app` | `/work/app/out/game.bin`とgame.onddebugを生成。入力はapp/meta/build.ondbuild、cacheはapp/cache |
 | CLI-01.cwd | cwdを/work/appへ移して`ond link` | 同じ設定元・入力・出力先 |
 | CLI-01.output-argument | 元cwdで`ond link --project ../app -o chosen.bin` | `/work/run/chosen.bin`とchosen.onddebugを生成。ond.toml bytesを保持 |
 | CLI-01.default-output | 準備compile前にlink.outputを省略し、`ond link --project ../app` | `/work/app/target/a.bin`とa.onddebugを生成 |
 | CLI-01.no-auto-compile | 準備compile後main.ondを削除し、`ond link --project ../app` | 保存済みmanifestからlink成功 |
-| CLI-01.missing-input | 準備後meta/normal.ondbuildを削除し、`ond link --project ../app` | exit 1。compileを行わずmanifestを再生成しない |
-| CLI-01.no-test-fallback | 準備後`ond compile --test ../app`を行いnormal manifestだけを削除し、`ond link --project ../app` | exit 1。meta/tests.ondbuildを自動選択しない |
+| CLI-01.missing-input | 準備後meta/build.ondbuildを削除し、`ond link --project ../app` | exit 1。compileを行わずmanifestを再生成しない |
 | CLI-01.no-parent-search | 元cwdで`ond link`。/work/ond.tomlへ上の設定を置くがrun/ond.tomlは置かない | exit 1。run直下の設定欠落を診断し、上位設定を採用しない |
-| CLI-01.stdout | `ond link --project ../app -o -` | stdoutはexternalの標準バイナリ全bytesのみ。out/game.bin・debug/test sidecarを生成しない |
+| CLI-01.stdout | `ond link --project ../app -o -` | stdoutはexternalの標準バイナリ全bytesのみ。out/game.bin・debug sidecarを生成しない |
 | CLI-01.sidecar-collision | `ond link --project ../app -o chosen.onddebug` | exit 1、出力path衝突。fileを書き込まない |
 | CLI-01.duplicate-option | `ond link --project ../app --project ../app` | exit 2 |
 
@@ -177,63 +174,3 @@ func main(){var p=&G;var out=536871168 as u32 as *u32;out[0]=f()+*p;out[1]=p as 
 
 `HASH-01.sidecar-mismatch`は成功生成物の独立copyと有効なdebug sidecarを用意し、sidecarのbuild_idの先頭hex digitだけを別値へ変更する（0なら1、それ以外なら0）。\
 対象バイナリの識別子と照合してsidecar全体を使用拒否することを比較し、program実行の可否やtestの結果を比較項目へ含めない。
-
-## Test生成と個別入口
-<!-- ond-spec-id: conformance/executable-binaries/test-generation -->
-
-要件は`TEST-01`とし、定義元は[test build](../../build/test-build.md)、[起動方式](../../artifacts.md#外部起動とセルフ起動)、[link.exit](../../build/packages.md#compileとlink設定)とする。\
-前節までとは独立したprojectを/work/appへ作り、CLI節のond.tomlと次の3 source全文をUTF-8・LF・各末尾LFありで置く。
-
-`main.ond`:
-
-```ond
-package main
-var Counter:u32=3
-func main(){}
-```
-
-`main_test.ond`:
-
-```ond
-package main
-import "app/dep"
-func TestOne(){*(536871168 as u32 as *u32)=Counter+dep.Value()}
-func TestTwo(){*(536871168 as u32 as *u32)=Counter+1}
-```
-
-`dep/dep.ond`:
-
-```ond
-package dep
-var Seed:u32=7
-func Value()->u32{return Seed}
-```
-
-cwdを/work/appとし、各行の準備として`ond compile --test .`だけを行う。\
-link操作は各行に記したものを用い、出力読出し・実行観測の行では`ond link meta/tests.ondbuild`を準備する。\
-stdout・output-override行ではこの準備linkを行わず、以前のバイナリ・sidecarを持たない状態から表のlink操作を行う。\
-実行を含む行は、ロード契約のsection byte列とzero初期化を準備し、SPをheader.initial_sp、他のregisterを0、観測用RAM[0x20000100,0x20000104)をdeadbeefとして開始する。\
-指定RAM・ROM・観測用RAM以外はunmappedとし、観測用RAMへのstoreまたは記載したguard・終了経路を観測する。\
-上限200000命令で観測を打ち切る。
-
-| Case ID | 操作・入力変更 | 期待・比較方法 |
-| --- | --- | --- |
-| TEST-01.generated | 上のcompile/link出力を読む | out/tests.bin、tests.onddebug、tests.ondtestを生成。通常と共通のONDX version 1ヘッダを持ち、中間testsに(package app,name TestOne,symbol main.TestOne)とTestTwoの2件、sidecarに対応する2 wrapper entryを収録。各entryは4-byte alignedな標準Text内。build_idは全binary bytesのhashに一致 |
-| TEST-01.normal | 同じprojectを`ond compile .`、`ond link`で生成 | out/game.binとgame.onddebugを生成。通常manifestとartifactはtests fieldを省略し、game.ondtestを生成しない |
-| TEST-01.default-output | 準備前にlink.test-outputだけ省略してtest compile/link | target/test.bin、test.onddebug、test.ondtestを生成 |
-| TEST-01.output-override | test compile後`ond link meta/tests.ondbuild -o other.bin` | other.bin、other.onddebug、other.ondtestを生成。out/tests.binを生成しない |
-| TEST-01.empty | main_test.ondをpackage mainの1行だけとしてtest compile/link | 中間tests.casesとtest sidecarのcasesは空配列。test binと両sidecarを生成 |
-| TEST-01.guard | 初期stateからheader.entry_addressへ制御を渡す | case選択要求のtrapで停止、個別caseの観測storeなし。この停止をtest成功通知として扱わない |
-| TEST-01.one | 同じ初期stateからsidecarのTestOne entry_pointへ制御を渡す | initializer適用後に対象functionを1回呼び、観測値10。戻った後はlink.exitのloop内に制御を保つ |
-| TEST-01.two | 独立した同じ初期stateからTestTwo entry_pointへ制御を渡す | 観測値4、return後は同じloop経路 |
-| TEST-01.jump | link.exitをmode=jump,address=0x20000200としてcompile/link。終了先にJZ r0,r0,r0,-1のword=0xc000ffffを読み出せる領域を追加し、TestOne wrapperから実行 | 観測値10を書き、return後にPC=0x20000200へ制御を移す。成功通知用の新metadataを要求しない |
-| TEST-01.self | startup=self、ROM base=0・size=0x10000を追加してtest compile/link。全出力をROM 0へ置き、SPを0としたCPU resetから実行 | loaderの準備後はheaderのcase選択guardで停止し、個別caseを自動実行しない。全bytesのhashに一致するtest/debug sidecarを生成 |
-| TEST-01.stdout | test compile後`ond link meta/tests.ondbuild -o -` | test用ONDXバイナリ全bytesだけをstdoutへ出し、sidecarを生成しない |
-| TEST-01.sidecar-collision | test compile後`ond link meta/tests.ondbuild -o chosen.ondtest` | exit 1、出力path衝突。fileを書き込まない |
-
-`TEST-01.library`は独立projectを使い、CLI節のond.tomlのproject.nameだけをlibへ変更する。\
-`lib.ond`の全文`package lib`と`var Value:u32=3`、`lib_test.ond`の全文`package lib`と`func TestValue(){*(536871168 as u32 as *u32)=Value}`を各2行で置く。\
-`ond compile --test .`と`ond link meta/tests.ondbuild`がmainを要求せず成功し、sidecarの唯一の(package lib,name TestValue)入口を同じロード初期stateから呼ぶと観測値3となることを比較する。
-
-`TEST-01.sidecar-mismatch`は生成したtest sidecarのbuild_idだけを前節と同じ方法で変更し、sidecar全体の使用拒否を比較する。\
-このcaseは実行方法や合否解釈を入力とせず、wrapperの生成、入口、初期化、終了経路と識別子だけを比較する。

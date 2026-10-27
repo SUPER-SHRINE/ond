@@ -24,7 +24,7 @@ role名の同一性はUnicode符号位置列の一致で決まり、大文字小
 `names`の順序は選択の優先度を持たない。
 
 role指定の有無に応じたsourceの選択は[言語の選択規則](../language/v1/roles.md#対象集合と選択)に従う。\
-`[roles]`を省略したprojectの名前付きrole集合は空となり、role未指定の構成で[package契約](./packages.md)と[通常/test規則](./test-build.md)に従い処理する。
+`[roles]`を省略したprojectの名前付きrole集合は空となり、role未指定の構成で[package契約](./packages.md)に従い処理する。
 
 ## Compile時の選択
 <!-- ond-spec-id: build/role-selection -->
@@ -34,13 +34,12 @@ role指定の有無に応じたsourceの選択は[言語の選択規則](../lang
 | Compile対象 | 選択role |
 | --- | --- |
 | 操作対象の実行project | `--role NAME`を指定した場合は宣言済みNAME、未指定の場合はrole未指定の構成 |
-| 操作対象のlibrary projectのtest compile | role未指定の構成 |
 | 依存として利用するlibrary project | [依存edgeのrole選択](#依存edgeのrole選択)で解決したrole |
 
 `--role`は操作対象が実行projectである場合にだけ成立する。\
-library projectのtest compileへの指定は引数errorとし、値を無視しない。\
+library projectへの指定は引数errorとし、値を無視しない。\
 指定NAMEが対象projectのnamesに属さない場合はcompile入力のerrorとなる。\
-同一projectの各packageには同じ選択roleを適用し、通常/testのsource分類は選択roleと独立した軸として維持する。
+同一projectの各packageには同じ選択roleを適用する。
 
 ## Final設定
 <!-- ond-spec-id: build/role-final-project -->
@@ -111,13 +110,13 @@ sourceの採用・構文検査は[既存の探索境界](./packages.md#source探
 [依存edgeで解決したrole](#依存edgeのrole選択)により選択した公開宣言は、利用側からその依存の通常の公開APIとして参照できる。\
 利用側のrole宣言に依存内部のrole名を要求しない。\
 同じprojectの別packageを参照する場合は[言語のrole可視性](../language/v1/roles.md#名前解決とscope)を適用する。\
-依存のgeneric宣言の本体、型、定数とその具体化は、依存自身の選択role、定義位置のrole文脈、通常/test文脈を維持し、利用側の文脈へ置換しない。
+依存のgeneric宣言の本体、型、定数とその具体化は、依存自身の選択role、定義位置のrole文脈を維持し、利用側の文脈へ置換しない。
 
 ## 生成と位置
 <!-- ond-spec-id: build/role-generation -->
 
 生成対象は[role選択](../language/v1/roles.md#対象集合と選択)後の宣言、文とimportで構成する。\
-非選択部分からfunction、global、型の実体、initializer、静的data、relocation、公開interface entry、test case、debugの実行区間を生成しない。\
+非選択部分からfunction、global、型の実体、initializer、静的data、relocation、公開interface entry、debugの実行区間を生成しない。\
 選択部分の宣言と文は元のsource上の順序を保ち、entry成立条件と初期化順はその列へ[実行規則](../language/v1/execution.md#初期化とエントリ)を適用して求める。
 
 診断とdebug metadataのfile、行、byte範囲は原文の位置を指す。\
@@ -131,4 +130,4 @@ role設定、選択roleと文脈を反映する公開hash入力は[PackageBuildI
 package成果物、生成集合、import graph、公開interface、process内意味解析、LSP索引と診断の再利用は、参照するprojectのfinal・roles設定、登録依存graphの各edge設定と解決した選択roleが一致することを成立条件とする。\
 依存のnames、明示roleとfinalの変更は、その依存とそこから得るAPIの参照環境へ反映する。\
 cacheが一致する場合も、現在のmanifestから[登録依存graphの成立条件](#登録依存graphの成立条件)を検証し、過去の成功結果を根拠に検証を省略しない。\
-通常/test文脈とsource上のrole対象集合の異なる解析結果を同一結果として再利用せず、空の候補集合や失敗診断にも同じ規則を適用する。
+source上のrole対象集合の異なる解析結果を同一結果として再利用せず、空の候補集合や失敗診断にも同じ規則を適用する。

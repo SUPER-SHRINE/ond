@@ -2,7 +2,7 @@
 <!-- ond-spec-id: conformance/cases/roles -->
 
 要件は`ROLE-01`〜`ROLE-10`とし、各節で対応する規範と観測操作を指定する。\
-適用版はOnd Language v1、Contract revision 6、target kagura-v1、ABI ond-kagura-v1である。\
+適用版はOnd Language v1、Contract revision 7、target kagura-v1、ABI ond-kagura-v1である。\
 各行は独立したprojectで、既存cacheと依存projectは、そのcaseが指定する場合だけ置く。\
 入力はUTF-8、LF区切り、末尾LFありとし、`<br>`はLF、HTML entityは元の文字へ復号する。\
 特記しないcompile操作はproject rootで`ond compile .`を実行し、成功はexit 0、source/config入力の失敗はexit 1と原因診断を比較する。\
@@ -230,10 +230,10 @@ role Debug { func Hidden() {} }
 結果はmainの通常文脈からHiddenを解決できずrejectとなる。\
 `ROLE-04.qualified-visible`はmainの呼出しを`role Debug { tools.Hidden() }`へ置き換えた独立caseで、acceptを期待する。
 
-## 依存roleとtest軸
+## 依存role
 <!-- ond-spec-id: conformance/roles/dependencies-and-tests -->
 
-要件`ROLE-02`と`ROLE-04`、定義元は[project境界](../../build/roles.md#project境界)、[選択](../../build/roles.md#compile時の選択)と[test build](../../build/test-build.md)である。\
+要件`ROLE-02`と`ROLE-04`、定義元は[project境界](../../build/roles.md#project境界)、[選択](../../build/roles.md#compile時の選択)である。\
 directory gameとlibraryを兄弟として置き、game/ond.tomlは既定manifestへ次のtableを追加する。
 
 ```toml
@@ -276,27 +276,7 @@ func Value[T](x:T) -> i32 {
 | ROLE-02.dependency-primary | gameを`--role Debug`でcompile | accept、Result=22、libraryはrole未指定の構成、generic本体のInternal blockは非選択 |
 | ROLE-02.dependency-independent | gameの指定をReleaseに変更 | accept、Result=22、libraryはrole未指定の構成を維持 |
 | ROLE-02.dependency-added-role | gameのproject tableへfinal=true、support entryへrole="Internal"を追加しgameをDebugでcompile | accept、Result=11、libraryの選択Internal、generic本体のInternal blockを選択 |
-| ROLE-02.library-option | libraryで`ond compile --test . --role Public` | exit 2、libraryへの指定 |
-
-test軸のcaseは独立projectとし、libraryの上のmanifest、空のlib.ond（`package library`だけ）と次のlib_test.ondを使う。
-
-```ond
-package library
-func TestPublic(){}
-role Internal { func TestInternal(){} }
-role Public { func TestAlternate(){} }
-```
-
-`ROLE-02.library-test`はlibraryで`ond compile --test .`を実行し、acceptとtest metadataのcaseがTestPublicだけであることを比較する。\
-`ROLE-05.test-visibility`はlib_test.ondの共通位置へ`func testHelper(){}`を追加し、lib.ondを次の全文へ置換する。
-
-```ond
-package library
-func ordinary(){ testHelper() }
-```
-
-test compileは通常sourceからtest-only名を参照できないためrejectし、ordinaryの同位置におけるLSP候補にもtestHelperを含めない。\
-test source内の共通位置とPublicのrole blockではtestHelperを候補に含める。
+| ROLE-02.library-option | libraryで`ond compile . --role Public` | exit 2、libraryへの指定 |
 
 ## Hashとcacheの失効
 <!-- ond-spec-id: conformance/roles/cache -->
@@ -310,7 +290,7 @@ cache操作では同じcompilerを用い、各行の最初はcacheなしでcompi
 | ROLE-07.selected-hash | 同じsourceをrole未指定・Debug・Releaseの3構成でcompile | generationが等しくてもroles.selectedがnull・Debug・Releaseと異なるため、各構成のPackageBuildInput bytesとpackage build_idが異なる |
 | ROLE-07.role-input | DebugのPackageBuildInputをcanonical化 | roles fieldは`{"names":["Debug","Development","Release"],"selected":"Debug"}`、他のfieldは公開入力規則から構成 |
 | ROLE-07.primary-input | 指定なしのPackageBuildInputをcanonical化 | roles fieldは`{"names":["Debug","Development","Release"],"selected":null}` |
-| ROLE-07.unconfigured-hash | [HASH-01.package-empty](./package-hash.md#hash-01package-empty)を実行 | roles fieldを省略し、既定の完全入力556 bytesと指定SHA-256を維持 |
+| ROLE-07.unconfigured-hash | [HASH-01.package-empty](./package-hash.md#hash-01package-empty)を実行 | roles fieldを省略し、既定の完全入力540 bytesと指定SHA-256を維持 |
 | ROLE-07.dependency-role-reset | 前節のdependency-added-roleでwarm後、gameのsupport.roleを削除 | 依存をrole未指定の構成へ戻し、本体解析とbuild_idを失効させ、Resultは11から22へ変化 |
 | ROLE-07.configuration | 既定入力をwarm後、namesへShippingを追加 | 役割宣言集合を含む入力と索引を再計算し、以前の一致を前提にfrontendを省略しない |
 | ROLE-07.raw-source | Releaseでcompileし、非選択のDebug role blockの空白だけを編集 | SourceHashは原文全bytesの変更を反映し、変化前のhashを再利用しない |
@@ -324,7 +304,7 @@ ROLE-07.unconfigured-hashだけは参照先caseのmanifest、sourceと論理comp
 <!-- ond-spec-id: conformance/roles/final-edge-inputs -->
 
 要件`ROLE-08`と`ROLE-09`、定義元は[Final設定](../../build/roles.md#final設定)と[依存edgeのrole選択](../../build/roles.md#依存edgeのrole選択)である。\
-この節以降のcaseは通常compileを使い、runnerとchildを兄弟directoryとして置く。\
+この節以降のcaseはcompileを使い、runnerとchildを兄弟directoryとして置く。\
 入力欄に差分を記したcaseは、以下の完全入力へその差分だけを適用した独立projectとする。\
 初期状態にはcache、ond.lock、生成成果物、その他の依存を置かない。\
 操作はrunnerをcurrent directoryとして`ond compile .`を実行し、受理したcaseはMemoryVmでmainを1回呼んでResultを比較する。\
@@ -337,7 +317,7 @@ runner/ond.toml全文:
 name = "runner"
 final = true
 [dependencies]
-child = { path = "../child", role = "Test" }
+child = { path = "../child", role = "Inspect" }
 ```
 
 runner/main.ond全文:
@@ -355,7 +335,7 @@ child/ond.toml全文:
 [project]
 name = "child"
 [roles]
-names = ["Test"]
+names = ["Inspect"]
 ```
 
 child/lib.ond全文:
@@ -363,30 +343,30 @@ child/lib.ond全文:
 ```ond
 package child
 func Value[T](x:T) -> i32 {
-    role Test { return helper() }
+    role Inspect { return helper() }
     return 10
 }
 func CommonApi() -> i32 { return 1 }
-role Test {
+role Inspect {
     func helper() -> i32 { return 20 }
-    func TestApi() -> i32 { return 2 }
+    func InspectApi() -> i32 { return 2 }
 }
 ```
 
 | Case ID | 入力差分・操作 | 仕様由来の期待結果 |
 | --- | --- | --- |
-| ROLE-08.final-bool | 差分なし | accept、runnerはrole未指定の構成、childはTest、Result=20 |
+| ROLE-08.final-bool | 差分なし | accept、runnerはrole未指定の構成、childはInspect、Result=20 |
 | ROLE-08.final-false | runner.finalをfalse、childのrole fieldを削除 | accept、Result=10 |
 | ROLE-08.final-default | runner.finalの行とchildのrole fieldを削除 | accept、final=false、Result=10 |
 | ROLE-08.final-type | runner.finalをstring `"true"`へ変更 | reject、runner/ond.tomlのproject.finalの型 |
-| ROLE-09.root-primary | runner/ond.toml末尾へ<code>[roles]<br>names=["Debug","Release"]</code>を追加 | accept、runnerはrole未指定の構成、childはTest、Result=20 |
-| ROLE-09.root-nonprimary | 前行と同じmanifestで`ond compile . --role Debug` | accept、runnerはDebug、childはTest、Result=20 |
+| ROLE-09.root-primary | runner/ond.toml末尾へ<code>[roles]<br>names=["Debug","Release"]</code>を追加 | accept、runnerはrole未指定の構成、childはInspect、Result=20 |
+| ROLE-09.root-nonprimary | 前行と同じmanifestで`ond compile . --role Debug` | accept、runnerはDebug、childはInspect、Result=20 |
 | ROLE-09.nonfinal-default-role | runner.finalをfalseへ変更 | reject、runner/ond.tomlのchild設定にroleを明示 |
 | ROLE-09.nonfinal-own-primary | ROLE-09.root-primaryのrunner.finalをfalseへ変更 | reject、同じchild設定 |
 | ROLE-09.nonfinal-own-nonprimary | 前行の入力で`ond compile . --role Debug` | reject、同じchild設定 |
 | ROLE-09.omitted-role | runner.finalをfalse、childのrole fieldを削除 | accept、childはrole未指定の構成、Result=10 |
 | ROLE-09.string-dependency | runner.finalをfalse、依存値をstring `"../child"`へ置換 | accept、childはrole未指定の構成、Result=10 |
-| ROLE-09.unknown-role | childのroleを`"test"`へ変更 | reject、runner/ond.tomlのchild.roleは未知名 |
+| ROLE-09.unknown-role | childのroleを`"inspect"`へ変更 | reject、runner/ond.tomlのchild.roleは未知名 |
 | ROLE-09.role-type | childのroleをinteger `1`へ変更 | reject、runner/ond.tomlのchild.roleの型 |
 | ROLE-09.roleless-target | child/ond.tomlからroles tableを削除し、child/lib.ondを下記の共通sourceへ置換 | reject、runner/ond.tomlのchild.roleに対応する定義がない |
 | ROLE-09.roleless-default | 前行の入力からrunnerのchild.roleを削除 | accept、childはrole未指定の構成、Result=10 |
@@ -439,7 +419,7 @@ func Read() -> i32 { return 30 }
 runner/ond.tomlの依存entryだけを次へ置き換え、ond.lockのないrunnerをcompileする。
 
 ```toml
-child = { git = "file:///C:/ond-role-fixtures/child", rev = "fixture", role = "Test" }
+child = { git = "file:///C:/ond-role-fixtures/child", rev = "fixture", role = "Inspect" }
 ```
 
 期待はexit 1であり、Gitで解決したchildをfinalのため依存先へ登録できない旨と、runnerのchild entry・childのfinal設定を診断する。\
@@ -462,7 +442,7 @@ var Result: i32
 func main() { Result = child.Value[i32](7) + local.Read() }
 ```
 
-期待はaccept、childの選択Test、main実行後のResult=25である。
+期待はaccept、childの選択Inspect、main実行後のResult=25である。
 
 ## 依存経路の整合
 <!-- ond-spec-id: conformance/roles/dependency-path-agreement -->
@@ -478,7 +458,7 @@ runner/ond.toml全文:
 name = "runner"
 final = true
 [dependencies]
-direct = { path = "../child", role = "Test" }
+direct = { path = "../child", role = "Inspect" }
 middle = { path = "../bridge" }
 ```
 
@@ -511,12 +491,12 @@ func Read() -> i32 { return child.Value[i32](1) }
 
 | Case ID | 入力差分 | 期待結果 |
 | --- | --- | --- |
-| ROLE-10.direct-transitive-conflict | 差分なし | reject、競合project child、Test指定のrunner --direct→ childとrole未指定のrunner --middle→ bridge --leaf→ childの両経路を診断 |
+| ROLE-10.direct-transitive-conflict | 差分なし | reject、競合project child、Inspect指定のrunner --direct→ childとrole未指定のrunner --middle→ bridge --leaf→ childの両経路を診断 |
 | ROLE-10.unimported-conflict | runner/main.ondをimportなしsourceへ置換 | reject、同じproject・roleと両経路を診断 |
-| ROLE-10.same-directory-alias | runnerのmiddle entryを`{ path = "../child" }`へ、main.ondをimportなしsourceへ置換 | reject、runner --direct→ childのTest指定とrunner --middle→ childのrole未指定を同じprojectの競合として診断 |
+| ROLE-10.same-directory-alias | runnerのmiddle entryを`{ path = "../child" }`へ、main.ondをimportなしsourceへ置換 | reject、runner --direct→ childのInspect指定とrunner --middle→ childのrole未指定を同じprojectの競合として診断 |
 | ROLE-10.resolved-agreement | runnerのdirect.role fieldを削除 | accept、両経路のchildはrole未指定の構成、main実行後Result=20 |
-| ROLE-10.named-agreement | runnerのmiddle entryを`{ path = "../child", role = "Test" }`へ、runner/main.ondを最初のfinal/edge節のsourceへ置換 | accept、両登録名ともchildのTest、main実行後Result=20 |
-| ROLE-08.final-intermediate | bridgeのproject tableへ`final=true`、leaf entryへ`role="Test"`を追加 | reject、runnerのmiddle entryがfinal project bridgeを登録する違反、依存元runner・依存先bridge・bridge.finalを診断 |
+| ROLE-10.named-agreement | runnerのmiddle entryを`{ path = "../child", role = "Inspect" }`へ、runner/main.ondを最初のfinal/edge節のsourceへ置換 | accept、両登録名ともchildのInspect、main実行後Result=20 |
+| ROLE-08.final-intermediate | bridgeのproject tableへ`final=true`、leaf entryへ`role="Inspect"`を追加 | reject、runnerのmiddle entryがfinal project bridgeを登録する違反、依存元runner・依存先bridge・bridge.finalを診断 |
 
 ROLE-10.unimported-conflictとsame-directory-aliasのrunner/main.ond全文:
 
@@ -574,13 +554,13 @@ func Read() -> i32 { return child.Value[i32](2) }
 要件`ROLE-07`と`ROLE-09`、定義元は[project境界](../../build/roles.md#project境界)、[公開hash](../../build/cache.md#公開識別子)、[LSP](../../language/v1/roles.md#lspの補完と診断)と[cache入力](../../build/roles.md#cache入力)である。\
 各caseはfinal/edge節のrunnerとchildの完全入力から開始し、同じcompiler、解析sessionとcache保存先で操作列を実行する。\
 初回はcoldとし、2回目に変更なしのcompileを挟んでwarmな状態を作る。\
-LSPではrunner/main.ondの`child.Value`のdot直後をカーソル位置とし、比較する公開候補はValue、CommonApi、TestApiに限定する。
+LSPではrunner/main.ondの`child.Value`のdot直後をカーソル位置とし、比較する公開候補はValue、CommonApi、InspectApiに限定する。
 
 | Case ID | 操作列 | 期待結果 |
 | --- | --- | --- |
-| ROLE-09.selected-api | 変更なしでcompile、main実行、LSP補完 | accept、childはTest、Result=20、共通候補ValueとCommonApiに加えTestApiを含む、Valueの具体化はTest blockでhelperを解決 |
-| ROLE-07.dependency-selected-input | 上のcompileでchildのPackageBuildInputをcanonical化 | rolesは`{"names":["Test"],"selected":"Test"}`、source hashは原文bytesから構成 |
-| ROLE-07.edge-role-invalidation | warm後、runnerのchild.role fieldを削除して再compile・main実行・LSP補完 | accept、childのroles.selectedはnull、Result=10、候補ValueとCommonApiを維持しTestApiを含まない、旧role解析・診断・索引を失効させ、childと参照元のbuild_idを再計算 |
+| ROLE-09.selected-api | 変更なしでcompile、main実行、LSP補完 | accept、childはInspect、Result=20、共通候補ValueとCommonApiに加えInspectApiを含む、Valueの具体化はInspect blockでhelperを解決 |
+| ROLE-07.dependency-selected-input | 上のcompileでchildのPackageBuildInputをcanonical化 | rolesは`{"names":["Inspect"],"selected":"Inspect"}`、source hashは原文bytesから構成 |
+| ROLE-07.edge-role-invalidation | warm後、runnerのchild.role fieldを削除して再compile・main実行・LSP補完 | accept、childのroles.selectedはnull、Result=10、候補ValueとCommonApiを維持しInspectApiを含まない、旧role解析・診断・索引を失効させ、childと参照元のbuild_idを再計算 |
 | ROLE-07.final-invalidation | warm後、runner.finalだけfalseへ変更して再compile | exit 1、現在のchild entryに非finalのrole明示違反を診断、以前の成功成果物を保持 |
 | ROLE-07.target-final-invalidation | warm後、childのproject tableへfinal=trueを追加して再compile | exit 1、runnerのchild entryとchild.finalを診断、cache一致を理由に登録graph検証を省略しない |
 | ROLE-07.selected-failure-invalidation | warm後、runnerのchild.roleをUnknownへ変更してcompileし、その後role fieldを削除して再compile | Unknownはexit 1で依存entryを診断、修正後はrole未指定の構成でaccept、Result=10、過去のrole解析と失敗診断を流用しない |

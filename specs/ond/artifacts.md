@@ -4,14 +4,13 @@
 ## JSON wire形式
 <!-- ond-spec-id: artifacts/json-wire-format -->
 
-本書と[debug](./debug-metadata/v1.md)、[test sidecar](./build/test-build.md)の公開JSONは、BOMのないUTF-8で表す。\
+本書と[debug](./debug-metadata/v1.md)の公開JSONは、BOMのないUTF-8で表す。\
 読出し時にはJSONの値間の空白を許可し、文字列はUnicode scalar列として解釈する。\
 すべてのobjectは表で定義したfield集合だけを持つ閉schemaとし、未知fieldと重複keyはerrorとなる。\
 keyの同一性はescapeをdecodeしたstringで比較し、Unicode正規化は行わない。\
 `map<string,T>`は任意の相異なるstring keyからTへのobjectであり、mapの値にもTのschemaを適用する。
 
 各fieldは必須であり、型に`null`を含むfieldは明示的なnullまたは指定型の値を持つ。\
-省略できるfieldはPackageArtifactとCompilationManifestの`tests`だけであり、`tests`の明示nullはerrorとなる。\
 配列の長さは指定がある場合その長さに一致し、tuple `(A,B)`は長さ2のJSON array `[A,B]`で表す。
 
 | 値型 | JSON表現・成立条件 |
@@ -51,7 +50,7 @@ schema違反は公開入力のerrorとなり、compile/link CLIでは[失敗契�
 ## 公開interface
 <!-- ond-spec-id: build/public-metadata-revision-3 -->
 
-成果物の外層contractはrevision 6とし、[版識別と互換条件](#版識別と互換条件)を適用する。
+成果物の外層contractは[版識別と互換条件](#版識別と互換条件)に従う。
 
 `interface`はpackage、types（型定義の配列）、exports（公開名→宣言）からなる。\
 target-neutralな型・公開宣言情報であり、型参照はこの成果物localのtypes配列indexで表す。
@@ -119,7 +118,7 @@ cache再利用は[cache契約](./build/cache.md)に従う。
 | language | sourceの構文・型・意味 | Ond v1 | [language v1](./language/v1/README.md)の入力と規則に適用 |
 | target profile | machine/layout/runtime | `kagura-v1` | languageのtarget委譲を具体化 |
 | ABI | call/register/引数・戻り値 | `ond-kagura-v1` | `kagura-v1`に適用 |
-| artifact Contract | PackageArtifactとCompilationManifestの外層 | revision `6`, target `kagura-v1`, abi `ond-kagura-v1` | tuple全要素が表の値に一致すると受理。Contractの未知fieldはerror |
+| artifact Contract | PackageArtifactとCompilationManifestの外層 | revision `7`, target `kagura-v1`, abi `ond-kagura-v1` | tuple全要素が表の値に一致すると受理。Contractの未知fieldはerror |
 | compiler_id | artifact生成元とcache再利用の識別 | 実行executable全体のSHA-256 | CLI linkはmanifest、全artifact、実行linkerの同一値を要求 |
 
 language版、target版、ABI版は対応する規範文書の適用対象を識別する。\
@@ -141,17 +140,12 @@ fieldの名前と意味を次の表で定義する。
 | PackageArtifact | `dependencies: map<string,string>` | 直接依存package pathからbuild_idへの対応 |
 | PackageArtifact | `imports: string[]`, `initializer: string or null` | source順のimport path、global初期化関数symbol |
 | PackageArtifact | `interface: Interface`, `object: Object`, `debug: DebugObject` | 公開interface、Object、link前debug情報 |
-| PackageArtifact | `tests: TestMetadata` | test compile時の[tests object](./build/test-build.md#buildと起動入口)。通常compileはfieldを省略 |
 | CompilationManifest | `contract: Contract`, `compiler_id: string` | 外層契約と生成元 |
 | CompilationManifest | `packages: ArtifactRef[]`, `program: ProgramMetadata` | 決定的なObject入力順のartifact列、実行計画 |
-| CompilationManifest | `tests: TestMetadata` | test compile時のTestMetadata。case 0件も`cases: []`を記録 |
 | ArtifactRef | `package: string`, `build_id: string`, `path: string`, `content_hash: string` | package path、内容識別、artifact file path、file bytesのSHA-256 |
 | ProgramMetadata | `entry_symbol: string`, `initializers: string[]` | entry symbol、言語初期化順に並ぶinitializer symbol |
 
 Object入力順とinitializer実行順は別の列として保持する。\
-testsのcase列と`.ondtest`は[test build契約](./build/test-build.md)を定義元とする。\
-CompilationManifest、Contract、TestMetadataとcaseは上表と[test schema](./build/test-build.md#buildと起動入口)のfield集合で検査し、未知fieldはerrorとなる。\
-明示`tests: null`はerrorとなり、field省略とcase 0件のtest buildを区別する。\
 PackageArtifactとinterfaceのpackageは一致し、型参照、public名、nominal名、method名/symbol、aggregate indexの整合性を読出時に検査する。\
 build_idとcache keyの生成は[cache契約](./build/cache.md)、debug schemaは[debug metadata](./debug-metadata/v1.md)に従う。
 
@@ -172,21 +166,12 @@ linkは以下の入力整合を検査し、違反はlink errorとなる。
 | import/dependency | importsの集合がdependenciesのkey集合に一致、各依存artifactが存在しそのbuild_idが依存値に一致 |
 | import graph | 各packageのimports列をsource定義順として、[packageと循環の規則](./language/v1/names-and-scopes.md#packageとimport)を満たす |
 | initializer | nullまたは対応packageのExported Function symbolで、列挙されたinitializerが全て解決できる |
-| mode | manifestと全artifactのtestsの有無が一致 |
-| test case | package/name/symbolの組が一意で、manifestのcase集合が全artifactのcase集合の和に一致 |
 
 imports列の重複は[同じimportの言語規則](./language/v1/names-and-scopes.md#scopeとshadowing)に従い、集合の一致検査で列順を変更しない。\
 packages列のObject入力順とProgramMetadata.initializersの順も保持する。
 
-ProgramMetadataは通常startup計画を表す。\
-通常buildのentry_symbolはmain.mainを指し、そのExported Functionを持つpackageをrootとして、[言語の初期化順](./language/v1/execution.md#初期化とエントリ)から導く全initializer列とprogram.initializersが一致することを要求する。
-
-test起動は各case.packageから導くwrapper計画とする。\
-compileは[test sourceの成立条件](./build/test-build.md#sourceと文脈)を満たす宣言からtest caseを収録する。\
-各artifactのcase.packageは当該artifact.packageに一致する。\
-linkはcase.symbolが[名前規則](#link-symbolの名前と所属)と対応する所属packageのExported Function定義に一致することを検査する。\
-wrapperは所属packageと依存先のinitializer列、対象functionの順を[test起動契約](./build/test-build.md#buildと起動入口)で実行する。\
-test modeのprogram.entry_symbolに通常mainの解決を要求せず、library testは同章のlibrary成立条件に従う。
+ProgramMetadataはstartup計画を表す。\
+entry_symbolはmain.mainを指し、そのExported Functionを持つpackageをrootとして、[言語の初期化順](./language/v1/execution.md#初期化とエントリ)から導く全initializer列とprogram.initializersが一致することを要求する。
 
 ## Object
 <!-- ond-spec-id: artifacts/object -->
@@ -219,7 +204,6 @@ CLIが生成するstartupのentryは`__ond.entry`、heap境界は`__ond_heap_bas
 | --- | --- |
 | startup | `__ond.entry`、`__ond_heap_cursor`、`__ond_heap_base_slot`、`__ond_stack_bottom_slot` |
 | heap/stack境界 | LinkPlan.heap_base_symbol、LinkPlan.stack_bottom_symbol |
-| test wrapper | `__ond.test.`にcases列の0始まりindexをleading zeroのない10進で続けた名前 |
 | runtime helper | U+0001に`ond.runtime.`を続けたprefix（JSON表記`"\u0001ond.runtime."`） |
 
 表の名前の定義者は対応する生成者とし、source/package ObjectはImported symbolとrelocationで参照できる。\
@@ -249,11 +233,11 @@ LinkedImageはruntime addressとpatch済みbytesを表す。\
 ## 実行可能バイナリ
 <!-- ond-spec-id: artifacts/executable-binary-draft -->
 
-本節は、Ond Language v1、target profile `kagura-v1`、ABI `ond-kagura-v1`の通常/test buildを表す実行可能バイナリを定義する。\
+本節は、Ond Language v1、target profile `kagura-v1`、ABI `ond-kagura-v1`のbuildを表す実行可能バイナリを定義する。\
 永続的な配置・起動・終了設定は、projectの[compileとlink設定](./build/packages.md#compileとlink設定)に従う。
 
 中間成果物`.ondpkg`と`.ondbuild`は[PackageArtifactとCompilationManifest](#packageartifactとcompilationmanifest)のJSON wire形式に従う。\
-debug sidecarとtest sidecarのJSON表現は、[debug metadata](./debug-metadata/v1.md)と[test build](./build/test-build.md)に従う。
+debug sidecarのJSON表現は、[debug metadata](./debug-metadata/v1.md)に従う。
 
 ### 標準実行バイナリ
 <!-- ond-spec-id: artifacts/standard-executable-binary -->
@@ -322,8 +306,7 @@ ROM上で直接参照するText・Rodataはその格納byte列を使い、RAMへ
 
 `entry_address`へ制御を渡す時点では、全セクションの準備が完了し、stack pointerが`initial_sp`に一致する。\
 ロード時にaddressの再配置は行わず、entryはRAMやROMの先頭addressではなくヘッダの指定値を使う。\
-通常buildのinitializerと`main`の呼出しはentry側の責務であり、[言語の初期化とエントリ](./language/v1/execution.md#初期化とエントリ)に従う。\
-test buildの共通entryと個別wrapperは[test起動入口](./build/test-build.md#buildと起動入口)に従う。
+initializerと`main`の呼出しはentry側の責務であり、[言語の初期化とエントリ](./language/v1/execution.md#初期化とエントリ)に従う。
 
 ### 外部起動とセルフ起動
 <!-- ond-spec-id: artifacts/executable-launch-modes -->
@@ -387,7 +370,7 @@ ROM容量とRAM容量は配置先の上限であり、容量末尾までのpaddi
 
 次の例は、target `kagura-v1`、ABI `ond-kagura-v1`、startup external、ROM省略、RAM base `0x10000000`、RAM size `0x100`、stack-size `0x40`に対するwire読出しとロードの適合判定を対象とする。\
 観測点はentryへ制御を渡す直前とし、RAMの初期byte値は任意とする。\
-Textの命令列をOnd programとして実行する場合の適合判定は、[言語規則](./language/v1/README.md)と[通常buildのstartup](./targets/kagura-v1/machine.md#4-startup)に従って別に行う。
+Textの命令列をOnd programとして実行する場合の適合判定は、[言語規則](./language/v1/README.md)と[startup](./targets/kagura-v1/machine.md#4-startup)に従って別に行う。
 
 | ヘッダfield | 値 |
 | --- | --- |

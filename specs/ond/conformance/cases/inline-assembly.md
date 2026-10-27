@@ -3,7 +3,7 @@
 
 全caseはOnd Language v1、Kagura v1 targetの単一projectとして実行する。\
 既定manifest、source復元、phase比較は[共通case契約](./README.md#入力と期待結果の読み方)に従う。\
-Core caseは完全な`main.ond`をCore phaseへ与え、KaguraRun caseはCore検査後の通常buildを[整数実行vectorの配置、起動、終了命令、register初期値](./kagura-integers.md#kagura上の整数実行vector)で実行する。\
+Core caseは完全な`main.ond`をCore phaseへ与え、KaguraRun caseはCore検査後のbuildを[整数実行vectorの配置、起動、終了命令、register初期値](./kagura-integers.md#kagura上の整数実行vector)で実行する。\
 KaguraRunのOUTPUTは`0x20000100`から64個のu32 wordとし、指定されないwordはSENTINEL `0xdeadbeef`を保持する。\
 KaguraRunの観測対象はKagura CPUの停止状態、OUTPUT、指定device traceとし、命令上限はcase入力の打切り条件とする。\
 各caseの期待値は[Ond inline assembly](../../language/v1/inline-assembly.md)および[Kagura v1 inline assembly](../../targets/kagura-v1/inline-assembly.md)から導く。
@@ -14,7 +14,8 @@ KaguraRunの観測対象はKagura CPUの停止状態、OUTPUT、指定device tra
 ### ASM-01.input-snapshot-order
 <!-- ond-spec-id: conformance/cases/inline-assembly-input-snapshot-order -->
 
-要件は`ASM-01`、`ASM-02`である。次のsourceをKaguraRunで実行する。
+要件は`ASM-01`、`ASM-02`である。\
+次のsourceをKaguraRunで実行する。
 
 ```ond
 package main
@@ -36,7 +37,8 @@ func main() {
 ### ASM-02.right-identifier-r1
 <!-- ond-spec-id: conformance/cases/inline-assembly-right-identifier -->
 
-要件は`ASM-01`、`ASM-02`である。`r1`を通常のOnd local identifierとして使う次のsourceをKaguraRunで実行する。
+要件は`ASM-01`、`ASM-02`である。\
+`r1`を通常のOnd local identifierとして使う次のsourceをKaguraRunで実行する。
 
 ```ond
 package main
@@ -53,7 +55,8 @@ func main() {
 ### ASM-03.inout-narrow-bool-f32
 <!-- ond-spec-id: conformance/cases/inline-assembly-inout-narrow-bool-f32 -->
 
-要件は`ASM-02`である。次のsourceをKaguraRunで実行する。
+要件は`ASM-02`である。\
+次のsourceをKaguraRunで実行する。
 
 ```ond
 package main
@@ -90,7 +93,8 @@ f32 return comparisonはu32 `0x3fc00000` bit patternとする。
 ### ASM-04.binding-register-and-callee-save
 <!-- ond-spec-id: conformance/cases/inline-assembly-binding-register-callee-save -->
 
-要件は`ASM-02`、`ASM-04`である。次のsourceをKaguraRunで実行する。
+要件は`ASM-02`、`ASM-04`である。\
+次のsourceをKaguraRunで実行する。
 
 ```ond
 package main
@@ -108,7 +112,8 @@ first asmはinput registerを変更してもsource変数のbinding値を更新�
 ### ASM-05.memory-alias-and-order
 <!-- ond-spec-id: conformance/cases/inline-assembly-memory-alias-order -->
 
-要件は`ASM-04`である。次のsourceをKaguraRunで実行する。
+要件は`ASM-04`である。\
+次のsourceをKaguraRunで実行する。
 
 ```ond
 package main
@@ -131,7 +136,8 @@ source memory accessは同一addressをaliasし、store後のloadとOndからの
 ### ASM-06.mmio-write-order
 <!-- ond-spec-id: conformance/cases/inline-assembly-mmio-write-order -->
 
-要件は`ASM-04`である。前caseの共通設定を用い、追加で`0xffff8050`の4-byte mappingをTraceDeviceに置換する。\
+要件は`ASM-04`である。\
+前caseの共通設定を用い、追加で`0xffff8050`の4-byte mappingをTraceDeviceに置換する。\
 TraceDeviceは各成功したstoreについて`(address, width, value)`を順に記録し、loadにはzeroを返す。\
 次のsourceをKaguraRunで実行する。
 
@@ -152,7 +158,8 @@ asm output bindingがない場合も、両storeを観測する。
 ### ASM-07.noreturn-transfer-skips-defer
 <!-- ond-spec-id: conformance/cases/inline-assembly-noreturn-defer -->
 
-要件は`ASM-04`である。次のsourceをKaguraRunで実行し、共通case契約の命令上限2,000,000内で観測する。
+要件は`ASM-04`である。\
+次のsourceをKaguraRunで実行し、共通case契約の命令上限2,000,000内で観測する。
 
 ```ond
 package main
@@ -176,7 +183,8 @@ func main() {
 ### ASM-08.fault-preserves-completed-store
 <!-- ond-spec-id: conformance/cases/inline-assembly-fault-preserves-store -->
 
-要件は`ASM-02`、`ASM-04`である。次のsourceをKaguraRunで実行する。
+要件は`ASM-02`、`ASM-04`である。\
+次のsourceをKaguraRunで実行する。
 
 ```ond
 package main

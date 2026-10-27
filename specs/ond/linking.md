@@ -2,7 +2,7 @@
 <!-- ond-spec-id: linking/v1 -->
 
 この章はObject列の検査、symbol解決、配置とrelocationの外部契約を定義する。\
-通常/testとself/externalの全組合せに本章の共通規則を適用し、file配置・実行時配置・ロードは[実行可能バイナリ](./artifacts.md#実行可能バイナリ)に従う。\
+self/externalの両起動方式に本章の共通規則を適用し、file配置・実行時配置・ロードは[実行可能バイナリ](./artifacts.md#実行可能バイナリ)に従う。\
 LinkPlanとLinkedImageは[論理モデル](./artifacts.md#linkplanとlinkedimage)として配置入力と解決結果を表す。
 
 ## Symbol解決と配置
@@ -51,10 +51,9 @@ symbol、relocation、entry、debug addressはすべてこの実行時addressに
 loaderによる再配置は行わない。
 
 入力Object列は[manifestのpackages順](./build/commands.md#ond-link)を保持する。\
-各Object内のsection配置とsymbolの所属は本章の規則に従い、通常startup、test wrapper、runtime helperの供給は[command契約](./build/commands.md#ond-link)による。\
-通常startupはProgramMetadata.initializersの順にinitializerを呼び、最後にprogram.entry_symbolを呼ぶ。\
-この呼出し順はObject入力順とは別の列であり、[言語の初期化順](./language/v1/execution.md#初期化とエントリ)を保持する。\
-test wrapperの呼出し順と終了経路は[test起動入口](./build/test-build.md#buildと起動入口)に従う。
+各Object内のsection配置とsymbolの所属は本章の規則に従い、startup、runtime helperの供給は[command契約](./build/commands.md#ond-link)による。\
+startupはProgramMetadata.initializersの順にinitializerを呼び、最後にprogram.entry_symbolを呼ぶ。\
+この呼出し順はObject入力順とは別の列であり、[言語の初期化順](./language/v1/execution.md#初期化とエントリ)を保持する。
 
 ## relocationと中継slot
 <!-- ond-spec-id: linking/relocation-slots -->

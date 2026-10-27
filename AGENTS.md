@@ -100,7 +100,7 @@ case固有の入力・期待値と一般規則の再掲を区別し、各caseを
 ### Sourceとの管理境界
 <!-- ond-spec-id: decisions/specification-source-boundaries -->
 
-- 外部言語、target、ABI、成果物、linking、CLI、cache、debug、test buildの契約は`specs/ond/`へ置く
+- 外部言語、target、ABI、成果物、linking、CLI、cache、debugの契約は`specs/ond/`へ置く
 - Rust型、内部AST/HIR/MIR、phase、helper、validator構造、命令選択・探索方式はsourceで管理する
 - 実装検査IDは本書の追跡表でscopeと対応規範を記録し、別実装の外部適合条件を定義する根拠にしない
 
