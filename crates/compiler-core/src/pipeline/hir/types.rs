@@ -101,7 +101,6 @@ pub(super) struct TypePackage {
     pub(super) id: PackageId,
     pub(super) logical_path: String,
     pub(super) imports: BTreeMap<FileId, BTreeMap<String, PackageId>>,
-    test_files: BTreeSet<FileId>,
     pub(super) declarations: BTreeMap<String, TypeDeclaration>,
     pub(super) constants: BTreeMap<String, (Option<ast::Type>, ast::Expr)>,
     pub(super) values: BTreeSet<String>,
@@ -254,14 +253,6 @@ pub(super) fn collect_type_universe(
                 id: source.id,
                 logical_path: package.logical_path.clone(),
                 imports,
-                test_files: source
-                    .files
-                    .iter()
-                    .copied()
-                    .filter(|file| {
-                        crate::project::is_test_source(loaded.sources.file(*file).path())
-                    })
-                    .collect(),
                 declarations,
                 constants,
                 values,
@@ -452,7 +443,7 @@ fn resolve_applied_type(
     if !owner.visible_from(declaration.span, base.span) {
         diagnostics.push(Diagnostic::error(
             base.span,
-            owner.visibility_error("type", name, declaration.span, base.span),
+            owner.visibility_error("type", name),
         ));
         return None;
     }
@@ -729,7 +720,7 @@ pub(super) fn resolve_type(
                 if !owner.visible_from(declaration.span, path.span) {
                     diagnostics.push(Diagnostic::error(
                         path.span,
-                        owner.visibility_error("type", name, declaration.span, path.span),
+                        owner.visibility_error("type", name),
                     ));
                     return None;
                 }
@@ -777,12 +768,7 @@ pub(super) fn resolve_type(
                     if !target.visible_from(target.declarations[name].span, path.span) {
                         diagnostics.push(Diagnostic::error(
                             path.span,
-                            target.visibility_error(
-                                "type",
-                                name,
-                                target.declarations[name].span,
-                                path.span,
-                            ),
+                            target.visibility_error("type", name),
                         ));
                         return None;
                     }

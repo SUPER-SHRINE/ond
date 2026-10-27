@@ -8,7 +8,6 @@
 - [Build and package contracts](./ond/build/packages.md)、[ツールの責務とSDK用語](./ond/build/packages.md#責務)
 - [Project role設定と選択](./ond/build/roles.md)、[Role構文と可視性](./ond/language/v1/roles.md)
 - [Compile and link commands](./ond/build/commands.md)
-- [Test build](./ond/build/test-build.md)
 - [Build cache](./ond/build/cache.md)
 - [Debug metadata v1](./ond/debug-metadata/v1.md)
 - [Conformance requirements](./ond/conformance/requirements.md)

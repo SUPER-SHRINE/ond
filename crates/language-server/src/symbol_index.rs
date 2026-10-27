@@ -41,17 +41,7 @@ impl ProjectSymbolIndex {
                 let symbols = package
                     .files
                     .iter()
-                    .flat_map(|file| {
-                        let test = compiler::project::is_test_source(
-                            loaded.sources.file(file.file_id).path(),
-                        );
-                        file.decls.iter().flat_map(indexed_symbols_for_decl).map(
-                            move |mut symbol| {
-                                symbol.exported &= !test;
-                                symbol
-                            },
-                        )
-                    })
+                    .flat_map(|file| file.decls.iter().flat_map(indexed_symbols_for_decl))
                     .collect();
                 (package.logical_path.clone(), symbols)
             })
@@ -152,40 +142,6 @@ impl ProjectSymbolIndex {
             .collect();
         let ast = ast::Project { packages };
         Self::with_file_state(loaded, ast, last_good_sources, failed_files)
-    }
-
-    pub(crate) fn for_source(mut self, path: &std::path::Path) -> Self {
-        let selected = compiler::project::is_test_source(path)
-            .then(|| {
-                self.ast
-                    .packages
-                    .iter()
-                    .find(|package| {
-                        package.files.iter().any(|file| {
-                            crate::util::same_path(
-                                self.loaded.sources.file(file.file_id).path(),
-                                path,
-                            )
-                        })
-                    })
-                    .map(|p| p.logical_path.clone())
-            })
-            .flatten();
-        for package in &mut self.ast.packages {
-            if selected.as_ref() != Some(&package.logical_path) {
-                package.files.retain(|file| {
-                    !compiler::project::is_test_source(
-                        self.loaded.sources.file(file.file_id).path(),
-                    )
-                });
-            }
-        }
-        Self::with_file_state(
-            self.loaded,
-            self.ast,
-            self.last_good_sources,
-            self.failed_files,
-        )
     }
 
     pub(crate) fn for_position(
@@ -339,10 +295,10 @@ fn is_exported(name: &str) -> bool {
 }
 
 #[cfg(test)]
-mod test_build_tests {
+mod source_filename_tests {
     use super::*;
     #[test]
-    fn test_build_index_keeps_same_package_private_context_and_hides_test_exports() {
+    fn source_index_keeps_package_private_context_and_exports_public_declarations() {
         let root = std::path::Path::new("test-build-index").to_path_buf();
         let mut sources = SourceDb::default();
         let main = sources.add_file(
@@ -378,14 +334,14 @@ mod test_build_tests {
             ],
         };
         let index = ProjectSymbolIndex::refresh(loaded, None);
-        let normal = index.clone().for_source(&root.join("main.ond"));
+        let normal = index.clone();
         assert!(
             normal
                 .package_symbols(".")
                 .iter()
-                .all(|s| s.name != "Helper" && s.name != "TestLocal")
+                .any(|s| s.name == "Helper" && s.exported)
         );
-        let test = index.for_source(&root.join("main_test.ond"));
+        let test = index;
         assert!(
             test.package_symbols(".")
                 .iter()
@@ -394,8 +350,12 @@ mod test_build_tests {
         assert!(
             test.package_symbols(".")
                 .iter()
-                .any(|s| s.name == "Helper" && !s.exported)
+                .any(|s| s.name == "Helper" && s.exported)
         );
-        assert!(test.package_symbols("other").is_empty());
+        assert!(
+            test.package_symbols("other")
+                .iter()
+                .any(|s| s.name == "TestOther" && s.exported)
+        );
     }
 }

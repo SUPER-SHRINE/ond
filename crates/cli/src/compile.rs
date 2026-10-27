@@ -53,12 +53,7 @@ pub fn compile(request: CompileRequest, compiler_id: &str) -> DriverResult<Compi
     fs::create_dir_all(&directory).map_err(|e| vec![e.to_string()])?;
     let directory = directory.canonicalize().map_err(|e| vec![e.to_string()])?;
     let manifest_bytes = fs::read(&loaded.manifest_path).map_err(|e| vec![e.to_string()])?;
-    let context = (
-        &request.contract,
-        compiler_id,
-        cache::hash(&manifest_bytes),
-        request.test,
-    );
+    let context = (&request.contract, compiler_id, cache::hash(&manifest_bytes));
     let project_sources: BTreeMap<_, _> = loaded
         .packages
         .iter()
@@ -152,15 +147,6 @@ pub fn compile(request: CompileRequest, compiler_id: &str) -> DriverResult<Compi
                     && artifact.build_id == id
                     && artifact.dependencies == deps
                     && artifact.imports == graph.imports[path]
-                    && artifact.tests
-                        == request.test.then(|| ond_protocol::TestMetadata {
-                            cases: graph
-                                .tests
-                                .iter()
-                                .filter(|case| case.package == *path)
-                                .cloned()
-                                .collect(),
-                        })
             })
         {
             references.insert(path.clone(), reference);
@@ -196,14 +182,6 @@ pub fn compile(request: CompileRequest, compiler_id: &str) -> DriverResult<Compi
             artifacts.insert(
                 path.clone(),
                 PackageArtifact {
-                    tests: request.test.then(|| ond_protocol::TestMetadata {
-                        cases: graph
-                            .tests
-                            .iter()
-                            .filter(|case| case.package == path)
-                            .cloned()
-                            .collect(),
-                    }),
                     interface: ond_compiler_core::export::package(&frontend.hir, &path)
                         .map_err(|e| vec![e])?,
                     contract: request.contract.clone(),
@@ -253,9 +231,6 @@ pub fn compile(request: CompileRequest, compiler_id: &str) -> DriverResult<Compi
         .cloned()
         .collect();
     let manifest = CompilationManifest {
-        tests: request.test.then(|| ond_protocol::TestMetadata {
-            cases: graph.tests.clone(),
-        }),
         contract: request.contract,
         compiler_id: compiler_id.into(),
         packages: references.into_values().collect(),
@@ -290,7 +265,7 @@ fn legacy_labels(result: &mut CompileResult, root: Option<&str>) {
 }
 
 fn package_id(
-    context: &(&ond_protocol::Contract, &str, String, bool),
+    context: &(&ond_protocol::Contract, &str, String),
     path: &str,
     sources: &[(String, String)],
     deps: &BTreeMap<String, String>,
@@ -301,7 +276,7 @@ fn package_id(
         .iter()
         .map(|(path, content_hash)| serde_json::json!({"path":path,"content_hash":content_hash}))
         .collect::<Vec<_>>();
-    let mut input = serde_json::json!({"contract":context.0,"compiler_id":context.1,"manifest_hash":context.2,"mode":if context.3 {"test"} else {"normal"},"package":path,"sources":sources,"dependencies":deps,"generation":generation});
+    let mut input = serde_json::json!({"contract":context.0,"compiler_id":context.1,"manifest_hash":context.2,"package":path,"sources":sources,"dependencies":deps,"generation":generation});
     if let Some(roles) = roles {
         input["roles"] = serde_json::to_value(roles).map_err(|error| vec![error.to_string()])?;
     }
@@ -311,7 +286,7 @@ fn package_id(
 fn reuse_generation(
     cached: &GenerationCache,
     directory: &std::path::Path,
-    context: &(&ond_protocol::Contract, &str, String, bool),
+    context: &(&ond_protocol::Contract, &str, String),
     sources: &BTreeMap<String, Vec<(String, String)>>,
     graph: &Graph,
     roles: &BTreeMap<String, Option<ond_compiler_core::roles::RoleConfiguration>>,
@@ -338,15 +313,6 @@ fn reuse_generation(
             || artifact.build_id != id
             || artifact.dependencies != deps
             || artifact.imports != graph.imports[path]
-            || artifact.tests
-                != context.3.then(|| ond_protocol::TestMetadata {
-                    cases: graph
-                        .tests
-                        .iter()
-                        .filter(|case| case.package == *path)
-                        .cloned()
-                        .collect(),
-                })
         {
             return Ok(None);
         }
@@ -367,9 +333,6 @@ fn reuse_generation(
                 .filter_map(|path| artifacts[path].initializer.clone())
                 .collect(),
         },
-        tests: context.3.then(|| ond_protocol::TestMetadata {
-            cases: graph.tests.clone(),
-        }),
     };
     cache::atomic_write(
         &directory.join(format!("project-{}.ondmanifest", cached.key)),
@@ -429,7 +392,7 @@ fn debug_paths(
 fn load_project_cache(
     directory: &std::path::Path,
     key: &str,
-    context: &(&ond_protocol::Contract, &str, String, bool),
+    context: &(&ond_protocol::Contract, &str, String),
     graph: &Graph,
 ) -> Option<CompileResult> {
     let cache: ProjectCache =
@@ -439,10 +402,6 @@ fn load_project_cache(
         || manifest.contract != *context.0
         || manifest.compiler_id != context.1
         || manifest.packages.len() != graph.order.len()
-        || manifest.tests
-            != context.3.then(|| ond_protocol::TestMetadata {
-                cases: graph.tests.clone(),
-            })
         || manifest.program.entry_symbol != "main.main"
     {
         return None;
@@ -469,15 +428,6 @@ fn load_project_cache(
             || artifact.contract != *context.0
             || artifact.package != *path
             || artifact.imports != graph.imports[path]
-            || artifact.tests
-                != context.3.then(|| ond_protocol::TestMetadata {
-                    cases: graph
-                        .tests
-                        .iter()
-                        .filter(|case| case.package == *path)
-                        .cloned()
-                        .collect(),
-                })
         {
             return None;
         }

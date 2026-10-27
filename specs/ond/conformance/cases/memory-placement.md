@@ -8,7 +8,7 @@
 <!-- ond-spec-id: conformance/memory-placement/input -->
 
 Ond Language v1と[固定Kagura profile](../../targets/kagura-v1/README.md#参照するkagura規範)を適用する。\
-manifest、通常build、LinkPlan、fresh RAM/CPU、INPUT/OUTPUT、終了通知と正常終了命令は[Kagura共通実行契約](./kagura-integers.md)に従う。\
+manifest、build、LinkPlan、fresh RAM/CPU、INPUT/OUTPUT、終了通知と正常終了命令は[Kagura共通実行契約](./kagura-integers.md)に従う。\
 依存projectは持たず、`main.ond`は次の全文とする。
 
 ```ond

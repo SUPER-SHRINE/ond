@@ -23,7 +23,7 @@ SourceItemのimport順序とRoleDeclによる展開は[roleの検査規則](./ro
 <!-- ond-spec-id: language/source-and-packages -->
 
 source fileとpackageは次節の構文・名前規則に従う。\
-project manifestとsource探索は[package build](../../build/packages.md)、通常/test sourceの可視性は[test build](../../build/test-build.md)を定義元とする。
+project manifestとsource探索は[package build](../../build/packages.md)を定義元とする。
 
 ## Packageとimport
 <!-- ond-spec-id: syntax/packages-and-imports -->
@@ -34,7 +34,7 @@ project manifestとsource探索は[package build](../../build/packages.md)、通
 - rootで`package main`を宣言したprojectは実行projectとする。実行projectのrootは`main` packageであり、`main.ond`と`func main`を含む
 root直下の全`.ond` fileは`package main`を宣言する。\
 実行projectのroot packageの論理package pathは、そのprojectの`[project].name`を`p`とすると`p`である。\
-この`p`をrootのpackage成果物・公開interface・debug metadata・具体化identity・test metadataの所属に用いる。\
+この`p`をrootのpackage成果物・公開interface・debug metadata・具体化identityの所属に用いる。\
 通常の非generic関数とglobalのlink symbolのnamespaceは[Link symbol規則](../../artifacts.md#link-symbolの名前と所属)に従う。\
 library projectはrootの`main.ond`と`func main`がなくても編集・依存として利用できる。\
 library rootにsourceがある場合、そのpackage名はproject名と一致する。
@@ -48,8 +48,6 @@ import pathの先頭にproject名がない入力はcompile errorとなる\
   - 構文は本章のImportDeclに従う
 - alias を省略した import は、その package の宣言名で参照する
 - package間のimportが循環する入力はcompile errorとなる
-
-`test.ond`と`_test.ond`のsource収集と通常/test文脈の分離は、[テストビルド仕様](../../build/test-build.md)で扱う。
 
 package-qualified name は `packageName.ExportedName` とする。
 

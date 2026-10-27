@@ -1,7 +1,7 @@
 # Debug metadataとfaultの契約case
 <!-- ond-spec-id: conformance/cases/debug-fault-contracts -->
 
-適用版はOnd v1、Kagura v1、artifact Contract revision 6とし、[debug schemaと操作](../../debug-metadata/v1.md)、[target fault表](../../targets/kagura-v1/machine.md#faultと観測結果)から期待を導く。\
+適用版はOnd v1、Kagura v1、artifact Contract revision 7とし、[debug schemaと操作](../../debug-metadata/v1.md)、[target fault表](../../targets/kagura-v1/machine.md#faultと観測結果)から期待を導く。\
 各操作は独立した入力とstateで行い、検査対象を下記のschema、区間、lookup、復元、CPU faultの各操作で指定する。
 
 ## Debug共有入力

@@ -75,9 +75,6 @@ loaderは[責務の定義](../../build/packages.md#責務)に従ってsectionの
 entryは[言語の初期化順序](../../language/v1/execution.md#初期化とエントリ)に従ってinitializerを呼び、最後にmainを呼ぶ。\
 mainから戻った際の制御経路は[link.exit](../../build/packages.md#compileとlink設定)に従う。
 
-上記は通常buildのstartup契約である。\
-test buildでもloaderによるload・zero初期化・SP設定の境界を保ち、詳細は[テストビルド仕様](../../build/test-build.md)に従う。
-
 ## 5. Data Layout
 <!-- ond-spec-id: targets/kagura-v1/data-layout -->
 

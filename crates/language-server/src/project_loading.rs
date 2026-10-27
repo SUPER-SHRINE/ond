@@ -21,7 +21,6 @@ pub(super) fn load_project(
                     .extension()
                     .and_then(|extension| extension.to_str())
                     == Some("ond")
-                && !compiler::project::is_test_source(&entry.path())
         });
     let self_sources =
         ond_cli::resolve_project_sources(root).map_err(|diagnostics| diagnostics.join("\n"))?;
@@ -65,7 +64,6 @@ pub(super) fn load_project(
         &BTreeMap::new(),
         &libraries,
         compiler::RoleLoadOptions {
-            test: true,
             allow_incomplete: true,
             dependencies: resolved.role_inputs,
             ..Default::default()

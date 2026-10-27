@@ -14,7 +14,7 @@ impl Drop for Fixture {
         let _ = fs::remove_dir_all(&self.0);
     }
 }
-fn objects(test: bool, jump: bool) -> Vec<Object> {
+fn objects(jump: bool) -> Vec<Object> {
     static N: AtomicU64 = AtomicU64::new(0);
     let f = Fixture(std::env::temp_dir().join(format!(
         "ond-exec-{}-{}",
@@ -24,61 +24,16 @@ fn objects(test: bool, jump: bool) -> Vec<Object> {
     fs::create_dir_all(&f.0).unwrap();
     fs::write(f.0.join("ond.toml"), "[project]\nname='app'\n").unwrap();
     fs::write(f.0.join("main.ond"),"package main\nvar G:u32=7\nfunc f()->u32{return G}\nfunc main(){var p=&G;var out=536871168 as u32 as *u32;out[0]=f()+*p;out[1]=p as u32}\nfunc TestOne(){*(536871168 as u32 as *u32)=G+3}\nfunc TestTwo(){*(536871168 as u32 as *u32)=G+1}\n").unwrap();
-    let (project, packages) = if test {
-        fs::write(
-            f.0.join("main.ond"),
-            "package main\nvar Counter:u32=3\nfunc main(){}\n",
-        )
-        .unwrap();
-        fs::write(f.0.join("main_test.ond"),"package main\nimport \"app/dep\"\nfunc TestOne(){*(536871168 as u32 as *u32)=Counter+dep.Value()}\nfunc TestTwo(){*(536871168 as u32 as *u32)=Counter+1}\n").unwrap();
-        fs::create_dir_all(f.0.join("dep")).unwrap();
-        fs::write(
-            f.0.join("dep/dep.ond"),
-            "package dep\nvar Seed:u32=7\nfunc Value()->u32{return Seed}\n",
-        )
-        .unwrap();
-        let loaded = ond_compiler_core::load_project_with_test_inputs(
-            &f.0,
-            &Default::default(),
-            &[],
-            &Default::default(),
-            &Default::default(),
-        )
-        .unwrap();
-        let project = ond_compiler_core::compile_loaded_project(loaded)
-            .unwrap()
-            .mir;
-        let packages = crate::mir_backend::codegen_objects(&project).unwrap();
-        (project, packages)
-    } else {
-        let compilation = crate::pipeline::compile_project(&f.0).unwrap();
-        (compilation.mir, compilation.objects)
-    };
+    let compilation = crate::pipeline::compile_project(&f.0).unwrap();
+    let (project, packages) = (compilation.mir, compilation.objects);
     let metadata = crate::program::ProgramMetadata::from_mir(&project).unwrap();
     let end = if jump {
         crate::kagura_encoding::absolute_thunk(EXIT).to_vec()
     } else {
         vec![crate::kagura_encoding::word(12, 0, 0, 0, -1)]
     };
-    let startup = if test {
-        crate::program::test_startup(
-            &[
-                (
-                    "case1".into(),
-                    metadata.initializers.clone(),
-                    "main.TestOne".into(),
-                ),
-                (
-                    "case2".into(),
-                    metadata.initializers.clone(),
-                    "main.TestTwo".into(),
-                ),
-            ],
-            &end,
-        )
-    } else {
-        crate::program::program_startup(&metadata.initializers, &metadata.entry_symbol, &end)
-    };
+    let startup =
+        crate::program::program_startup(&metadata.initializers, &metadata.entry_symbol, &end);
     let mut objects = vec![startup];
     objects.extend(packages);
     crate::mir_backend::runtime::supply(objects).unwrap()
@@ -207,7 +162,7 @@ fn machine(
 fn bin_03_reset_and_external_loaders_execute_final_addresses() {
     for mode in 0..3 {
         for jump in [false, true] {
-            let objects = objects(false, jump);
+            let objects = objects(jump);
             let (_output, wire, bytes) = linked(&objects, mode);
             let (mut cpu, mut bus) = machine(&wire, &bytes, mode, None);
             for _ in 0..200000 {
@@ -240,50 +195,6 @@ fn bin_03_reset_and_external_loaders_execute_final_addresses() {
         }
     }
 }
-#[test]
-fn test_01_reset_guard_and_independent_wrappers() {
-    for mode in 0..3 {
-        for jump in [false, true] {
-            let objects = objects(true, jump);
-            let (output, wire, bytes) = linked(&objects, mode);
-            let (mut cpu, mut bus) = machine(&wire, &bytes, mode, None);
-            let mut trapped = false;
-            for _ in 0..200000 {
-                if cpu.step(&mut bus).is_err() {
-                    trapped = true;
-                    break;
-                }
-            }
-            assert!(trapped);
-            assert_eq!(bus.read32(OUTPUT).unwrap(), 0xdeadbeef);
-            for (entry, expected) in [("case1", 10), ("case2", 4)] {
-                let (mut cpu, mut bus) =
-                    machine(&wire, &bytes, mode, Some(output.image.symbols[entry]));
-                for _ in 0..200000 {
-                    cpu.step(&mut bus).unwrap();
-                    if bus.read32(OUTPUT).unwrap() != 0xdeadbeef && (!jump || cpu.pc() == EXIT) {
-                        break;
-                    }
-                }
-                assert_eq!(bus.read32(OUTPUT).unwrap(), expected);
-                if jump {
-                    assert_eq!(cpu.pc(), EXIT)
-                } else {
-                    for _ in 0..1000 {
-                        cpu.step(&mut bus).unwrap();
-                    }
-                    let pc = cpu.pc();
-                    for _ in 0..10 {
-                        cpu.step(&mut bus).unwrap();
-                        assert_eq!(cpu.pc(), pc);
-                    }
-                }
-                assert_eq!(cpu.reg(14), wire.initial_sp);
-            }
-        }
-    }
-}
-
 #[test]
 fn bin_02_reservations_alignment_zero_symbols_and_exact_capacity() {
     use crate::ir::object::{Section, Symbol, SymbolBinding, SymbolKind};

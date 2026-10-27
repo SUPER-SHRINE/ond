@@ -11,13 +11,14 @@ compilerはprojectのsourceを検査してpackage成果物を生成し、linker�
 | caller（呼出側） | 利用者またはビルドツールとしてcompiler/linkerを呼び出し、入力、配置値、正常終了後の制御経路を指定する |
 | build tool（ビルドツール） | compiler/linkerを呼び出す。該当機能を提供する場合は追加sourceの生成、asset discovery、resource IDの管理を行う |
 | loader（ローダー） | 実行可能バイナリの[ロード契約](../artifacts.md#ロード完了時の状態)を成立させてentryへ制御を渡す |
-| 実行ツール | 実行環境側の方針に従ってprogramやtest入口を実行し、観測結果を扱う |
+| 実行ツール | 実行環境側の方針に従ってprogramを実行し、観測結果を扱う |
 | 配布ツール | 実行可能バイナリとassetsを配布形式またはROMへまとめる |
 | 実行環境 | 実機またはVMとしてmemory map、device、正常終了後の制御経路などを構成する |
 
 SDK（Software Development Kit）は、特定の実行環境向けにライブラリ・ツール・文書をまとめた開発キットである。\
 各SDKが含める機能は、そのkitの文書が定める。\
 上記の役割は同じtoolが複数を兼ねられる。\
+テスト対象の選定・自動発見、起動用source・metadata・sidecarの生成、実行、合否判定と結果報告の方針は、外部toolとuser codeが定める。\
 OndはCLI/APIから直接利用できる。\
 sourceのpackage/import/公開名は[言語規則](../language/v1/names-and-scopes.md)、成果物fieldは[artifact契約](../artifacts.md)を定義元とする。
 
@@ -26,7 +27,7 @@ sourceのpackage/import/公開名は[言語規則](../language/v1/names-and-scop
 
 `ond.toml`があるdirectoryをproject rootとし、全projectが`[project].name`へOndの有効なidentifierを宣言する。\
 実行projectのroot packageとentryは[言語規則](../language/v1/execution.md#初期化とエントリ)に従う。\
-library rootのpackage構成は[package規則](../language/v1/names-and-scopes.md#packageとimport)に従い、libraryの編集・依存利用とtest compileはこのpackageを扱う。
+library rootのpackage構成は[package規則](../language/v1/names-and-scopes.md#packageとimport)に従い、libraryの編集・依存利用はこのpackageを扱う。
 
 role未指定の構成、省略可能な`[roles]`による追加role設定、`[project].final`、projectごとの構成選択と依存境界は[project role契約](./roles.md)に従う。
 
@@ -50,18 +51,16 @@ Git依存は[Git依存lock v2](#git依存lock-v2)の規則で固定し、依存�
 ### compileとlink設定
 <!-- ond-spec-id: build/compile-and-link-configuration -->
 
-project rootの`ond.toml`は、compileの保存先と[通常/test buildの実行可能バイナリ](../artifacts.md#実行可能バイナリ)の配置・起動・終了設定を次のtableで表す。\
+project rootの`ond.toml`は、compileの保存先と[実行可能バイナリ](../artifacts.md#実行可能バイナリ)の配置・起動・終了設定を次のtableで表す。\
 `[compile]`は省略でき、`[link]`とその必須tableは実行可能バイナリの生成時に必要となる。\
 compile単体では`[link]`を要求しない。\
 設定を読む対象は操作対象のroot projectであり、依存projectのcompile/link設定を継承しない。
 
 | Table | Key | 型・値 | 必須・省略時の値 |
 | --- | --- | --- | --- |
-| compile | output | 非空string。通常compileのCompilationManifest保存先 | 省略時`target/build.ondbuild` |
-| compile | test-output | 非空string。test compileのCompilationManifest保存先 | 省略時`target/test.ondbuild` |
+| compile | output | 非空string。compileのCompilationManifest保存先 | 省略時`target/build.ondbuild` |
 | compile | cache-dir | 非空string。package `.ondpkg`保存directory | 省略時`target/ond-cache` |
-| link | output | 非空string。通常buildの実行可能バイナリ保存先 | 省略時`target/a.bin` |
-| link | test-output | 非空string。test buildの実行可能バイナリ保存先 | 省略時`target/test.bin` |
+| link | output | 非空string。実行可能バイナリ保存先 | 省略時`target/a.bin` |
 | link | startup | string。`'self'`または`'external'` | 必須 |
 | link | stack-size | integer。byte単位のstack予約量 | 必須 |
 | link.rom | base | integer。ROMの先頭byte address | tableを置く場合は必須 |
@@ -80,12 +79,12 @@ ROM sizeとRAM sizeは正とし、指定領域の範囲端はu32範囲内、ROM�
 ROMのbaseと範囲端は4-byte alignedとする。\
 数値計算は数学的整数で行い、overflow、領域重複、容量不足はlink errorとなる。
 
-modeがloopの場合、通常buildの`main`またはtest wrapperの対象functionから正常に戻った後の制御は、その終了処理内で反復する。\
+modeがloopの場合、`main`から正常に戻った後の制御は、その終了処理内で反復する。\
 modeがjumpの場合は、同じ正常return後、addressで指定した4-byte alignedな絶対addressへ制御を移す。\
 終了先の実行可能性とその後の動作は実行環境が定める。
 
 設定内の相対pathは、その`ond.toml`の親directoryを基準に解決する。\
-project/inputの選択、`--test`によるcompile対象の選択、`-v`による表示は操作時の入力とし、`-o`による明示出力先は対応するoutput設定へ一時的に優先する。\
+project/inputの選択、`-v`による表示は操作時の入力とし、`-o`による明示出力先は対応するoutput設定へ一時的に優先する。\
 この一時指定は`ond.toml`を書き換えず、配置・起動・終了の永続値は上表から得る。\
 command構文、設定元と入力manifestの選択は[コマンド契約](./commands.md)に従う。
 
@@ -120,7 +119,7 @@ lockがある場合は必要な全Git edgeについてowner/name、git、revの�
 ### Source探索境界
 <!-- ond-spec-id: build/source-discovery-boundaries -->
 
-source探索はproject境界とignore設定に従う。\
+source集合は、project境界とignore設定に従って探索した全`.ond` fileとする。\
 `[resolve].ignore`はmanifest directoryからの相対directory列であり、既定値は`[".git", ".ond", "target"]`である。\
 absolute path、`..`、globを含むignore入力はerrorとなる。\
 `.ond/`は常にsource探索から除き、子directoryの別のond.tomlで探索を区切る。\
@@ -134,10 +133,9 @@ absolute path、`..`、globを含むignore入力はerrorとなる。\
 1 packageにつき1個のUTF-8 JSON `.ondpkg`を生成し、CompilationManifestが各fileを参照する。\
 section dataはBase64文字列、他のfieldは通常のJSONである。\
 依存sourceを含むproject全体で[role検査範囲](../language/v1/roles.md#検査範囲とimport)に従って型と名前を検査し、具体化したgeneric宣言も通常の型・関数成果物に含める。\
-公開interfaceは成果物local型番号とnominal名を使い、[interface schema](../artifacts.md#公開interface)に従う。\
-通常/test compileでsource集合とcache entryを区別する。
+公開interfaceは成果物local型番号とnominal名を使い、[interface schema](../artifacts.md#公開interface)に従う。
 
-cache再利用と`frontend_ran`の意味は[cache契約](./cache.md)、実行入口とtest metadataは[test build](./test-build.md)に従う。
+cache再利用と`frontend_ran`の意味は[cache契約](./cache.md)、実行入口は[初期化とエントリ](../language/v1/execution.md#初期化とエントリ)に従う。
 
 ## Package成果物・独立compiler契約
 <!-- ond-spec-id: build/package-artifact-contract -->

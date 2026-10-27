@@ -1,11 +1,10 @@
 use std::{ffi::OsString, path::PathBuf};
-pub const HELP: &str = "Usage:\n  ond compile [PROJECT] [--test] [--role NAME] [-o FILE|-] [-v]\n  ond link [FILE|-] [--project DIR] [-o FILE|-]\n  ond help\nSettings are read from the selected project's ond.toml. Diagnostics go to stderr.\nRelative command-line paths are relative to the current directory.";
+pub const HELP: &str = "Usage:\n  ond compile [PROJECT] [--role NAME] [-o FILE|-] [-v]\n  ond link [FILE|-] [--project DIR] [-o FILE|-]\n  ond help\nSettings are read from the selected project's ond.toml. Diagnostics go to stderr.\nRelative command-line paths are relative to the current directory.";
 pub enum Command {
     Compile {
         root: PathBuf,
         output: Option<PathBuf>,
         verbose: bool,
-        test: bool,
         role: Option<String>,
     },
     Link {
@@ -30,7 +29,7 @@ pub fn parse(args: Vec<OsString>) -> Result<Command, String> {
         return Err(format!("unknown command: {command}"));
     }
     let (mut position, mut output, mut project) = (None, None, None);
-    let (mut verbose, mut test, mut positional) = (false, false, false);
+    let (mut verbose, mut positional) = (false, false);
     let mut role = None;
     let mut iter = args[1..].iter();
     while let Some(arg) = iter.next() {
@@ -54,12 +53,6 @@ pub fn parse(args: Vec<OsString>) -> Result<Command, String> {
                         .filter(|value| !value.starts_with('-'))
                         .ok_or("missing value for --role")?;
                     role = Some(value.to_string());
-                }
-                "--test" if command == "compile" => {
-                    if test {
-                        return Err("duplicate option: --test".into());
-                    }
-                    test = true;
                 }
                 "-v" if command == "compile" => {
                     if verbose {
@@ -100,7 +93,6 @@ pub fn parse(args: Vec<OsString>) -> Result<Command, String> {
             root: position.unwrap_or_else(|| ".".into()),
             output,
             verbose,
-            test,
             role,
         })
     } else {

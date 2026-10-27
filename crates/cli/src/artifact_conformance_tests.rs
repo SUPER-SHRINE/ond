@@ -278,7 +278,7 @@ fn art01_writer_sparse_order() {
         i.exports
     );
 }
-const ARTIFACT_A: &str = r###"{"build_id":"1111111111111111111111111111111111111111111111111111111111111111","compiler_id":"0000000000000000000000000000000000000000000000000000000000000000","contract":{"abi":"ond-kagura-v1","revision":6,"target":"kagura-v1"},"debug":{"functions":[],"package":"sample","ranges":[]},"dependencies":{},"imports":[],"initializer":null,"interface":{"exports":{},"package":"sample","types":[]},"object":{"name":"diagnostic","relocations":[],"sections":[],"symbols":[]},"package":"sample"}"###;
+const ARTIFACT_A: &str = r###"{"build_id":"1111111111111111111111111111111111111111111111111111111111111111","compiler_id":"0000000000000000000000000000000000000000000000000000000000000000","contract":{"abi":"ond-kagura-v1","revision":7,"target":"kagura-v1"},"debug":{"functions":[],"package":"sample","ranges":[]},"dependencies":{},"imports":[],"initializer":null,"interface":{"exports":{},"package":"sample","types":[]},"object":{"name":"diagnostic","relocations":[],"sections":[],"symbols":[]},"package":"sample"}"###;
 fn artifact_mutation(
     change: fn(&mut serde_json::Value),
 ) -> Result<PackageArtifact, serde_json::Error> {
@@ -308,17 +308,24 @@ fn art01_unknown_nested() {
     );
 }
 #[test]
-fn art01_tests_null() {
-    assert!(
-        artifact_mutation(|a| a["tests"] = serde_json::Value::Null).is_err(),
-        "ART-01.tests-null"
-    );
+fn closed_artifact_and_manifest_reject_removed_tests_field() {
+    for tests in [
+        serde_json::Value::Null,
+        serde_json::json!({"cases": []}),
+        serde_json::json!({"cases":[{"package":"sample","name":"TestValue","symbol":"sample.TestValue"}]}),
+    ] {
+        let mut artifact: serde_json::Value = serde_json::from_str(ARTIFACT_A).unwrap();
+        artifact["tests"] = tests.clone();
+        assert!(serde_json::from_value::<PackageArtifact>(artifact).is_err());
+        let manifest = serde_json::json!({"contract":{"revision":7,"target":"kagura-v1","abi":"ond-kagura-v1"},"compiler_id":ZERO_COMPILER,"packages":[],"program":{"entry_symbol":"main.main","initializers":[]},"tests":tests});
+        assert!(serde_json::from_value::<ond_protocol::CompilationManifest>(manifest).is_err());
+    }
 }
 #[test]
 fn art01_duplicate_decoded_key() {
     assert!(
         serde_json::from_str::<Contract>(
-            r#"{"revision":6,"\u0072evision":6,"target":"kagura-v1","abi":"ond-kagura-v1"}"#
+            r#"{"revision":7,"\u0072evision":7,"target":"kagura-v1","abi":"ond-kagura-v1"}"#
         )
         .is_err(),
         "ART-01.duplicate-decoded-key"
@@ -389,25 +396,28 @@ fn art01_base64_reject() {
     }
 }
 #[test]
-fn contract_revision_six() {
+fn contract_revision_seven() {
     let expected = Contract {
-        revision: 6,
+        revision: 7,
         target: "kagura-v1".into(),
         abi: "ond-kagura-v1".into(),
     };
     assert_eq!(Contract::default(), expected);
     expected.validate().unwrap();
+    let mut legacy = expected;
+    legacy.revision = 6;
+    assert!(legacy.validate().is_err(), "明示入力の旧revisionは拒否する");
 }
 #[test]
 fn hash01_public_struct_canonical_writer() {
     let c = Contract {
-        revision: 6,
+        revision: 7,
         target: "kagura-v1".into(),
         abi: "ond-kagura-v1".into(),
     };
     assert_eq!(
         cache::encode(&c).unwrap(),
-        br#"{"abi":"ond-kagura-v1","revision":6,"target":"kagura-v1"}"#
+        br#"{"abi":"ond-kagura-v1","revision":7,"target":"kagura-v1"}"#
     );
 }
 #[test]
@@ -415,11 +425,11 @@ fn hash01_file_bytes() {
     assert_eq!(ARTIFACT_A.len(), 486);
     assert_eq!(
         cache::hash(ARTIFACT_A.as_bytes()),
-        "da820c7d7eb015cba9c5f5d15858d6e6760316a977b9d4c8a1eb370170e5294a"
+        "46abc29ca81801ce7a3bfcded39db1424d1d5ba7f53490384b8dcbc2dcb005f2"
     );
     assert_eq!(
         cache::hash(format!("{ARTIFACT_A}\n").as_bytes()),
-        "3304a08fe5acfa8a103ff632a16fe71e1c8f9ad59e7c10203a19e402a7239ee6"
+        "da4b0eb92e4e1a6c9e3c5b4337f602c46c4902acb131b5f41db6ddc12ad66ea3"
     );
 }
 #[test]
@@ -465,13 +475,21 @@ fn hash01_scalar_key_order() {
         "a712a1804e0980b85da1fbebfb21070144773d51ac011435af287d757b3e7dc5"
     );
 }
-fn hash_package(label: &str, source: &str, expected: &str) {
+fn hash_package(label: &str, source: &str, expected: &str, length: usize) {
     let f = Fixture::new(label);
     fs::write(f.0.join("ond.toml"), "[project]\nname = \"main\"\n").unwrap();
     fs::write(f.0.join("main.ond"), source).unwrap();
     let mut request = f.request();
-    request.contract.revision = 6;
-    let result = compile(request, ZERO_COMPILER).expect("HASH-01 revision 6 compile precondition");
+    let loaded = crate::input::load(&request).unwrap();
+    let (_, generation) =
+        ond_compiler_core::compile_loaded_project_with_generation(loaded).unwrap();
+    let generation: serde_json::Value = serde_json::from_str(&generation.packages["main"]).unwrap();
+    let input = serde_json::json!({"compiler_id":ZERO_COMPILER,"contract":{"abi":"ond-kagura-v1","revision":7,"target":"kagura-v1"},"dependencies":{},"generation":generation,"manifest_hash":cache::hash(b"[project]\nname = \"main\"\n"),"package":"main","sources":[{"content_hash":cache::hash(source.as_bytes()),"path":"main.ond"}]});
+    let bytes = cache::encode(&input).unwrap();
+    assert_eq!(bytes.len(), length, "{label}");
+    assert_eq!(cache::hash(&bytes), expected, "{label}: canonical bytes");
+    request.contract.revision = 7;
+    let result = compile(request, ZERO_COMPILER).expect("HASH-01 revision 7 compile precondition");
     assert_eq!(result.manifest.packages.len(), 1);
     assert_eq!(result.manifest.packages[0].build_id, expected, "{label}");
 }
@@ -480,7 +498,8 @@ fn hash01_package_empty() {
     hash_package(
         "HASH-01.package-empty",
         "package main\nfunc main(){}\n",
-        "9548bc5baca3e9d935d46bfc1670ec4a7a444e5085ea6685a69ba54211149113",
+        "6ab6bd11899fd905bb33b9127f979f963d96e035338d3b3b7ba37ac57d65752a",
+        540,
     );
 }
 #[test]
@@ -488,7 +507,8 @@ fn hash01_package_unused_body() {
     hash_package(
         "HASH-01.package-unused-body",
         "package main\nfunc add(x:i32)->i32{return x+1}\nfunc main(){}\n",
-        "1b05830c15bef6a316a98419ef2df018dc25ccc4d8c0da9cc003cb59ddf46430",
+        "4e6ba067bcfba3520df5fb9a94eea4847c2e3cddd5b13bd2b4a1dea52f78de00",
+        756,
     );
 }
 
@@ -552,65 +572,6 @@ fn pkg01_root_logical_normal() {
         ),
         (vec!["p", "p", "p", "p"], true, vec![Some("p")]),
         "PKG-01.root-logical-normal: logical fields, nominal identity, private owner"
-    );
-}
-#[test]
-fn pkg01_root_logical_test() {
-    let f = root_project("PKG-01.root-logical-test");
-    let mut request = f.request();
-    request.test = true;
-    let result = compile(request, &crate::compiler_identity().unwrap()).unwrap();
-    let reference = &result.manifest.packages[0];
-    let artifact = cache::read_artifact(reference).unwrap();
-    let actual = result
-        .manifest
-        .tests
-        .as_ref()
-        .unwrap()
-        .cases
-        .iter()
-        .map(|c| (c.package.clone(), c.name.clone(), c.symbol.clone()))
-        .collect::<Vec<_>>();
-    let packages = [
-        reference.package.clone(),
-        artifact.package.clone(),
-        artifact.interface.package.clone(),
-        artifact.debug.package.clone(),
-    ];
-    let linked = crate::link_with_debug(crate::LinkRequest {
-        manifest: result.manifest,
-        main_return_address: 0x10000000,
-        layout: ond_protocol::link::LinkPlan {
-            read_only: None,
-            memory_base: 0x10002000,
-            memory_size: 0x03ffe000,
-            stack_size: 1024 * 1024,
-            entry_symbol: "__ond.entry".into(),
-            heap_base_symbol: "__ond_heap_base".into(),
-            stack_bottom_symbol: "__ond_stack_bottom".into(),
-        },
-    })
-    .unwrap();
-    let entries = linked
-        .tests
-        .unwrap()
-        .cases
-        .into_iter()
-        .map(|c| (c.package, c.name))
-        .collect::<Vec<_>>();
-    assert_eq!(
-        (actual, entries, packages),
-        (
-            vec![("p".into(), "TestRoot".into(), "main.TestRoot".into())],
-            vec![("p".into(), "TestRoot".into())],
-            [
-                "p".to_string(),
-                "p".to_string(),
-                "p".to_string(),
-                "p".to_string()
-            ]
-        ),
-        "PKG-01.root-logical-test: TestCase, sidecar, logical fields"
     );
 }
 fn generic_interface(label: &str) -> Interface {

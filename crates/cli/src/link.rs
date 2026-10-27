@@ -105,10 +105,8 @@ fn link_impl(
         })
         .map(|(path, _)| path.as_str())
         .collect::<Vec<_>>();
-    if application_roots.len() > 1
-        || request.manifest.tests.is_none() && application_roots.len() != 1
-    {
-        return Err(vec!["normal build requires one application root".into()]);
+    if application_roots.len() != 1 {
+        return Err(vec!["build requires one application root".into()]);
     }
     let application_root = application_roots.first().copied();
     let graph = Graph::from_imports_with_root(
@@ -130,47 +128,6 @@ fn link_impl(
             "program startup metadata does not match package graph".into(),
         ]);
     }
-    let mut expected_tests = Vec::new();
-    for artifact in artifacts.values() {
-        if artifact.tests.is_some() != request.manifest.tests.is_some() {
-            return Err(vec![
-                "manifest test metadata does not match package build mode".into(),
-            ]);
-        }
-        if let Some(tests) = &artifact.tests {
-            let mut seen = std::collections::BTreeSet::new();
-            for case in &tests.cases {
-                if case.package != artifact.package
-                    || !seen.insert((&case.package, &case.name, &case.symbol))
-                {
-                    return Err(vec![format!(
-                        "invalid test case ownership or duplicate in package {}",
-                        artifact.package
-                    )]);
-                }
-            }
-            expected_tests.extend(tests.cases.clone());
-        }
-    }
-    if let Some(tests) = &request.manifest.tests {
-        let key = |case: &ond_protocol::TestCase| {
-            (case.package.clone(), case.name.clone(), case.symbol.clone())
-        };
-        let expected = expected_tests
-            .iter()
-            .map(key)
-            .collect::<std::collections::BTreeSet<_>>();
-        let actual = tests
-            .cases
-            .iter()
-            .map(key)
-            .collect::<std::collections::BTreeSet<_>>();
-        if actual != expected || actual.len() != tests.cases.len() {
-            return Err(vec![
-                "manifest test cases do not match compiled package test cases".into(),
-            ]);
-        }
-    }
     let mut debug_objects = request
         .manifest
         .packages
@@ -182,86 +139,14 @@ fn link_impl(
     } else {
         ond_compiler::kagura_encoding::absolute_thunk(request.main_return_address).to_vec()
     };
-    let mut wrappers = Vec::new();
-    if let Some(tests) = &request.manifest.tests {
-        let mut seen = std::collections::BTreeSet::new();
-        for (index, case) in tests.cases.iter().enumerate() {
-            let expected_symbol = format!(
-                "{}.{}",
-                if application_root == Some(case.package.as_str()) {
-                    "main"
-                } else {
-                    &case.package
-                },
-                case.name
-            );
-            let Some(artifact) = artifacts.get(&case.package) else {
-                return Err(vec![format!("unknown test package: {}", case.package)]);
-            };
-            if !case.name.starts_with("Test")
-                || case.symbol != expected_symbol
-                || !seen.insert((&case.package, &case.name))
-            {
-                return Err(vec![format!(
-                    "invalid or duplicate test metadata: {}.{}",
-                    case.package, case.name
-                )]);
-            }
-            if !artifact.object.symbols.iter().any(|symbol| {
-                symbol.name == case.symbol
-                    && symbol.binding == ond_protocol::object::SymbolBinding::Exported
-                    && symbol.kind == ond_protocol::object::SymbolKind::Function
-                    && symbol.section == Some(ond_protocol::object::SectionKind::Text)
-            }) {
-                return Err(vec![format!(
-                    "test function symbol is not defined by its package: {}",
-                    case.symbol
-                )]);
-            }
-            let initializers = graph
-                .initialization_order_for(&case.package)?
-                .iter()
-                .filter_map(|p| artifacts[p].initializer.clone())
-                .collect();
-            wrappers.push((
-                format!("__ond.test.{index}"),
-                initializers,
-                case.symbol.clone(),
-            ));
-        }
-    }
-    let startup = if request.manifest.tests.is_some() {
-        let object = ond_compiler::program::test_startup(&wrappers, &termination);
-        debug_objects.insert(
-            0,
-            ond_protocol::debug::DebugObject {
-                package: object.name.clone(),
-                functions: Vec::new(),
-                ranges: vec![ond_protocol::debug::ObjectDebugRange {
-                    section: ond_protocol::object::SectionKind::Text,
-                    start: 0,
-                    end: 4,
-                    operation: ond_protocol::debug::DebugOperation::ExplicitTrap,
-                    message: Some(
-                        "select a test case entry point from the .ondtest sidecar".into(),
-                    ),
-                    source: None,
-                    function: "__ond.entry".into(),
-                }],
-            },
-        );
-        object
-    } else {
-        let object = ond_compiler::program::program_startup(&expected, "main.main", &termination);
-        debug_objects.insert(
-            0,
-            ond_protocol::debug::DebugObject {
-                package: object.name.clone(),
-                ..Default::default()
-            },
-        );
-        object
-    };
+    let startup = ond_compiler::program::program_startup(&expected, "main.main", &termination);
+    debug_objects.insert(
+        0,
+        ond_protocol::debug::DebugObject {
+            package: startup.name.clone(),
+            ..Default::default()
+        },
+    );
     let mut objects = vec![startup];
     objects.extend(request.manifest.packages.iter().map(|reference| {
         artifacts
@@ -321,27 +206,9 @@ fn link_impl(
         cache::hash(&cache::encode(&linked.image)?)
     };
     linked.image.build_id = build_id.clone();
-    linked.debug.build_id = build_id.clone();
-    let tests = request
-        .manifest
-        .tests
-        .as_ref()
-        .map(|tests| ond_protocol::TestSidecar {
-            build_id,
-            cases: tests
-                .cases
-                .iter()
-                .zip(&wrappers)
-                .map(|(case, (entry, _, _))| ond_protocol::TestEntry {
-                    package: case.package.clone(),
-                    name: case.name.clone(),
-                    entry_point: linked.image.symbols[entry],
-                })
-                .collect(),
-        });
+    linked.debug.build_id = build_id;
     Ok((
         LinkResult {
-            tests,
             image: linked.image,
             debug: linked.debug,
         },

@@ -1,7 +1,7 @@
 # Kagura上の整数実行vector
 <!-- ond-spec-id: conformance/cases/kagura-integers -->
 
-全caseは[共通case契約](./README.md#入力と期待結果の読み方)のproject manifestと通常buildを使用し、sourceを`main.ond`に置く。\
+全caseは[共通case契約](./README.md#入力と期待結果の読み方)のproject manifestとbuildを使用し、sourceを`main.ond`に置く。\
 Kagura実行は次の状態と操作で行う。\
 このfamilyはcaller指定の配置論理値と正常終了命令を入力にした言語・命令の個別検査であり、ONDX file生成やCLIのlink.exit選択を操作へ含めない。\
 以下のimageは[解決済みlink結果の論理値](../../artifacts.md#linkplanとlinkedimage)を指し、JSON保存成果物を入力としない。

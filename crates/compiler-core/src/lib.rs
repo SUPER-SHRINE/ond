@@ -44,7 +44,6 @@ pub use project::{
 pub use project_input::{
     ExternalSource, ExternalSources, RoleLoadOptions, load_project_with_inputs,
     load_project_with_inputs_allow_incomplete, load_project_with_role_inputs,
-    load_project_with_test_inputs,
 };
 
 #[derive(Debug, Clone)]

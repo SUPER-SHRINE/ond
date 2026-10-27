@@ -72,7 +72,7 @@ allocatorの外部観測は[言語のheap契約](../../language/v1/execution.md#
 <!-- ond-spec-id: conformance/cases/additional-observations -->
 
 - [成果物・build・link](./artifact-contracts.md)
-- [ONDX wire・配置・CLI・test生成](./executable-binaries.md)
+- [ONDX wire・配置・CLI](./executable-binaries.md)
 - [公開interfaceと型付きwire値](./interface-values.md)
 - [Package build_idの完全入力](./package-hash.md)
 - [診断の原因とgeneric関連位置](./diagnostic-causes.md)

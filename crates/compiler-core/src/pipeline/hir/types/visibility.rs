@@ -2,21 +2,8 @@
 use super::{PackageId, Span, TypePackage};
 
 impl TypePackage {
-    pub(in crate::pipeline::hir) fn visibility_error(
-        &self,
-        kind: &str,
-        name: &str,
-        declaration: Span,
-        caller: Span,
-    ) -> String {
-        let reason = if self.test_files.contains(&declaration.file)
-            && !self.test_files.contains(&caller.file)
-        {
-            "test-only"
-        } else {
-            "role-limited"
-        };
-        format!("{reason} {kind} `{name}` is not visible here")
+    pub(in crate::pipeline::hir) fn visibility_error(&self, kind: &str, name: &str) -> String {
+        format!("role-limited {kind} `{name}` is not visible here")
     }
 
     pub(in crate::pipeline::hir) fn value_visible_from(&self, name: &str, caller: Span) -> bool {
@@ -35,8 +22,7 @@ impl TypePackage {
     }
 
     pub(in crate::pipeline::hir) fn visible_from(&self, declaration: Span, caller: Span) -> bool {
-        (!self.test_files.contains(&declaration.file) || self.test_files.contains(&caller.file))
-            && crate::roles::visible(&self.sources, declaration, caller)
+        crate::roles::visible(&self.sources, declaration, caller)
     }
 
     pub(in crate::pipeline::hir) fn import_from(
@@ -55,9 +41,6 @@ impl TypePackage {
         declaration: Span,
         import: Span,
     ) -> bool {
-        if self.test_files.contains(&declaration.file) && !self.test_files.contains(&import.file) {
-            return false;
-        }
         crate::roles::overlap(&self.sources, declaration, import)
     }
 }

@@ -1,6 +1,5 @@
 //! ROLE-02、06、07: 共通構成、公開hashと生成集合。
 use crate::{CompileRequest, CompileResult, cache, compile};
-use ond_compiler_core::mir;
 use ond_protocol::{Contract, PackageArtifact};
 use serde_json::{Value, json};
 use std::{
@@ -11,8 +10,7 @@ use std::{
 };
 mod dependencies;
 mod fixtures;
-#[path = "../../compiler-core/src/memory_test_vm.rs"]
-mod memory_vm;
+use crate::memory_vm;
 struct Fixture(PathBuf, Option<String>);
 impl Fixture {
     fn new(selected: &str) -> Self {
@@ -39,7 +37,6 @@ impl Fixture {
     fn request(&self) -> CompileRequest {
         CompileRequest {
             role: self.1.clone(),
-            test: false,
             excluded_dirs: vec![],
             contract: Contract::default(),
             project_root: self.0.clone(),
@@ -68,7 +65,7 @@ impl Drop for Fixture {
     }
 }
 fn empty_input(f: &Fixture, roles: Option<Value>, package: &str) -> Value {
-    let mut input = json!({"compiler_id":"0".repeat(64),"contract":Contract::default(),"dependencies":{},"generation":{"constants":[],"instances":[],"interface":{"exports":{},"package":package},"nominals":[],"types":[{"Function":{"parameters":[],"returns":[]}}]},"manifest_hash":cache::hash(&fs::read(f.0.join("ond.toml")).unwrap()),"mode":"normal","package":package,"sources":[{"content_hash":cache::hash(&fs::read(f.0.join("main.ond")).unwrap()),"path":"main.ond"}]});
+    let mut input = json!({"compiler_id":"0".repeat(64),"contract":Contract::default(),"dependencies":{},"generation":{"constants":[],"instances":[],"interface":{"exports":{},"package":package},"nominals":[],"types":[{"Function":{"parameters":[],"returns":[]}}]},"manifest_hash":cache::hash(&fs::read(f.0.join("ond.toml")).unwrap()),"package":package,"sources":[{"content_hash":cache::hash(&fs::read(f.0.join("main.ond")).unwrap()),"path":"main.ond"}]});
     if let Some(roles) = roles {
         input["roles"] = roles;
     }
@@ -94,10 +91,10 @@ fn role_07_optional_role_input_and_complete_old_input() {
     f.put("ond.toml", "[project]\nname = \"main\"\n");
     let result = f.compile();
     let input = cache::encode(&empty_input(&f, None, "main")).unwrap();
-    assert_eq!(input.len(), 556, "ROLE-07.unconfigured-hash");
+    assert_eq!(input.len(), 540, "ROLE-07.unconfigured-hash");
     assert_eq!(
         cache::hash(&input),
-        "9548bc5baca3e9d935d46bfc1670ec4a7a444e5085ea6685a69ba54211149113"
+        "6ab6bd11899fd905bb33b9127f979f963d96e035338d3b3b7ba37ac57d65752a"
     );
     assert_eq!(result.manifest.packages[0].build_id, cache::hash(&input));
 }
@@ -241,7 +238,7 @@ fn role_02_generation_and_role_06_original_positions() {
             [expected]
         );
         assert_eq!(
-            memory_vm::execute_with_global(&frontend.mir, "main.main", "main.Result").unwrap(),
+            memory_vm::execute_with_global(&frontend.mir, "main.main", "main.Result",).unwrap(),
             [expected],
             "ROLE-02 main Result {selected}"
         );
