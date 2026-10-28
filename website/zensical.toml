@@ -17,6 +17,142 @@ nav = [
   ] },
   { "Docs" = [
     "docs/manual/README.md",
+    { "はじめに" = [
+      "docs/manual/getting-started/overview.md",
+      "docs/manual/getting-started/installation.md",
+      "docs/manual/getting-started/first-program.md",
+      "docs/manual/getting-started/build-and-launch.md",
+    ] },
+    { "言語ツアー" = [
+      { "値" = [
+        { "整数" = "docs/manual/language-tour/values/integers.md" },
+        { "f32" = "docs/manual/language-tour/values/floats.md" },
+        { "真偽値" = "docs/manual/language-tour/values/booleans.md" },
+        { "文字列リテラル" = "docs/manual/language-tour/values/string-literals.md" },
+        { "nil" = "docs/manual/language-tour/values/nil.md" },
+      ] },
+      { "ソース" = [
+        { "コメント" = "docs/manual/language-tour/source/comments.md" },
+        { "識別子" = "docs/manual/language-tour/source/identifiers.md" },
+        { "改行" = "docs/manual/language-tour/source/newlines.md" },
+        { "セミコロン" = "docs/manual/language-tour/source/semicolons.md" },
+      ] },
+      { "宣言" = [
+        { "変数 var" = "docs/manual/language-tour/declarations/variables.md" },
+        { "短縮変数宣言 :=" = "docs/manual/language-tour/declarations/short-declarations.md" },
+        { "定数 const" = "docs/manual/language-tour/declarations/constants.md" },
+        { "型定義 type" = "docs/manual/language-tour/declarations/type-definitions.md" },
+      ] },
+      { "演算" = [
+        { "算術" = [
+          { "加算 +" = "docs/manual/language-tour/operators/arithmetic/addition.md" },
+          { "減算 -" = "docs/manual/language-tour/operators/arithmetic/subtraction.md" },
+          { "乗算 *" = "docs/manual/language-tour/operators/arithmetic/multiplication.md" },
+          { "除算 /" = "docs/manual/language-tour/operators/arithmetic/division.md" },
+          { "剰余 %" = "docs/manual/language-tour/operators/arithmetic/remainder.md" },
+          { "単項プラス +" = "docs/manual/language-tour/operators/arithmetic/unary-plus.md" },
+          { "単項マイナス -" = "docs/manual/language-tour/operators/arithmetic/unary-minus.md" },
+        ] },
+        { "比較" = [
+          { "等値 ==" = "docs/manual/language-tour/operators/comparison/equal.md" },
+          { "不等値 !=" = "docs/manual/language-tour/operators/comparison/not-equal.md" },
+          { "小なり <" = "docs/manual/language-tour/operators/comparison/less.md" },
+          { "小なりイコール <=" = "docs/manual/language-tour/operators/comparison/less-equal.md" },
+          { "大なり >" = "docs/manual/language-tour/operators/comparison/greater.md" },
+          { "大なりイコール >=" = "docs/manual/language-tour/operators/comparison/greater-equal.md" },
+        ] },
+        { "論理" = [
+          { "否定 !" = "docs/manual/language-tour/operators/logical/not.md" },
+          { "論理積 &&" = "docs/manual/language-tour/operators/logical/and.md" },
+          { "論理和 ||" = "docs/manual/language-tour/operators/logical/or.md" },
+        ] },
+        { "bit演算" = [
+          { "AND &" = "docs/manual/language-tour/operators/bitwise/and.md" },
+          { "OR |" = "docs/manual/language-tour/operators/bitwise/or.md" },
+          { "XOR ^" = "docs/manual/language-tour/operators/bitwise/xor.md" },
+          { "NOT ^" = "docs/manual/language-tour/operators/bitwise/not.md" },
+          { "AND-NOT &^" = "docs/manual/language-tour/operators/bitwise/and-not.md" },
+          { "左シフト <<" = "docs/manual/language-tour/operators/bitwise/left-shift.md" },
+          { "右シフト >>" = "docs/manual/language-tour/operators/bitwise/right-shift.md" },
+        ] },
+        { "型変換 as" = "docs/manual/language-tour/operators/type-conversion.md" },
+      ] },
+      { "代入" = [
+        { "代入 =" = "docs/manual/language-tour/assignment/assignment.md" },
+        { "複合代入 +=" = "docs/manual/language-tour/assignment/compound-assignment.md" },
+        { "インクリメント ++" = "docs/manual/language-tour/assignment/increment.md" },
+        { "デクリメント --" = "docs/manual/language-tour/assignment/decrement.md" },
+      ] },
+      { "制御フロー" = [
+        { "if" = "docs/manual/language-tour/control-flow/if.md" },
+        { "for" = "docs/manual/language-tour/control-flow/for.md" },
+        { "break" = "docs/manual/language-tour/control-flow/break.md" },
+        { "continue" = "docs/manual/language-tour/control-flow/continue.md" },
+        { "defer" = "docs/manual/language-tour/control-flow/defer.md" },
+        { "trap" = "docs/manual/language-tour/control-flow/trap.md" },
+      ] },
+      { "関数" = [
+        { "関数宣言 func" = "docs/manual/language-tour/functions/declarations.md" },
+        { "関数呼び出し ()" = "docs/manual/language-tour/functions/calls.md" },
+        { "return" = "docs/manual/language-tour/functions/return.md" },
+        { "複数戻り値" = "docs/manual/language-tour/functions/multiple-results.md" },
+        { "関数型" = "docs/manual/language-tour/functions/types.md" },
+        { "関数ポインター" = "docs/manual/language-tour/functions/pointers.md" },
+        { "メソッド" = "docs/manual/language-tour/functions/methods.md" },
+      ] },
+      { "データ構造" = [
+        { "配列" = "docs/manual/language-tour/data/arrays.md" },
+        { "struct" = "docs/manual/language-tour/data/structs.md" },
+        { "field access" = "docs/manual/language-tour/data/field-access.md" },
+        { "index access" = "docs/manual/language-tour/data/index-access.md" },
+      ] },
+      { "ジェネリック" = [
+        { "generic関数" = "docs/manual/language-tour/generics/functions.md" },
+        { "generic型" = "docs/manual/language-tour/generics/types.md" },
+      ] },
+      { "メモリ" = [
+        { "pointer型" = "docs/manual/language-tour/memory/pointers.md" },
+        { "address-of &" = "docs/manual/language-tour/memory/address-of.md" },
+        { "dereference *" = "docs/manual/language-tour/memory/dereference.md" },
+        { "alloc" = "docs/manual/language-tour/memory/alloc.md" },
+        { "new" = "docs/manual/language-tour/memory/new.md" },
+        { "free" = "docs/manual/language-tour/memory/free.md" },
+      ] },
+      { "組み込み" = [
+        { "len" = "docs/manual/language-tour/builtins/len.md" },
+        { "sizeof" = "docs/manual/language-tour/builtins/sizeof.md" },
+        { "alignof" = "docs/manual/language-tour/builtins/alignof.md" },
+        { "thisFile" = "docs/manual/language-tour/builtins/this-file.md" },
+        { "thisLine" = "docs/manual/language-tour/builtins/this-line.md" },
+      ] },
+      { "パッケージ" = [
+        { "package" = "docs/manual/language-tour/packages/package.md" },
+        { "import" = "docs/manual/language-tour/packages/import.md" },
+        { "scope" = "docs/manual/language-tour/packages/scope.md" },
+        { "visibility" = "docs/manual/language-tour/packages/visibility.md" },
+      ] },
+      { "構成" = [ { "role" = "docs/manual/language-tour/configuration/roles.md" } ] },
+      { "初期化" = [
+        { "global initialization" = "docs/manual/language-tour/initialization/globals.md" },
+        { "main" = "docs/manual/language-tour/initialization/main.md" },
+      ] },
+      { "operator定義" = [
+        { "算術operator" = "docs/manual/language-tour/operator-definitions/arithmetic.md" },
+        { "index getter []" = "docs/manual/language-tour/operator-definitions/index-getter.md" },
+        { "index setter []=" = "docs/manual/language-tour/operator-definitions/index-setter.md" },
+        { "len operator" = "docs/manual/language-tour/operator-definitions/len.md" },
+      ] },
+      { "低水準" = [ { "asm（Kagura v1）" = "docs/manual/language-tour/low-level/asm.md" } ] },
+    ] },
+    { "実用チュートリアル" = [
+      "docs/manual/tutorials/projects-and-packages.md",
+      "docs/manual/tutorials/libraries-and-dependencies.md",
+      "docs/manual/tutorials/roles.md",
+      "docs/manual/tutorials/diagnostics.md",
+    ] },
+    { "リファレンス" = [
+      "docs/manual/reference/manifest.md",
+    ] },
   ] },
   { "Specs" = [
     "specs/README.md",
@@ -110,9 +246,9 @@ invalid_link_anchors = false
 
 [project.markdown_extensions]
 ond_markdown = {}
+ond_highlight = {}
 tables = {}
 pymdownx.superfences = {}
 pymdownx.escapeall = { hardbreak = true }
 pymdownx.tilde = {}
 toc = { slugify = { object = "pymdownx.slugs.slugify", kwds = { case = "lower" } } }
-

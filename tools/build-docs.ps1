@@ -43,13 +43,14 @@ New-Item -ItemType Directory -Path $sources -Force | Out-Null
 if (Test-Path -LiteralPath $public) { Remove-Item -LiteralPath $public -Recurse -Force }
 Copy-Item -LiteralPath (Join-Path $website 'index.md') -Destination (Join-Path $sources 'index.md')
 Copy-Item -LiteralPath (Join-Path $website 'ond_markdown.py') -Destination (Join-Path $targetRoot 'ond_markdown.py')
+Copy-Item -LiteralPath (Join-Path $website 'ond_highlight.py') -Destination (Join-Path $targetRoot 'ond_highlight.py')
 $assets = Join-Path $website 'assets'
 if (Test-Path -LiteralPath $assets -PathType Container) {
     Copy-Item -LiteralPath $assets -Destination (Join-Path $sources 'assets') -Recurse
 }
 
 $included = @()
-$included += (& git -C $repo ls-files --cached --others --exclude-standard 'specs/**/*.md' 'specs/*.md' 'docs/releases/**/*.md' 'docs/releases/*.md' 'docs/manual/**/*.md' 'docs/manual/*.md')
+$included += (& git -C $repo ls-files --cached --others --exclude-standard 'specs/**/*.md' 'specs/*.md' 'docs/releases/**/*.md' 'docs/releases/*.md' 'docs/manual/**/*.md' 'docs/manual/*.md' 'docs/manual/**/*.svg' 'docs/manual/*.svg')
 foreach ($relative in $included) {
     if (-not $relative) { continue }
     $destination = Join-Path $sources $relative
@@ -109,6 +110,8 @@ $env:PYTHONDONTWRITEBYTECODE = '1'
 try {
     & $Python website/ond_markdown.py
     if ($LASTEXITCODE -ne 0) { throw "Markdownの入れ子list検査に失敗しました ($LASTEXITCODE)" }
+    & $Python website/ond_highlight.py
+    if ($LASTEXITCODE -ne 0) { throw "Ond構文ハイライト検査に失敗しました ($LASTEXITCODE)" }
     & $Python -m zensical build --config-file target/website/zensical.toml --clean --strict
     if ($LASTEXITCODE -ne 0) { throw "Zensical buildに失敗しました ($LASTEXITCODE)" }
     & $Python tools/check-docs-links.py target/website/public
