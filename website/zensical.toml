@@ -1,0 +1,119 @@
+# Build through tools/build-docs.ps1, which places this config beside sources/ and public/.
+[project]
+site_name = "Ond"
+site_url = "https://super-shrine.github.io/ond/"
+docs_dir = "sources"
+site_dir = "public"
+strict = true
+nav = [
+  { "Home" = "index.md" },
+  { "Release" = [
+    "docs/releases/README.md",
+    "docs/releases/0.3.0-notes.md",
+    "docs/releases/0.2.0-notes.md",
+    "docs/releases/0.1.3-notes.md",
+    "docs/releases/0.1.2-notes.md",
+    "docs/releases/0.1.1-notes.md",
+    "docs/releases/0.1.0-notes.md",
+  ] },
+  { "Docs" = [
+    "docs/manual/README.md",
+  ] },
+  { "Specs" = [
+    "specs/README.md",
+    { "言語" = [
+      "specs/ond/language/v1/README.md",
+      "specs/ond/language/v1/lexical.md",
+      "specs/ond/language/v1/declarations.md",
+      "specs/ond/language/v1/types.md",
+      "specs/ond/language/v1/names-and-scopes.md",
+      "specs/ond/language/v1/expressions.md",
+      "specs/ond/language/v1/statements.md",
+      "specs/ond/language/v1/builtins.md",
+      "specs/ond/language/v1/roles.md",
+      "specs/ond/language/v1/execution.md",
+      "specs/ond/language/v1/inline-assembly.md",
+    ] },
+    { "Build" = [
+      "specs/ond/build/packages.md",
+      "specs/ond/build/roles.md",
+      "specs/ond/build/commands.md",
+      "specs/ond/build/cache.md",
+    ] },
+    { "Kagura v1 target" = [
+      "specs/ond/targets/kagura-v1/README.md",
+      "specs/ond/targets/kagura-v1/machine.md",
+      "specs/ond/targets/kagura-v1/abi.md",
+      "specs/ond/targets/kagura-v1/inline-assembly.md",
+    ] },
+    { "成果物とdebug metadata" = [
+      "specs/ond/artifacts.md",
+      "specs/ond/linking.md",
+      "specs/ond/debug-metadata/v1.md",
+    ] },
+    { "適合要件" = [
+      "specs/ond/conformance/requirements.md",
+      "specs/ond/conformance/implementation-index.md",
+    ] },
+    { "適合cases" = [
+      "specs/ond/conformance/cases/README.md",
+      "specs/ond/conformance/cases/artifact-contracts.md",
+      "specs/ond/conformance/cases/boundaries-builtins.md",
+      "specs/ond/conformance/cases/boundaries-conversions.md",
+      "specs/ond/conformance/cases/boundaries-declarations.md",
+      "specs/ond/conformance/cases/boundaries-operators.md",
+      "specs/ond/conformance/cases/build-observations.md",
+      "specs/ond/conformance/cases/debug-fault-contracts.md",
+      "specs/ond/conformance/cases/diagnostic-causes.md",
+      "specs/ond/conformance/cases/executable-binaries.md",
+      "specs/ond/conformance/cases/inline-assembly.md",
+      "specs/ond/conformance/cases/interface-values.md",
+      "specs/ond/conformance/cases/kagura-casts.md",
+      "specs/ond/conformance/cases/kagura-evaluation-combinations.md",
+      "specs/ond/conformance/cases/kagura-integers.md",
+      "specs/ond/conformance/cases/kagura-regression-observations.md",
+      "specs/ond/conformance/cases/layout-operators.md",
+      "specs/ond/conformance/cases/lexical-observations.md",
+      "specs/ond/conformance/cases/memory-placement.md",
+      "specs/ond/conformance/cases/numeric-casts.md",
+      "specs/ond/conformance/cases/numeric-float-vectors.md",
+      "specs/ond/conformance/cases/numeric-floats.md",
+      "specs/ond/conformance/cases/numeric-integers.md",
+      "specs/ond/conformance/cases/numeric-runtime.md",
+      "specs/ond/conformance/cases/operator-contracts.md",
+      "specs/ond/conformance/cases/package-hash.md",
+      "specs/ond/conformance/cases/regression-observations.md",
+      "specs/ond/conformance/cases/roles.md",
+      "specs/ond/conformance/cases/static-constant-contexts.md",
+      "specs/ond/conformance/cases/static-control-headers.md",
+      "specs/ond/conformance/cases/static-diagnostics.md",
+      "specs/ond/conformance/cases/static-evaluation.md",
+      "specs/ond/conformance/cases/static-flow.md",
+      "specs/ond/conformance/cases/static-name-duplicates.md",
+      "specs/ond/conformance/cases/static-names.md",
+      "specs/ond/conformance/cases/static-precedence.md",
+      "specs/ond/conformance/cases/static-scope.md",
+      "specs/ond/conformance/cases/static-seed.md",
+    ] },
+  ] },
+]
+
+[project.theme]
+language = "ja"
+font = false
+features = ["navigation.tabs", "navigation.sections", "navigation.indexes"]
+
+[project.validation]
+invalid_links = true
+# Zensical 0.0.73's anchor validator misses Unicode and several valid slugs;
+# generated HTML is checked by tools/check-docs-links.py instead.
+invalid_link_anchors = false
+
+[project.markdown_extensions]
+ond_markdown = {}
+tables = {}
+pymdownx.superfences = {}
+pymdownx.escapeall = { hardbreak = true }
+pymdownx.tilde = {}
+toc = { slugify = { object = "pymdownx.slugs.slugify", kwds = { case = "lower" } } }
+
