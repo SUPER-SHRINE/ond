@@ -12,8 +12,9 @@ $website = Join-Path $repo 'website'
 $targetRoot = Join-Path $repo 'target/website'
 $sources = Join-Path $targetRoot 'sources'
 $public = Join-Path $targetRoot 'public'
+$overrides = Join-Path $targetRoot 'overrides'
 
-foreach ($path in @($targetRoot, $sources, $public)) {
+foreach ($path in @($targetRoot, $sources, $public, $overrides)) {
     $resolved = [IO.Path]::GetFullPath($path)
     if (-not $resolved.StartsWith([IO.Path]::GetFullPath($targetRoot), [StringComparison]::OrdinalIgnoreCase)) {
         throw "生成先がtarget/websiteの外です: $resolved"
@@ -41,6 +42,8 @@ if ($LASTEXITCODE -ne 0) { throw 'GitのHEADを取得できません。' }
 if (Test-Path -LiteralPath $sources) { Remove-Item -LiteralPath $sources -Recurse -Force }
 New-Item -ItemType Directory -Path $sources -Force | Out-Null
 if (Test-Path -LiteralPath $public) { Remove-Item -LiteralPath $public -Recurse -Force }
+if (Test-Path -LiteralPath $overrides) { Remove-Item -LiteralPath $overrides -Recurse -Force }
+Copy-Item -LiteralPath (Join-Path $website 'overrides') -Destination $overrides -Recurse
 Copy-Item -LiteralPath (Join-Path $website 'index.md') -Destination (Join-Path $sources 'index.md')
 Copy-Item -LiteralPath (Join-Path $website 'ond_markdown.py') -Destination (Join-Path $targetRoot 'ond_markdown.py')
 Copy-Item -LiteralPath (Join-Path $website 'ond_highlight.py') -Destination (Join-Path $targetRoot 'ond_highlight.py')
@@ -48,6 +51,9 @@ $assets = Join-Path $website 'assets'
 if (Test-Path -LiteralPath $assets -PathType Container) {
     Copy-Item -LiteralPath $assets -Destination (Join-Path $sources 'assets') -Recurse
 }
+$sourceAssets = Join-Path $sources 'assets'
+New-Item -ItemType Directory -Path $sourceAssets -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $repo 'assets/ond_logo.png') -Destination (Join-Path $sourceAssets 'ond_logo.png')
 
 $included = @()
 $included += (& git -C $repo ls-files --cached --others --exclude-standard 'specs/**/*.md' 'specs/*.md' 'docs/releases/**/*.md' 'docs/releases/*.md' 'docs/manual/**/*.md' 'docs/manual/*.md' 'docs/manual/**/*.svg' 'docs/manual/*.svg')

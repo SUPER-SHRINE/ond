@@ -1,6 +1,8 @@
 # Build through tools/build-docs.ps1, which places this config beside sources/ and public/.
 [project]
 site_name = "Ond"
+site_description = "計算とメモリの読み書きから、マシンを動かすプログラミング言語。"
+extra_css = ["assets/stylesheets/site.css"]
 site_url = "https://super-shrine.github.io/ond/"
 docs_dir = "sources"
 site_dir = "public"
@@ -235,7 +237,9 @@ nav = [
 
 [project.theme]
 language = "ja"
+custom_dir = "overrides"
 font = false
+logo = "assets/ond_logo.png"
 features = ["navigation.tabs", "navigation.sections", "navigation.indexes"]
 
 [project.validation]

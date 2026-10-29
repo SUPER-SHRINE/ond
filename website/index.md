@@ -1,7 +1,10 @@
-# Ond
+---
+title: Home
+template: home.html
+hide:
+  - toc
+---
 
-Ondの文書へ案内します。
+# マシンの音頭を取る
 
-- [リリースノート](docs/releases/0.3.0-notes.md)
-- [ユーザー向けドキュメント](docs/manual/README.md)
-- [仕様](specs/README.md)
+手続きだけに集中せよ
