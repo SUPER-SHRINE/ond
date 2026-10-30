@@ -240,6 +240,7 @@ language = "ja"
 custom_dir = "overrides"
 font = false
 logo = "assets/ond_logo.png"
+favicon = "assets/ond_logo.png"
 features = ["navigation.tabs", "navigation.sections", "navigation.indexes"]
 
 [project.validation]
