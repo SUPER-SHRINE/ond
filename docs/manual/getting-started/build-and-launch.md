@@ -13,10 +13,10 @@ ond link --project .
 ```
 
 `ond compile .`はプログラムを検査し、リンクに渡す情報とパッケージごとの中間成果物を作ります。\
-既定ではリンク用の情報を`target/build.ondbuild`へ、中間成果物を`target/ond-cache`へ保存します。
+既定ではリンク用の情報を`.ond/target/build.ondbuild`へ、中間成果物を`.ond/target/ond-cache`へ保存します。
 
 `ond link --project .`はその情報とプロジェクトの設定から、実行環境向けのバイナリとデバッグ情報を作ります。\
-最初のプログラムの設定では、`target/a.bin`と`target/a.onddebug`に保存されます。\
+最初のプログラムの設定では、`.ond/target/first.bin`と`.ond/target/first.onddebug`に保存されます。\
 これらのコマンドはファイルを作成するもので、バイナリの実行はしません。
 
 設定に書く相対パスは、その設定を含む`ond.toml`があるフォルダーを基準に解決されます。\
@@ -52,7 +52,7 @@ Kaguraが定めるCPU命令とバスの約束だけでは、OSやローダー、
 [link]
 startup = "self"
 stack-size = 8192
-output = "target/a.bin"
+output = "target/first.bin"
 
 [link.rom]
 base = 0

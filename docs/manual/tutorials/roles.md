@@ -12,7 +12,7 @@ names = ["Debug", "Development"]
 [link]
 startup = "external"
 stack-size = 8192
-output = "target/roles.bin"
+output = ".ond/target/roles.bin"
 
 [link.ram]
 base = 4096
@@ -58,6 +58,6 @@ role未指定でcompileする構成をこの例の製品構成として使いま
 3構成は同じsourceから別々にcompileします。\
 各compile後にlinkすると設定済みの出力先を更新しますが、ここでは生成fileの実行結果を観察しません。
 
-**結果:** それぞれcompileとlinkがexit `0`で終了し、manifestで設定した`target/roles.bin`と`target/roles.onddebug`を生成します。
+**結果:** それぞれcompileとlinkがexit `0`で終了し、manifestで設定した`.ond/target/roles.bin`と`.ond/target/roles.onddebug`を生成します。
 
 role構文の選択規則は[言語role仕様](../../../specs/ond/language/v1/roles.md)、manifestと`--role`は[project role仕様](../../../specs/ond/build/roles.md)を参照してください。

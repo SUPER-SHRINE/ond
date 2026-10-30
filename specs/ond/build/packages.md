@@ -58,9 +58,9 @@ compile単体では`[link]`を要求しない。\
 
 | Table | Key | 型・値 | 必須・省略時の値 |
 | --- | --- | --- | --- |
-| compile | output | 非空string。compileのCompilationManifest保存先 | 省略時`target/build.ondbuild` |
-| compile | cache-dir | 非空string。package `.ondpkg`保存directory | 省略時`target/ond-cache` |
-| link | output | 非空string。実行可能バイナリ保存先 | 省略時`target/a.bin` |
+| compile | output | 非空string。compileのCompilationManifest保存先 | 省略時`.ond/target/build.ondbuild` |
+| compile | cache-dir | 非空string。package `.ondpkg`保存directory | 省略時`.ond/target/ond-cache` |
+| link | output | 非空string。実行可能バイナリ保存先 | 省略時`.ond/target/a.bin` |
 | link | startup | string。`'self'`または`'external'` | 必須 |
 | link | stack-size | integer。byte単位のstack予約量 | 必須 |
 | link.rom | base | integer。ROMの先頭byte address | tableを置く場合は必須 |

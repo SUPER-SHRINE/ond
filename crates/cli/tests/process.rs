@@ -301,6 +301,36 @@ fn manifest_resolve_ignore_excludes_generated_source_trees() {
 }
 const LINK: &[&str] = &["link", "-", "-o", "-"];
 #[test]
+fn project_defaults_write_all_outputs_under_ond_target() {
+    let f = Fixture::new();
+    f.put(
+        "ond.toml",
+        "[project]\nname = \"app\"\n[link]\nstartup = \"external\"\nstack-size = 8192\n[link.ram]\nbase = 4096\nsize = 65536\n[link.exit]\nmode = \"loop\"\n",
+    );
+    f.put("main.ond", "package main\nfunc main(){}\n");
+
+    let compiled = run(&f.0, &["compile", "."], None);
+    assert!(
+        compiled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compiled.stderr)
+    );
+    assert!(f.0.join(".ond/target/build.ondbuild").is_file());
+    assert!(f.0.join(".ond/target/ond-cache").is_dir());
+    assert!(!f.0.join("target").exists());
+
+    let linked = run(&f.0, &["link"], None);
+    assert!(
+        linked.status.success(),
+        "{}",
+        String::from_utf8_lossy(&linked.stderr)
+    );
+    assert!(f.0.join(".ond/target/a.bin").is_file());
+    assert!(f.0.join(".ond/target/a.onddebug").is_file());
+    assert!(!f.0.join("target").exists());
+}
+
+#[test]
 fn files_default_output_cache_stdout_and_stdin_link() {
     let f = Fixture::new();
     let cold = run(&f.0, &["compile", "game", "-v"], None);
@@ -311,7 +341,7 @@ fn files_default_output_cache_stdout_and_stdin_link() {
     );
     assert!(cold.stdout.is_empty());
     assert!(String::from_utf8_lossy(&cold.stderr).contains("rebuilt: ., math"));
-    let manifest = fs::read(f.0.join("game/target/build.ondbuild")).unwrap();
+    let manifest = fs::read(f.0.join("game/.ond/target/build.ondbuild")).unwrap();
     let warm = run(&f.0, &["compile", "game", "-o", "-", "-v"], None);
     assert!(warm.status.success());
     assert!(String::from_utf8_lossy(&warm.stderr).contains("reused: ., math"));
@@ -326,7 +356,7 @@ fn files_default_output_cache_stdout_and_stdin_link() {
     let _: Executable = Executable::read(&linked.stdout).unwrap();
     let file = run(
         &f.0,
-        &["link", "game/target/build.ondbuild", "-o", "image.bin"],
+        &["link", "game/.ond/target/build.ondbuild", "-o", "image.bin"],
         None,
     );
     assert!(file.status.success());
@@ -544,11 +574,11 @@ fn ordinary_source_defaults_sidecars_and_stdout_contract() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let path = "game/target/build.ondbuild";
+    let path = "game/.ond/target/build.ondbuild";
     let manifest: serde_json::Value =
         serde_json::from_slice(&fs::read(f.0.join(path)).unwrap()).unwrap();
     assert!(manifest.get("tests").is_none());
-    assert!(!f.0.join("game/target/test.ondbuild").exists());
+    assert!(!f.0.join("game/.ond/target/test.ondbuild").exists());
     let output = run(&f.0, &["link", path, "-o", "normal.bin"], None);
     assert!(
         output.status.success(),

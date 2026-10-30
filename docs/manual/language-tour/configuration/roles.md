@@ -39,7 +39,7 @@ names = ["Debug", "Development"]
 [link]
 startup = "external"
 stack-size = 8192
-output = "target/first.bin"
+output = ".ond/target/first.bin"
 
 [link.ram]
 base = 4096

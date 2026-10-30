@@ -96,12 +96,12 @@ def generated_root() -> Path:
 
 def output_path(project: Path, configured: str, label: str) -> Path:
     path = (project / configured).resolve()
-    project_target = (project / "target").resolve()
+    project_target = (project / ".ond" / "target").resolve()
     try:
         path.relative_to(project_target)
         path.relative_to(generated_root())
     except ValueError as exc:
-        raise RuntimeError(f"{label} output is outside generated target/: {path}") from exc
+        raise RuntimeError(f"{label} output is outside generated .ond/target/: {path}") from exc
     return path
 
 
@@ -131,7 +131,7 @@ def check_case(ond: Path, project: Path, case: Case) -> str:
     config = tomllib.loads((project / "ond.toml").read_text(encoding="utf-8-sig"))
     compile_config = config.get("compile", {})
     link_config = config.get("link", {})
-    compile_output = output_path(project, compile_config.get("output", "target/build.ondbuild"), "compile")
+    compile_output = output_path(project, compile_config.get("output", ".ond/target/build.ondbuild"), "compile")
     outputs = [compile_output]
     binary = None
     sidecar = None
