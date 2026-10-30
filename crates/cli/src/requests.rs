@@ -9,7 +9,7 @@ pub struct CompileRequest {
     pub project_root: PathBuf,
     /// Project-relative .ond paths. Existing files must have identical contents.
     pub sources: BTreeMap<String, String>,
-    /// Defaults to project_root/target/ond-cache.
+    /// Defaults to project_root/.ond/target/ond-cache.
     pub cache_dir: Option<PathBuf>,
 }
 #[derive(Debug, Clone)]

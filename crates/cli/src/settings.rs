@@ -18,13 +18,13 @@ pub struct CompileSettings {
     pub cache_dir: PathBuf,
 }
 fn compile_output() -> PathBuf {
-    "target/build.ondbuild".into()
+    ".ond/target/build.ondbuild".into()
 }
 fn cache_dir() -> PathBuf {
-    "target/ond-cache".into()
+    ".ond/target/ond-cache".into()
 }
 fn link_output() -> PathBuf {
-    "target/a.bin".into()
+    ".ond/target/a.bin".into()
 }
 impl Default for CompileSettings {
     fn default() -> Self {

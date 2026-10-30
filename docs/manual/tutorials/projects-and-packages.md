@@ -8,7 +8,7 @@ name = "app"
 [link]
 startup = "external"
 stack-size = 8192
-output = "target/app.bin"
+output = ".ond/target/app.bin"
 [link.ram]
 base = 4096
 size = 65536
@@ -44,7 +44,7 @@ rootの`main.ond`は`package main`に属し、`math/add.ond`は`package math`に
 
 **操作:** rootで`ond compile .`、続けて`ond link --project .`を実行します。
 
-**結果:** 両方exit `0`で`target/app.bin`と`target/app.onddebug`が生成されます。\
+**結果:** 両方exit `0`で`.ond/target/app.bin`と`.ond/target/app.onddebug`が生成されます。\
 `main.ond`では`app/math`をimportし、`math.Add(20, 22)`で公開関数を呼びます。
 
 project、source探索、import pathとpackage公開名は[package仕様](../../../specs/ond/build/packages.md)と[名前解決仕様](../../../specs/ond/language/v1/names-and-scopes.md#packageとimport)を参照してください。

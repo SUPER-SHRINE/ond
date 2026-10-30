@@ -37,12 +37,12 @@ rev = "v1.2.0" # 解決するrevision
 
 # compile結果とpackage cacheの保存先
 [compile]
-output = "target/build.ondbuild" # CompilationManifest保存先
-cache-dir = "target/ond-cache" # .ondpkg保存先
+output = ".ond/target/build.ondbuild" # CompilationManifest保存先
+cache-dir = ".ond/target/ond-cache" # .ondpkg保存先
 
 # Kagura実行fileの出力と起動設定
 [link]
-output = "target/app.bin" # 実行file保存先
+output = ".ond/target/app.bin" # 実行file保存先
 startup = "external" # 外部loaderが起動する形式
 stack-size = 8192 # stack予約量（byte）
 
@@ -179,8 +179,8 @@ roleは依存projectごとに選択します。
 
 | field | 用途と既定値 |
 | --- | --- |
-| `compile.output` | CompilationManifestの保存先（省略時`target/build.ondbuild`） |
-| `compile.cache-dir` | package `.ondpkg`成果物の保存directory（省略時`target/ond-cache`） |
+| `compile.output` | CompilationManifestの保存先（省略時`.ond/target/build.ondbuild`） |
+| `compile.cache-dir` | package `.ondpkg`成果物の保存directory（省略時`.ond/target/ond-cache`） |
 
 `[compile]`table自体は省略できます。
 
@@ -196,7 +196,7 @@ link設定は実行fileを作る場合に使います。
 
 | field | 用途と既定値・条件 |
 | --- | --- |
-| `link.output` | 実行fileの保存先（省略時`target/a.bin`）; file出力では同じbasenameの`.onddebug` sidecarも生成 |
+| `link.output` | 実行fileの保存先（省略時`.ond/target/a.bin`）; file出力では同じbasenameの`.onddebug` sidecarも生成 |
 | `link.startup` | 起動形式`external`または`self`（必須） |
 | `link.stack-size` | stack予約量をbyte単位で指定（必須） |
 | `link.rom.base` | ROM address範囲の先頭（`[link.rom]`を置く場合に必要） |

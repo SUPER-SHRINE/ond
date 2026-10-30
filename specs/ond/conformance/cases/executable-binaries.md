@@ -117,7 +117,7 @@ file出力の成功行ではdebug sidecarの生成と、バイナリ全bytesの�
 | CLI-01.project | `ond link --project ../app` | `/work/app/out/game.bin`とgame.onddebugを生成。入力はapp/meta/build.ondbuild、cacheはapp/cache |
 | CLI-01.cwd | cwdを/work/appへ移して`ond link` | 同じ設定元・入力・出力先 |
 | CLI-01.output-argument | 元cwdで`ond link --project ../app -o chosen.bin` | `/work/run/chosen.bin`とchosen.onddebugを生成。ond.toml bytesを保持 |
-| CLI-01.default-output | 準備compile前にlink.outputを省略し、`ond link --project ../app` | `/work/app/target/a.bin`とa.onddebugを生成 |
+| CLI-01.default-output | 準備compile前にlink.outputを省略し、`ond link --project ../app` | `/work/app/.ond/target/a.bin`とa.onddebugを生成 |
 | CLI-01.no-auto-compile | 準備compile後main.ondを削除し、`ond link --project ../app` | 保存済みmanifestからlink成功 |
 | CLI-01.missing-input | 準備後meta/build.ondbuildを削除し、`ond link --project ../app` | exit 1。compileを行わずmanifestを再生成しない |
 | CLI-01.no-parent-search | 元cwdで`ond link`。/work/ond.tomlへ上の設定を置くがrun/ond.tomlは置かない | exit 1。run直下の設定欠落を診断し、上位設定を採用しない |
