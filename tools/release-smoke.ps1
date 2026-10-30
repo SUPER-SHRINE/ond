@@ -56,7 +56,7 @@ try {
     Get-ChildItem -LiteralPath (Join-Path $repoRoot "examples/hello") | Copy-Item -Destination $project -Recurse
 
     Invoke-Checked -FileName $ond -Arguments @("compile", $project)
-    $manifest = Join-Path $project "target/build.ondbuild"
+    $manifest = Join-Path $project ".ond/target/build.ondbuild"
     if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) {
         throw "Compile smoke test did not create $manifest."
     }

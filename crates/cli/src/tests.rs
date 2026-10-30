@@ -441,7 +441,7 @@ fn corrupt_project_cache_manifest_reuses_valid_package_objects() {
     let f = Fixture::new();
     let id = compiler_identity().unwrap();
     let cold = compile(f.request(), &id).unwrap();
-    let cache_dir = f.0.join("target/ond-cache");
+    let cache_dir = f.0.join(".ond/target/ond-cache");
     let manifest = fs::read_dir(&cache_dir)
         .unwrap()
         .map(Result::unwrap)

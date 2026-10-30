@@ -31,7 +31,7 @@ name = "fixed"
 [link]
 startup = "external"
 stack-size = 8192
-output = "target/fixed.bin"
+output = ".ond/target/fixed.bin"
 [link.ram]
 base = 4096
 size = 65536
@@ -52,7 +52,7 @@ func main() {
 ```
 
 `fixed` directoryで`ond compile .`と`ond link --project .`を実行します。\
-どちらもexit `0`となり、`target/fixed.bin`と`target/fixed.onddebug`が生成されます。\
+どちらもexit `0`となり、`.ond/target/fixed.bin`と`.ond/target/fixed.onddebug`が生成されます。\
 debug sidecarにはtrapの理由`count must be nonzero`が記録されます。\
 この章では生成fileを実行しません。
 

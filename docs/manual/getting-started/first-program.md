@@ -13,7 +13,7 @@ name = "first"
 [link]
 startup = "external"
 stack-size = 8192
-output = "target/first.bin"
+output = ".ond/target/first.bin"
 
 [link.ram]
 base = 4096
@@ -47,7 +47,7 @@ ond compile .
 ond link --project .
 ```
 
-両commandがexit code `0`で終了し、`target/first.bin`と`target/first.onddebug`が生成されます。
+両commandがexit code `0`で終了し、`.ond/target/first.bin`と`.ond/target/first.onddebug`が生成されます。
 
 `.bin`はKagura規格を満たすVM上で実行するためのfileで、host OSから直接起動するファイルではありません。
 

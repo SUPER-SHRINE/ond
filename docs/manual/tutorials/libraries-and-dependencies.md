@@ -29,7 +29,7 @@ calc = { path = "../library" }
 [link]
 startup = "external"
 stack-size = 8192
-output = "target/app.bin"
+output = ".ond/target/app.bin"
 
 [link.ram]
 base = 4096
@@ -60,7 +60,7 @@ library単独を実行projectとしてbuildする例ではありません。
 **操作:** `app` directoryから`ond compile .`、次に`ond link --project .`を実行します。\
 compile対象は実行projectです。
 
-**結果:** exit `0`で`app/target/app.bin`と`app/target/app.onddebug`が生成されます。\
+**結果:** exit `0`で`app/.ond/target/app.bin`と`app/.ond/target/app.onddebug`が生成されます。\
 libraryはpath依存としてappのcompileに含まれます。
 
 path dependencyとimportの解決は[package仕様](../../../specs/ond/build/packages.md)を参照してください。
