@@ -1,4 +1,5 @@
 mod args;
+mod init;
 mod json;
 mod publish;
 use ond_cli::CompileRequest;
@@ -87,6 +88,7 @@ fn execute(command: args::Command) -> Result<(), Vec<String>> {
             println!("{}", args::HELP);
             Ok(())
         }
+        args::Command::Init => init::run(),
     }
 }
 fn write(path: &std::path::Path, bytes: &[u8]) -> Result<(), Vec<String>> {

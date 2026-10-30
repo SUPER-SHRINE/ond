@@ -136,9 +136,9 @@ def check_case(ond: Path, project: Path, case: Case) -> str:
     binary = None
     sidecar = None
     if not case.failure:
-        link_name = link_config.get("output")
+        link_name = link_config.get("output", ".ond/target/a.bin")
         if not isinstance(link_name, str):
-            raise RuntimeError(f"{case.article}/{case.folder}: [link].output is required")
+            raise RuntimeError(f"{case.article}/{case.folder}: [link].output must be a string")
         binary = output_path(project, link_name, "link")
         sidecar = binary.with_suffix(".onddebug")
         outputs.extend([binary, sidecar])
@@ -202,6 +202,14 @@ def main() -> int:
             article: generated / f"case-{index:03}"
             for index, article in enumerate(articles, start=1)
         }
+        first_program = article_roots["getting-started/first-program.md"]
+        first_program.mkdir(parents=True)
+        initialized = run([str(ond), "init"], first_program)
+        if initialized.returncode != 0 or initialized.stdout or initialized.stderr:
+            raise RuntimeError(
+                "getting-started/first-program.md: ond init failed\n"
+                f"stdout:\n{initialized.stdout}\nstderr:\n{initialized.stderr}"
+            )
         for article in articles:
             parse_article(article, article_roots[article])
         template = article_roots["getting-started/first-program.md"] / "ond.toml"

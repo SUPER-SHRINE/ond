@@ -18,7 +18,7 @@ func NewProfile() -> Profile {
 ```ond title="main.ond"
 package main
 
-import "first/profile"
+import "app/profile"
 
 func main() {
     var record: profile.Profile = profile.NewProfile()

@@ -15,6 +15,31 @@ ond link game.ondbuild --project ./game -o game.bin
 ond compile . -o - | ond link - --project . -o game.bin
 ```
 
+### ond init
+<!-- ond-spec-id: build/init-command -->
+
+`ond init`
+
+commandはcurrent directoryに`ond.toml`と`main.ond`を作る。\
+manifestのproject名は編集可能な`app`とし、必須link設定とoptional設定のcomment例を含む。\
+sourceは`package main`と空の`main`関数を含む。
+
+有効なlink設定はstartup `external`、stack size 8192 byte、RAM base 4096・size 65536 byte、exit mode `loop`とする。\
+数値は設定例であり、利用環境に応じて編集する。\
+compile pathとlink outputには既定値、`[resolve].ignore`には既定のlist、`[project].final`には既定の`false`をcomment例で示す。\
+role、ROM、dependency path、Git設定は例である。\
+dependency path、Git URL、revisionは使用前に編集する。
+
+optional ROM例は有効なRAM範囲と重ならない。\
+startupと領域の成立条件、およびexit modeとaddressの条件は[compileとlink設定](./packages.md#compileとlink設定)に従う。\
+例ではstartup `self`へ変更する場合にROM baseを0とし、RAM範囲を移動するよう示す。\
+exit mode `jump`へ変更する場合は`loop`を置き換え、`address`を加えるよう示す。
+
+作成先のいずれかがfile、directory、symbolic linkとして存在する場合、commandはどちらのtargetも作らず失敗する。\
+後続のfile作成またはwriteが失敗した場合、この実行で作ったfileを可能な範囲で削除する。\
+成功時はstdoutとstderrへ何も出力せずexit 0、file IO失敗時はstderrへ診断を出しexit 1となる。\
+commandは`-h`/`--help`以外の位置引数とoptionを受理しない。
+
 ### ond compile
 <!-- ond-spec-id: build/compile-command -->
 
@@ -64,9 +89,9 @@ entry/heap/stackのruntime symbol名は[Ond規約](../artifacts.md#link-symbol�
 ### 入出力と失敗時
 <!-- ond-spec-id: build/io-and-failure -->
 
-通常ファイル出力は同一directoryの一時fileからrenameで公開する。\
+compile/linkの通常file出力は同一directoryの一時fileからrenameで公開する。\
 compile/link失敗時は指定先の以前の成果物を保持する。\
-ログ・診断はstderrのみ、成功exit 0、compile/link/file IO失敗exit 1、不正なcommand/引数exit 2とする。\
+ログ・診断はstderrのみ、成功exit 0、init/compile/link/file IO失敗exit 1、不正なcommand/引数exit 2とする。\
 失敗結果は終了codeとstderr診断で表す。\
 引数なし、`--help`/`-h`、`ond help`は使用法をstdoutへ表示して正常終了する。\
 `--`以降は位置引数として扱う。
