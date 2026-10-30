@@ -1,5 +1,5 @@
 use std::{ffi::OsString, path::PathBuf};
-pub const HELP: &str = "Usage:\n  ond compile [PROJECT] [--role NAME] [-o FILE|-] [-v]\n  ond link [FILE|-] [--project DIR] [-o FILE|-]\n  ond help\nSettings are read from the selected project's ond.toml. Diagnostics go to stderr.\nRelative command-line paths are relative to the current directory.";
+pub const HELP: &str = "Usage:\n  ond init\n  ond compile [PROJECT] [--role NAME] [-o FILE|-] [-v]\n  ond link [FILE|-] [--project DIR] [-o FILE|-]\n  ond help\nSettings are read from the selected project's ond.toml. Diagnostics go to stderr.\nRelative command-line paths are relative to the current directory.";
 pub enum Command {
     Compile {
         root: PathBuf,
@@ -12,6 +12,7 @@ pub enum Command {
         project: PathBuf,
         output: Option<PathBuf>,
     },
+    Init,
     Help,
 }
 pub fn parse(args: Vec<OsString>) -> Result<Command, String> {
@@ -24,6 +25,20 @@ pub fn parse(args: Vec<OsString>) -> Result<Command, String> {
     };
     if args.len() == 1 && matches!(command, "help" | "--help" | "-h") {
         return Ok(Command::Help);
+    }
+    if command == "init" {
+        if args.len() == 2
+            && args[1]
+                .to_str()
+                .is_some_and(|arg| matches!(arg, "-h" | "--help"))
+        {
+            return Ok(Command::Help);
+        }
+        return if args.len() == 1 {
+            Ok(Command::Init)
+        } else {
+            Err("ond init takes no arguments".into())
+        };
     }
     if !matches!(command, "compile" | "link") {
         return Err(format!("unknown command: {command}"));

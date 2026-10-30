@@ -1,6 +1,6 @@
 # ビルドと起動の手順
 
-まず[最初のプログラム](first-program.md)の2つのファイル（`ond.toml`と`main.ond`）を用意し、そのフォルダーで作業します。\
+まず[最初のプログラム](first-program.md)に従って`ond init`を実行し、そのフォルダーで作業します。\
 ここではKagura v1向けの実行ファイルを作り、起動時に実行環境が行う準備を確認します。
 
 ## バイナリを作る
@@ -16,7 +16,7 @@ ond link --project .
 既定ではリンク用の情報を`target/build.ondbuild`へ、中間成果物を`target/ond-cache`へ保存します。
 
 `ond link --project .`はその情報とプロジェクトの設定から、実行環境向けのバイナリとデバッグ情報を作ります。\
-最初のプログラムの設定では、`target/first.bin`と`target/first.onddebug`に保存されます。\
+最初のプログラムの設定では、`target/a.bin`と`target/a.onddebug`に保存されます。\
 これらのコマンドはファイルを作成するもので、バイナリの実行はしません。
 
 設定に書く相対パスは、その設定を含む`ond.toml`があるフォルダーを基準に解決されます。\
@@ -52,7 +52,7 @@ Kaguraが定めるCPU命令とバスの約束だけでは、OSやローダー、
 [link]
 startup = "self"
 stack-size = 8192
-output = "target/first.bin"
+output = "target/a.bin"
 
 [link.rom]
 base = 0
