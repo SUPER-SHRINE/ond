@@ -45,16 +45,6 @@ CLIのcompile、link、依存解決、成果物、cacheの規則は[パッケー
 - [規範仕様](specs/README.md) — 構文、意味論、target契約
 - [Kagura v1 backend仕様](specs/ond/targets/kagura-v1/README.md) — ABI、memory layout、実行形式
 
-文書サイトをローカルで閲覧するには、Python環境を用意してZensicalを導入し、次を実行します。
-
-```powershell
-python -m venv target/website/venv
-target/website/venv/Scripts/python.exe -m pip install -r website/requirements.txt
-pwsh -NoProfile -File tools/build-docs.ps1 -Serve
-```
-
-閲覧先は <http://127.0.0.1:8000/> で、静的ファイルは `target/website/public/` に生成されます。
-
 `ond link`には、呼出側が決めるRAM範囲、stack size、正常終了後の戻り先を指定する必要があります。\
 言語、ABI、MIR、Object／LinkedImage形式、Rust公開APIの後方互換性は保証されません。
 
