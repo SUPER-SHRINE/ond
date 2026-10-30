@@ -27,11 +27,11 @@ roleを指定しない構成では共通部分だけが選択されます。
 `--role Debug`または`--role Development`を指定すると、対応するblockが選択されます。\
 各構成は同じsourceから別々にcompileします。
 
-この例では最初のプログラムと同じlink設定を使い、追加role名を宣言します。
+この例では`ond init`の設定に追加role名を宣言します。
 
 ```toml title="ond.toml"
 [project]
-name = "first"
+name = "app"
 
 [roles]
 names = ["Debug", "Development"]
@@ -39,7 +39,6 @@ names = ["Debug", "Development"]
 [link]
 startup = "external"
 stack-size = 8192
-output = ".ond/target/first.bin"
 
 [link.ram]
 base = 4096

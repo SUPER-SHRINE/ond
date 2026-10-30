@@ -33,13 +33,13 @@ name = "app"
 
 # compile成果物とpackage cacheの保存先（既定値）。
 # [compile]
-# output = "target/build.ondbuild"
-# cache-dir = "target/ond-cache"
+# output = ".ond/target/build.ondbuild"
+# cache-dir = ".ond/target/ond-cache"
 
 # 初めてのprogram向けの例。外部loaderが実行fileをRAMへcopyする想定です。
 # 数値はsampleです。実行環境のmemory mapとstack要件に合わせてください。
 [link]
-# output = "target/a.bin" # 省略時の実行file保存先。target/a.onddebugも生成します。
+# output = ".ond/target/a.bin" # 省略時の実行file保存先。.ond/target/a.onddebugも生成します。
 # startup形式。externalは外部loaderが起動し、selfはROM上の前置処理から始めます。
 startup = "external"
 # stack領域の予約量（byte）。

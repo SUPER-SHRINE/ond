@@ -4,24 +4,15 @@
 
 ## projectを作る
 
-空のdirectoryに次の2 fileを作ります。
+空のdirectoryで初期設定を作ります。
 
-```toml title="ond.toml"
-[project]
-name = "first"
-
-[link]
-startup = "external"
-stack-size = 8192
-output = ".ond/target/first.bin"
-
-[link.ram]
-base = 4096
-size = 65536
-
-[link.exit]
-mode = "loop"
+```sh
+ond init
 ```
+
+commandは`ond.toml`と空の`main`関数を持つ`main.ond`を作成します。\
+設定のoptional fieldはcomment例として記載され、既定の出力先は`.ond/target/`です。\
+このtutorialでは、生成された`main.ond`を次のprogramに置き換えます。
 
 ```ond title="main.ond"
 package main
@@ -47,7 +38,7 @@ ond compile .
 ond link --project .
 ```
 
-両commandがexit code `0`で終了し、`.ond/target/first.bin`と`.ond/target/first.onddebug`が生成されます。
+両commandがexit code `0`で終了し、`.ond/target/a.bin`と`.ond/target/a.onddebug`が生成されます。
 
 `.bin`はKagura規格を満たすVM上で実行するためのfileで、host OSから直接起動するファイルではありません。
 

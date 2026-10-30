@@ -61,14 +61,16 @@ fn init_generates_a_buildable_project_without_overwriting() {
         "{}",
         String::from_utf8_lossy(&compile.stderr)
     );
+    assert!(f.0.join(".ond/target/build.ondbuild").is_file());
+    assert!(f.0.join(".ond/target/ond-cache").is_dir());
     let link = f.run(&["link"]);
     assert!(
         link.status.success(),
         "{}",
         String::from_utf8_lossy(&link.stderr)
     );
-    assert!(f.0.join("target/a.bin").is_file());
-    assert!(f.0.join("target/a.onddebug").is_file());
+    assert!(f.0.join(".ond/target/a.bin").is_file());
+    assert!(f.0.join(".ond/target/a.onddebug").is_file());
 
     fs::write(f.0.join("ond.toml"), "preserve this").unwrap();
     let rerun = f.run(&["init"]);
@@ -95,12 +97,12 @@ fn optional_settings_examples_keep_their_table_scopes() {
             "[resolve]\nignore = [\".git\", \".ond\", \"target\"]",
         )
         .replace(
-            "# [compile]\n# output = \"target/build.ondbuild\"\n# cache-dir = \"target/ond-cache\"",
-            "[compile]\noutput = \"target/build.ondbuild\"\ncache-dir = \"target/ond-cache\"",
+            "# [compile]\n# output = \".ond/target/build.ondbuild\"\n# cache-dir = \".ond/target/ond-cache\"",
+            "[compile]\noutput = \".ond/target/build.ondbuild\"\ncache-dir = \".ond/target/ond-cache\"",
         )
         .replace(
-            "# output = \"target/a.bin\" # 省略時の実行file保存先。target/a.onddebugも生成します。",
-            "output = \"target/a.bin\"",
+            "# output = \".ond/target/a.bin\" # 省略時の実行file保存先。.ond/target/a.onddebugも生成します。",
+            "output = \".ond/target/a.bin\"",
         )
         .replace(
             "# [link.rom]\n# ROM範囲の先頭addressと容量（byte）。self startupではbaseを0にします。\n# base = 268435456\n# size = 65536",
@@ -122,9 +124,13 @@ fn optional_settings_examples_keep_their_table_scopes() {
     );
     assert_eq!(
         parsed["compile"]["cache-dir"].as_str(),
-        Some("target/ond-cache")
+        Some(".ond/target/ond-cache")
     );
-    assert_eq!(parsed["link"]["output"].as_str(), Some("target/a.bin"));
+    assert_eq!(
+        parsed["compile"]["output"].as_str(),
+        Some(".ond/target/build.ondbuild")
+    );
+    assert_eq!(parsed["link"]["output"].as_str(), Some(".ond/target/a.bin"));
     assert_eq!(parsed["link"]["rom"]["base"].as_integer(), Some(268435456));
     fs::write(f.0.join("ond.toml"), enabled).unwrap();
     let compile = f.run(&["compile"]);
