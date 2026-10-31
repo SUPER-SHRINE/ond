@@ -1,7 +1,6 @@
 # インストール
 
-この章では、Ondのrepositoryから開発中のCLIをbuildし、commandを確認します。\
-公開済みOnd 0.3.0を導入する手順ではありません。
+この章では、Ond 0.4.0向けCLIをrepositoryのsourceからbuildし、commandを確認します。
 
 ## 用意するもの
 
