@@ -41,6 +41,15 @@ def check(pages: dict[str, str], ignored_missing_pages: set[str] | None = None) 
 
     index_canonical = parsed.get("index.html", Page()).canonical
     base_path = urlsplit(index_canonical).path.rstrip("/") if index_canonical else ""
+    if not index_canonical:
+        for page_path, page in parsed.items():
+            if not page.canonical:
+                continue
+            canonical_path = urlsplit(page.canonical).path.rstrip("/")
+            page_suffix = "/" + page_path.removesuffix("index.html").rstrip("/")
+            if page_path.endswith("index.html") and canonical_path.endswith(page_suffix):
+                base_path = canonical_path[: -len(page_suffix)] if page_suffix != "/" else canonical_path
+                break
     errors: list[str] = []
     for page_path, page in parsed.items():
         page_url = "/" + page_path.removesuffix("index.html")
@@ -105,6 +114,20 @@ def self_test() -> None:
     assert check(
         {"index.html": '<h2 id="日本語">節</h2><a href="#missing">bad</a>'}
     ) == ["index.html: missing anchor: #missing"]
+
+    root_missing = {
+        "404.html": '<link rel="canonical" href="https://example.test/ond/404.html"><a href="/ond/guide/">guide</a>',
+        "guide/index.html": '<link rel="canonical" href="https://example.test/ond/guide/">guide',
+    }
+    assert validate(root_missing, {"index.html"}) == (2, ["missing generated page: index.html"])
+    assert validate(
+        {**root_missing, "guide/index.html": '<link rel="canonical" href="https://example.test/ond/guide/"><a href="/ond/missing/">bad</a>'},
+        {"index.html"},
+    )[0] == 1
+    assert validate(
+        {**root_missing, "guide/index.html": '<link rel="canonical" href="https://example.test/ond/guide/"><a href="/ond/guide/#lost">bad</a>'},
+        {"index.html"},
+    )[0] == 1
 
     from tempfile import TemporaryDirectory
 
