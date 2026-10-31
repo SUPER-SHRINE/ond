@@ -53,7 +53,13 @@ $project = Join-Path $tempRoot "hello"
 [System.IO.Directory]::CreateDirectory($project) | Out-Null
 
 try {
-    Get-ChildItem -LiteralPath (Join-Path $repoRoot "examples/hello") | Copy-Item -Destination $project -Recurse
+    Push-Location $project
+    try {
+        Invoke-Checked -FileName $ond -Arguments @("init")
+    }
+    finally {
+        Pop-Location
+    }
 
     Invoke-Checked -FileName $ond -Arguments @("compile", $project)
     $manifest = Join-Path $project ".ond/target/build.ondbuild"
