@@ -29,6 +29,12 @@ roleを指定しない構成では共通部分だけが選択されます。
 
 この例では`ond init`の設定に追加role名を宣言します。
 
+```text
+app/
+├─ ond.toml
+└─ main.ond
+```
+
 ```toml title="ond.toml"
 [project]
 name = "app"

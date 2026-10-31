@@ -3,6 +3,14 @@
 `import`で別packageをfile単位で参照します。\
 import pathはproject名とsubpackage directoryから構成します。
 
+```text
+app/
+├─ ond.toml
+├─ main.ond
+└─ math/
+   └─ math.ond
+```
+
 ```ond title="main.ond"
 package main
 

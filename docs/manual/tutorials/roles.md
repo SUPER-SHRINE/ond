@@ -2,6 +2,12 @@
 
 **到達目標:** role未指定の製品構成と、manifestで宣言した`Debug`、`Development`構成をcompileします。
 
+```text
+roles/
+├─ ond.toml
+└─ main.ond
+```
+
 ```toml title="ond.toml"
 [project]
 name = "roles"

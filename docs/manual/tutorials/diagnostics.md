@@ -5,6 +5,12 @@
 
 ## 修正前
 
+```text
+broken/
+├─ ond.toml
+└─ main.ond
+```
+
 ```toml title="broken/ond.toml"
 [project]
 name = "broken"
@@ -24,6 +30,12 @@ func main() {
 診断の`main.ond`と行・列を開き、型宣言と右辺を見比べます。
 
 ## 修正後
+
+```text
+fixed/
+├─ ond.toml
+└─ main.ond
+```
 
 ```toml title="fixed/ond.toml"
 [project]
