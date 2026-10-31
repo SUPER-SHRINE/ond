@@ -2,6 +2,16 @@
 
 **到達目標:** path依存として登録したlibraryの公開packageを、実行projectからimportします。
 
+```text
+projects/
+├─ app/
+│  ├─ ond.toml
+│  └─ main.ond
+└─ library/
+   ├─ ond.toml
+   └─ math.ond
+```
+
 `library` projectを用意します。
 
 ```toml title="library/ond.toml"

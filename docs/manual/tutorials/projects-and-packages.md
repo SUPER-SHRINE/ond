@@ -2,6 +2,14 @@
 
 **到達目標:** 1つの実行project内にsubpackageを置き、公開関数をimportします。
 
+```text
+app/
+├─ ond.toml
+├─ main.ond
+└─ math/
+   └─ add.ond
+```
+
 ```toml title="ond.toml"
 [project]
 name = "app"

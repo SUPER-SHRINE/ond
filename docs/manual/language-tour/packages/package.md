@@ -3,14 +3,26 @@
 各source fileは先頭に`package`宣言を一つ持ちます。\
 同じdirectory内のsourceは同じpackage名を使います。
 
+```text
+app/
+├─ ond.toml
+├─ main.ond
+└─ helper.ond
+```
+
 ```ond title="main.ond"
 package main
 
 func main() {
-    helper()
+    _ = helper()
 }
+```
 
-func helper() {
+```ond title="helper.ond"
+package main
+
+func helper() -> u32 {
+    return 1
 }
 ```
 

@@ -14,6 +14,12 @@ commandは`ond.toml`と空の`main`関数を持つ`main.ond`を作成します�
 設定のoptional fieldはcomment例として記載され、既定の出力先は`.ond/target/`です。\
 このtutorialでは、生成された`main.ond`を次のprogramに置き換えます。
 
+```text
+project/
+├─ ond.toml
+└─ main.ond
+```
+
 ```ond title="main.ond"
 package main
 
