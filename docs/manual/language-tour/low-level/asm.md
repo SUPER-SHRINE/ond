@@ -23,6 +23,11 @@ func main() {
         ADD r1, r1, r0, 1
     }
     _ = value
+
+    var entry: u32 = 0x1000
+    asm noreturn (r1 <- entry) {
+        JZ r0, r0, r1, 0
+    }
 }
 ```
 
@@ -40,6 +45,15 @@ func main() {
 
 `r1 <-> value`は実行前の`value`をregisterへ読み込み、正常継続時に値を書き戻します。\
 この例では`value`の`41`を読み込み、`42`を書き戻します。
+
+## `asm noreturn`で外部へ移る
+
+`asm noreturn`は直後のOnd codeへ継続しないことを表します。\
+上の例では`r1`へ移行先addressを渡し、`JZ`で外部へ移ります。
+
+この例を実行するには、移行先のcodeを`0x1000`へ配置し、そのentryが必要とするstackや引数を用意しておきます。\
+この配置や準備は通常のlink配置では自動的に保証されません。\
+`asm noreturn`では`defer`が実行されないため、必要なcleanupは移行前に済ませます。
 
 ## targetと命令構文
 
