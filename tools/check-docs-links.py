@@ -32,7 +32,7 @@ class Page(html.parser.HTMLParser):
             self.code_depth = max(0, self.code_depth - 1)
 
 
-def check(pages: dict[str, str]) -> list[str]:
+def check(pages: dict[str, str], ignored_missing_pages: set[str] | None = None) -> list[str]:
     parsed: dict[str, Page] = {}
     for path, source in pages.items():
         page = Page()
@@ -60,10 +60,41 @@ def check(pages: dict[str, str]) -> list[str]:
             target_path = posixpath.normpath(target_path)
             target = parsed.get(target_path)
             if target is None:
-                errors.append(f"{page_path}: missing page: {href}")
+                if ignored_missing_pages is None or target_path not in ignored_missing_pages:
+                    errors.append(f"{page_path}: missing page: {href}")
             elif target_url.fragment and unquote(target_url.fragment) not in target.ids:
                 errors.append(f"{page_path}: missing anchor: {href}")
     return errors
+
+
+def expected_html_paths(sources: Path) -> set[str]:
+    if not sources.is_dir():
+        raise ValueError(f"source directory does not exist: {sources}")
+    outputs: set[str] = set()
+    for markdown in sources.rglob("*"):
+        if not markdown.is_file() or markdown.suffix.lower() != ".md":
+            continue
+        relative = markdown.relative_to(sources)
+        if relative.name.casefold() in {"index.md", "readme.md"}:
+            output = relative.with_name("index.html")
+        else:
+            output = relative.with_suffix("") / "index.html"
+        outputs.add(output.as_posix())
+    if not outputs:
+        raise ValueError(f"source directory contains no Markdown pages: {sources}")
+    return outputs
+
+
+def validate(pages: dict[str, str], expected: set[str] | None = None) -> tuple[int, list[str]]:
+    missing = (expected or set()) - pages.keys()
+    issues = check(pages, missing)
+    if "index.html" not in pages and "index.html" not in missing:
+        issues.append("index.html: generated site entry is missing")
+    if issues:
+        return 1, issues
+    if missing:
+        return 2, [f"missing generated page: {path}" for path in sorted(missing)]
+    return 0, []
 
 
 def self_test() -> None:
@@ -75,23 +106,83 @@ def self_test() -> None:
         {"index.html": '<h2 id="日本語">節</h2><a href="#missing">bad</a>'}
     ) == ["index.html: missing anchor: #missing"]
 
+    from tempfile import TemporaryDirectory
+
+    test_root = Path(__file__).resolve().parent
+    with TemporaryDirectory(dir=test_root) as directory:
+        sources = Path(directory)
+        for name in (
+            "index.md",
+            "README.md",
+            "nested/index.md",
+            "nested/README.md",
+            "nested/guide.md",
+            "unlinked/page.md",
+        ):
+            source = sources / name
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source.write_text("page", encoding="utf-8")
+
+        expected = expected_html_paths(sources)
+        assert expected == {
+            "index.html",
+            "nested/index.html",
+            "nested/guide/index.html",
+            "unlinked/page/index.html",
+        }
+        pages = {
+            "index.html": '<a href="nested/">nested</a>',
+            "nested/index.html": '<a href="guide/">guide</a>',
+            "nested/guide/index.html": '<h2 id="topic">topic</h2>',
+            "unlinked/page/index.html": "unlinked",
+        }
+        assert validate(pages, expected) == (0, [])
+
+        del pages["unlinked/page/index.html"]
+        status, issues = validate(pages, expected)
+        assert status == 2
+        assert issues == ["missing generated page: unlinked/page/index.html"]
+
+        broken_with_missing_output = {**pages, "index.html": '<a href="missing.html">bad</a>'}
+        assert validate(broken_with_missing_output, expected)[0] == 1
+
+        complete_pages = {**pages, "unlinked/page/index.html": "unlinked"}
+        broken_page = {**complete_pages, "index.html": '<a href="missing.html">bad</a>'}
+        broken_anchor = {
+            **complete_pages,
+            "nested/guide/index.html": '<a href="#missing">bad</a>',
+        }
+        assert validate(broken_page, expected)[0] == 1
+        assert validate(broken_anchor, expected)[0] == 1
+
+    with TemporaryDirectory(dir=test_root) as directory:
+        try:
+            expected_html_paths(Path(directory))
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("an empty source directory must be rejected")
+
 
 if __name__ == "__main__":
     self_test()
     if len(sys.argv) == 2 and sys.argv[1] == "--self-test":
         print("link checker self-test passed")
         raise SystemExit(0)
-    if len(sys.argv) != 2:
-        raise SystemExit("usage: check-docs-links.py PUBLIC_DIR | --self-test")
+    if len(sys.argv) not in (2, 3):
+        raise SystemExit("usage: check-docs-links.py PUBLIC_DIR [SOURCES_DIR] | --self-test")
     root = Path(sys.argv[1]).resolve()
     pages = {
         path.relative_to(root).as_posix(): path.read_text(encoding="utf-8")
         for path in root.rglob("*.html")
     }
-    issues = check(pages)
-    if "index.html" not in pages:
-        issues.append("index.html: generated site entry is missing")
+    try:
+        expected = expected_html_paths(Path(sys.argv[2]).resolve()) if len(sys.argv) == 3 else None
+    except (OSError, ValueError) as error:
+        print(error, file=sys.stderr)
+        raise SystemExit(1) from error
+    status, issues = validate(pages, expected)
     if issues:
         print("\n".join(issues), file=sys.stderr)
-        raise SystemExit(1)
+        raise SystemExit(status)
     print(f"checked {len(pages)} generated pages and their internal links")
