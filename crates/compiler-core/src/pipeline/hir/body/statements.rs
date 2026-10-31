@@ -54,6 +54,9 @@ impl BodyLowerer<'_> {
             let statements_len = statements.len();
             let lowered = (|| -> Option<()> {
                 match statement {
+                    ast::Stmt::InlineAssembly(statement) => {
+                        statements.push(self.lower_asm(statement)?);
+                    }
                     ast::Stmt::Const(declaration) => {
                         for spec in &declaration.specs {
                             if spec.names.len() != spec.values.len() {
@@ -595,6 +598,7 @@ fn statement_span(statement: &ast::Stmt) -> crate::source::Span {
         ast::Stmt::Expr(statement) => statement.span,
         ast::Stmt::Return(statement) => statement.span,
         ast::Stmt::Defer(statement) => statement.span,
+        ast::Stmt::InlineAssembly(statement) => statement.span,
         ast::Stmt::Trap { span, .. } | ast::Stmt::Break(span) | ast::Stmt::Continue(span) => *span,
         ast::Stmt::Block(statement) => statement.span,
         ast::Stmt::If(statement) => statement.span,

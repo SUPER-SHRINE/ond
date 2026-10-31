@@ -4,11 +4,12 @@ use std::{collections::BTreeMap, path::PathBuf};
 mod bytes;
 pub mod debug;
 mod enum_wire;
+pub mod executable;
 pub mod link;
 pub mod object;
 pub use ond_interface as interface;
 
-pub const REVISION: u32 = 6;
+pub const REVISION: u32 = 7;
 pub const TARGET: &str = "kagura-v1";
 pub const ABI: &str = "ond-kagura-v1";
 
@@ -53,12 +54,6 @@ pub struct ArtifactRef {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PackageArtifact {
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "present_tests"
-    )]
-    pub tests: Option<TestMetadata>,
     pub interface: ond_interface::Interface,
     pub contract: Contract,
     pub compiler_id: String,
@@ -75,46 +70,11 @@ pub struct PackageArtifact {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompilationManifest {
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "present_tests"
-    )]
-    pub tests: Option<TestMetadata>,
     pub contract: Contract,
     pub compiler_id: String,
     /// Deterministic Object order, separate from initialization order.
     pub packages: Vec<ArtifactRef>,
     pub program: ProgramMetadata,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct TestMetadata {
-    pub cases: Vec<TestCase>,
-}
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct TestCase {
-    pub package: String,
-    pub name: String,
-    pub symbol: String,
-}
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct TestSidecar {
-    pub build_id: String,
-    pub cases: Vec<TestEntry>,
-}
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct TestEntry {
-    pub package: String,
-    pub name: String,
-    pub entry_point: u32,
-}
-fn present_tests<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<TestMetadata>, D::Error> {
-    TestMetadata::deserialize(d).map(Some)
 }
 
 pub(crate) fn required_nullable<'de, D, T>(d: D) -> Result<Option<T>, D::Error>

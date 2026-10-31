@@ -70,7 +70,7 @@ fn return_count_diagnostics_in_statement(
             }
             return_count_diagnostics(&statement.body, expected, diagnostics);
         }
-        ast::Stmt::Defer(_) | ast::Stmt::Trap { .. } => {}
+        ast::Stmt::Defer(_) | ast::Stmt::Trap { .. } | ast::Stmt::InlineAssembly(_) => {}
         ast::Stmt::Const(_)
         | ast::Stmt::Var(_)
         | ast::Stmt::ShortVar(_)
@@ -94,6 +94,7 @@ pub(super) fn block_can_complete_normally(block: &ast::Block) -> bool {
 
 fn stmt_can_complete_normally(stmt: &ast::Stmt) -> bool {
     match stmt {
+        ast::Stmt::InlineAssembly(statement) => !statement.noreturn,
         ast::Stmt::Var(_) | ast::Stmt::Assign(_) | ast::Stmt::Const(_) | ast::Stmt::ShortVar(_) => {
             true
         }
@@ -141,6 +142,7 @@ fn loop_body_can_break(block: &ast::Block) -> bool {
 fn stmt_can_break_current_loop(stmt: &ast::Stmt) -> bool {
     match stmt {
         ast::Stmt::Break(_) => true,
+        ast::Stmt::InlineAssembly(_) => false,
         ast::Stmt::Block(block) => loop_body_can_break(block),
         ast::Stmt::If(stmt) => {
             loop_body_can_break(&stmt.then_block)

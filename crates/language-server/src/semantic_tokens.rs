@@ -44,7 +44,7 @@ struct SemanticToken {
 }
 
 pub fn package_semantic_tokens(text: &str) -> Vec<u32> {
-    semantic_tokens(text, None, None)
+    semantic_tokens(text, None, None, None)
 }
 
 pub fn project_semantic_tokens(
@@ -53,18 +53,29 @@ pub fn project_semantic_tokens(
     package: &ast::Package,
     file: &ast::File,
 ) -> Vec<u32> {
-    semantic_tokens(text, Some((project, package, file)), None)
+    semantic_tokens(text, Some((project, package, file)), None, None)
+}
+
+pub(crate) fn snapshot_semantic_tokens(
+    text: &str,
+    project: &ast::Project,
+    package: &ast::Package,
+    file: &ast::File,
+    sources: &compiler::source::SourceDb,
+) -> Vec<u32> {
+    semantic_tokens(text, Some((project, package, file)), None, Some(sources))
 }
 
 pub fn indexed_semantic_tokens(text: &str, project: &ast::Project) -> Vec<u32> {
     let styles = indexed_styles(project);
-    semantic_tokens(text, None, Some(&styles))
+    semantic_tokens(text, None, Some(&styles), None)
 }
 
 fn semantic_tokens(
     text: &str,
     context: Option<(&ast::Project, &ast::Package, &ast::File)>,
     indexed: Option<&HashMap<String, Option<SemanticStyle>>>,
+    sources: Option<&compiler::source::SourceDb>,
 ) -> Vec<u32> {
     let tokens = lex(text);
     let mut package_names = BTreeSet::new();
@@ -91,6 +102,7 @@ fn semantic_tokens(
         if window[0].kind == TokenKind::Identifier
             && package_names.contains(window[0].text)
             && window[1].kind == TokenKind::Dot
+            && sources.is_none()
         {
             highlighted.insert(window[0].start, (SemanticStyle::Namespace, false));
         }
@@ -108,7 +120,11 @@ fn semantic_tokens(
                 .copied()
                 .map(|style| (style, true))
                 .or_else(|| {
-                    let resolved = resolve_reference(project, package, file, token.start)?;
+                    let resolved = if let Some(sources) = sources {
+                        crate::role_context::resolve_reference(project, sources, file, token.start)?
+                    } else {
+                        resolve_reference(project, package, file, token.start)?
+                    };
                     if resolved.reference != token_span {
                         return None;
                     }
@@ -576,6 +592,7 @@ fn collect_stmt(
     type_parameters: &BTreeSet<String>,
 ) {
     match stmt {
+        ast::Stmt::InlineAssembly(_) => {}
         ast::Stmt::Const(decl) => collect_const_decl(decl, declarations),
         ast::Stmt::Var(decl) => {
             for spec in &decl.specs {

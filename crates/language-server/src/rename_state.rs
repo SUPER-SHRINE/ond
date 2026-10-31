@@ -121,7 +121,30 @@ impl ServerState {
         root: &Path,
     ) -> Result<(compiler::LoadedProject, ast::Project), String> {
         let loaded = self.load_current_project(root)?;
-        let project = compiler::ond::parse_project(&loaded).map_err(render_frontend_error)?;
+        let packages = loaded
+            .packages
+            .iter()
+            .map(|package| {
+                let files = package
+                    .files
+                    .iter()
+                    .map(|file| {
+                        compiler::ond::parse_context_file(&loaded.sources, *file, true).map_err(
+                            |diagnostics| {
+                                render_frontend_error(compiler::FrontendError::new(
+                                    diagnostics.into_vec(),
+                                ))
+                            },
+                        )
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(ast::Package {
+                    logical_path: package.logical_path.clone(),
+                    files,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let project = ast::Project { packages };
         Ok((loaded, project))
     }
 

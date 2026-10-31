@@ -1,0 +1,28 @@
+{% extends "main.html" %}
+
+{% block container %}
+  <div class="ond-home">
+    <canvas class="ond-home__background" aria-hidden="true"></canvas>
+    <section class="ond-home__hero">
+      <div class="ond-home__mark">
+        <img src="{{ 'assets/ond_logo.png' | url }}" alt="Ond">
+      </div>
+      <div class="ond-home__copy">
+        <p class="ond-home__eyebrow">A PROGRAMMING LANGUAGE</p>
+        <div class="ond-home__wordmark" aria-hidden="true">Ond</div>
+        <div class="ond-home__content md-typeset">
+          <a id="__skip" tabindex="-1"></a>
+          {% include "partials/content.html" %}
+        </div>
+        <div class="ond-home__rule" aria-hidden="true"></div>
+      </div>
+    </section>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script src="{{ 'assets/javascripts/home.js' | url }}" defer></script>
+{% endblock %}
+
+{% block footer %}{% endblock %}

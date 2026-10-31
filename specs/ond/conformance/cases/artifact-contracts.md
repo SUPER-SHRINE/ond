@@ -1,7 +1,7 @@
 # 成果物・build・linkの契約case
 <!-- ond-spec-id: conformance/cases/artifact-contracts -->
 
-適用版はOnd v1、Kagura v1、artifact Contract revision 6とする。\
+適用版はOnd v1、Kagura v1、artifact Contract revision 7とする。\
 各caseは他caseから独立した入力を持ち、byte列を明記した行はBOM/末尾LFなしとする。\
 操作が型のwire読出しである場合は、その型のschemaと値条件を比較し、link・source実行の追加成功を意味しない。\
 error行は操作の失敗、link行は[CLI失敗契約](../../build/commands.md#入出力と失敗時)のlink errorを比較する。
@@ -13,7 +13,7 @@ error行は操作の失敗、link行は[CLI失敗契約](../../build/commands.md
 共有入力Aは次のPackageArtifactの全JSON bytesである。
 
 ```json
-{"build_id":"1111111111111111111111111111111111111111111111111111111111111111","compiler_id":"0000000000000000000000000000000000000000000000000000000000000000","contract":{"abi":"ond-kagura-v1","revision":6,"target":"kagura-v1"},"debug":{"functions":[],"package":"sample","ranges":[]},"dependencies":{},"imports":[],"initializer":null,"interface":{"exports":{},"package":"sample","types":[]},"object":{"name":"diagnostic","relocations":[],"sections":[],"symbols":[]},"package":"sample"}
+{"build_id":"1111111111111111111111111111111111111111111111111111111111111111","compiler_id":"0000000000000000000000000000000000000000000000000000000000000000","contract":{"abi":"ond-kagura-v1","revision":7,"target":"kagura-v1"},"debug":{"functions":[],"package":"sample","ranges":[]},"dependencies":{},"imports":[],"initializer":null,"interface":{"exports":{},"package":"sample","types":[]},"object":{"name":"diagnostic","relocations":[],"sections":[],"symbols":[]},"package":"sample"}
 ```
 
 | Case ID | 操作・入力 | 期待 |
@@ -21,8 +21,7 @@ error行は操作の失敗、link行は[CLI失敗契約](../../build/commands.md
 | ART-01.closed.accept | AをPackageArtifactとして読む | 受理 |
 | ART-01.required-null | Aからinitializer fieldを削除して読む | 必須field欠落のerror |
 | ART-01.unknown-nested | A.objectへextra:0を追加して読む | 未知fieldのerror |
-| ART-01.tests-null | Aへtests:nullを追加して読む | tests型のerror |
-| ART-01.duplicate-decoded-key | Contractとして <code>{"revision":6,"\u0072evision":6,"target":"kagura-v1","abi":"ond-kagura-v1"}</code> を読む | decode後の重複keyのerror |
+| ART-01.duplicate-decoded-key | Contractとして <code>{"revision":7,"\u0072evision":7,"target":"kagura-v1","abi":"ond-kagura-v1"}</code> を読む | decode後の重複keyのerror |
 | ART-01.composite-tuple | ValueKindとして <code>{"Composite":[[0,{"ty":0,"kind":"Zero"}]]}</code> を読む | tuple長2として受理（Value型参照の所属検査は別操作） |
 | ART-01.composite-arity | ValueKindとして <code>{"Composite":[[0]]}</code> を読む | tuple長違反のerror |
 | ART-01.enum-case | SectionKindとして <code>"text"</code> を読む | variant綴り違反のerror |
@@ -44,10 +43,10 @@ error行は操作の失敗、link行は[CLI失敗契約](../../build/commands.md
 | HASH-01.scalar-key-order | key U+E000→0、key U+1F600→1のobject | 7b22ee8080223a302c22f09f9880223a317d | a712a1804e0980b85da1fbebfb21070144773d51ac011435af287d757b3e7dc5 |
 
 `HASH-01.file-bytes`はAをBOM/末尾LFなしで保存した486byteと、Aの末尾にLFを1byte追加した487byteを別fileとする。\
-content_hashは順に`da820c7d7eb015cba9c5f5d15858d6e6760316a977b9d4c8a1eb370170e5294a`、`3304a08fe5acfa8a103ff632a16fe71e1c8f9ad59e7c10203a19e402a7239ee6`と比較する。\
+content_hashは順に`46abc29ca81801ce7a3bfcded39db1424d1d5ba7f53490384b8dcbc2dcb005f2`、`da4b0eb92e4e1a6c9e3c5b4337f602c46c4902acb131b5f41db6ddc12ad66ea3`と比較する。\
 JSON値の一致を理由に同じbytesへ再encodeして比較しない。
 
-## Manifest pathとmode
+## Manifest path
 <!-- ond-spec-id: conformance/artifact-contracts/manifest -->
 
 要件は`ART-01`、定義元は[参照整合](../../artifacts.md#manifest読出しと参照整合)とする。\
@@ -60,30 +59,12 @@ Windows runnerはこの絶対directory構造を同じ相対関係の専用root�
 | ART-01.path-stdin | stdin manifest、ArtifactRef.path=cache/a.ondpkg | /work/run/cache/a.ondpkg |
 | ART-01.path-absolute | いずれのmanifestでもArtifactRef.path=/work/shared/a.ondpkg | /work/shared/a.ondpkg |
 
-modeと通常/testの起動整合は[test build](../../build/test-build.md)と[cache/link入力](./build-observations.md)も比較する。
-
-test関数の成立条件は[test source規則](../../build/test-build.md#sourceと文脈)をcompileで比較し、一覧の入力整合は[manifest読出し](../../artifacts.md#manifest読出しと参照整合)をlinkで比較する。\
-次の各入力は独立projectであり、manifestは`[project]`と`name = "test"`の2行、`main.ond`は`package main`と`func main(){}`の2行とする。\
-`main_test.ond`は`package main`、`type Device struct{}`、表の宣言の3行とし、全fileはLF区切り・末尾LFあり、manifest記載以外の入力なし・既存cacheなし、操作はrevision 6でのtest compileとする。
-
-| 入力宣言 | compile期待 |
-| --- | --- |
-| `func TestBad(x:u32){}` | compile error |
-| `func TestBad()->u32{return 1}` | compile error |
-| `func TestBad[T](){}` | compile error |
-| `func(x:Device) TestBad(){}` | compile error |
-| `func TestRoot(){}` | 成功。manifestとroot artifactのcase列はpackage=`test`、name=`TestRoot`、symbol=`main.TestRoot`の1件。test-only宣言は公開interfaceへ追加しない |
-
-正常入力の`main.ond`に`func TestOrdinary(x:u32){}`を追加した場合も、case列はTestRootの1件とする。\
-正常入力に`left/left.ond`（`package left`、`func Value(){}`の2行）を追加してtest compileし、同じcompiler executableと[cache/link入力のlink設定](./build-observations.md#操作と比較)でlinkすると成功する。\
-各操作はこのcompile出力の独立したcopyへ適用し、変更artifactの元bytesからcontent_hashを再計算してArtifactRefも更新する。\
-root artifactのcaseを空にして同caseを`test/left` artifactへ移した入力、およびroot artifactのcaseを同artifact内で複製した入力は、manifestのcase列を維持したままlinkし、それぞれ所属不一致と重複のlink errorを比較する。
-
 ## LinkPlan、symbol、短距離patch
 <!-- ond-spec-id: conformance/artifact-contracts/linking -->
 
 要件は`LINK-01`、定義元は[linking](../../linking.md)と[symbol集合](../../artifacts.md#linkplanとlinkedimage)とする。\
-共有LinkPlan Lは次の全JSON値とする。
+共有LinkPlan Lの論理値を次の記法で表す。\
+この節は配置済みTextの先頭addressを4096に指定したsymbol・patch計算の個別検査であり、ONDXの生成やLinkPlanのJSON wire読出しを操作へ含めない。
 
 ```json
 {"read_only":null,"memory_base":4096,"memory_size":65536,"stack_size":8192,"entry_symbol":"main.main","heap_base_symbol":"heap","stack_bottom_symbol":"bottom"}

@@ -124,6 +124,12 @@ pub struct Instruction {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InstructionKind {
+    InlineAssembly {
+        program: crate::inline_asm::Program,
+        noreturn: bool,
+        inputs: Vec<(crate::inline_asm::Register, ValueId)>,
+        outputs: Vec<(crate::inline_asm::Register, TypeId)>,
+    },
     Constant(Constant),
     Unary {
         op: UnaryOp,
@@ -167,6 +173,11 @@ pub enum InstructionKind {
 impl InstructionKind {
     pub fn effects(&self) -> Effects {
         match self {
+            Self::InlineAssembly { .. } => Effects {
+                memory: MemoryEffect::ReadWrite,
+                may_trap: true,
+                calls: false,
+            },
             Self::Constant(_) | Self::Unary { .. } | Self::AddressOf(_) => Effects::PURE,
             Self::Binary { overflow, .. } => Effects {
                 memory: MemoryEffect::None,

@@ -1,0 +1,58 @@
+name: Docs
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install Zensical
+        shell: pwsh
+        run: |
+          python -m venv target/website/venv
+          if ($LASTEXITCODE -ne 0) { throw "Python virtual environment creation failed." }
+          target/website/venv/bin/python -m pip install -r website/requirements.txt
+          if ($LASTEXITCODE -ne 0) { throw "Zensical installation failed." }
+      - name: Build docs site
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File tools/build-docs.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Docs site build failed." }
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: target/website/public
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

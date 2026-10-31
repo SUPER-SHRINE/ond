@@ -472,6 +472,10 @@ fn find_completion_selector_in_stmt<'a>(
     function: Option<CompletionScope<'a>>,
 ) -> Option<(ast::Expr, Option<CompletionScope<'a>>)> {
     match stmt {
+        ast::Stmt::InlineAssembly(statement) => statement
+            .bindings
+            .iter()
+            .find_map(|binding| find_completion_selector_in_expr(&binding.value, marker, function)),
         ast::Stmt::Const(decl) => decl
             .specs
             .iter()
@@ -2568,6 +2572,7 @@ fn append_stmt_completion_items(items: &mut Vec<Value>, statements: &[ast::Stmt]
 
 fn stmt_span(stmt: &ast::Stmt) -> Span {
     match stmt {
+        ast::Stmt::InlineAssembly(statement) => statement.span,
         ast::Stmt::Const(decl) => decl.span,
         ast::Stmt::Var(decl) => decl.span,
         ast::Stmt::ShortVar(decl) => decl.span,
@@ -2628,6 +2633,24 @@ mod tests {
         completion_text_with_value_placeholder, import_path_completion_context,
         import_path_completion_items,
     };
+
+    #[test]
+    fn asm_header_selector_completion_visits_ordinary_input_expression() {
+        let text =
+            "package main\nfunc main(){asm(r1<-object.__ond_completion_member){ADD r1,r1,r0,0}}\n";
+        let file = compiler::parse_source_file(compiler::source::FileId(0), text).unwrap();
+        let compiler::ir::ast::TopLevelDecl::Func(function) = &file.decls[0] else {
+            panic!("function");
+        };
+        assert!(
+            super::find_completion_selector_in_stmt(
+                &function.body.statements[0],
+                "__ond_completion_member",
+                None
+            )
+            .is_some()
+        );
+    }
 
     #[test]
     fn extracts_the_qualifier_before_a_member_completion() {

@@ -15,6 +15,7 @@ mod expressions;
 pub(super) use expressions::{index_type_argument, type_argument_index};
 mod generation;
 mod globals;
+mod inline_asm;
 mod integer_literal;
 mod intrinsics;
 mod memory;
@@ -184,10 +185,7 @@ impl<'a> BodyLowerer<'a> {
         self.universe
             .iter()
             .find(|package| package.id == self.package_id)?
-            .imports
-            .get(&span.file)?
-            .get(qualifier)
-            .copied()
+            .import_from(qualifier, span)
     }
 
     pub(super) fn new(

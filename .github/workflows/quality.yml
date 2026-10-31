@@ -38,3 +38,15 @@ jobs:
       - name: 実配布archiveの文書収録を検証
         shell: pwsh
         run: pwsh -NoProfile -File tools/test-release-package.ps1
+
+      - name: Windows installerを作成して検証
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "([^"]+)"').Matches[0].Groups[1].Value
+          $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path -LiteralPath $compiler)) { throw 'Inno Setup 6 is required on the Windows runner.' }
+          pwsh -NoProfile -File tools/build-installer.ps1 -Version $version -Compiler $compiler
+          if ($LASTEXITCODE -ne 0) { throw 'Installer build failed.' }
+          pwsh -NoProfile -File tools/test-installer.ps1 -Version $version -RunIntegration
+          if ($LASTEXITCODE -ne 0) { throw 'Installer integration failed.' }

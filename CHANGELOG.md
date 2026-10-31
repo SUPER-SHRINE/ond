@@ -2,6 +2,27 @@
 
 このファイルには、Ondの利用者に影響する主な変更を記録する。
 
+## 0.4.0
+
+### Added
+
+- `ond init`で説明付きの`ond.toml`と`main.ond`を生成し、既存fileを保持
+- project roleと依存roleを導入し、Language Serverのrole構文に応じた解析・補完に対応
+- Kagura向けinline assemblyの`asm`と`asm noreturn`を追加
+- Windows x64 installerを追加
+- Zensicalによるユーザーガイドと仕様サイトを追加
+
+### Changed
+
+- `ond link`の実行fileをJSONからONDX binaryへ変更し、startup、ROM/RAM、stack設定に対応
+- compile、link、package cacheの既定出力先を`.ond/target`以下へ変更
+- テスト専用buildを廃止し、テストsourceを通常のOnd sourceとして外部toolから実行する方式へ移行
+
+### Removed
+
+- `ond compile --test`、`.ondtest` sidecarおよび`test.ond`／`*_test.ond`の専用扱いを削除
+- `hello` exampleを削除
+
 ## 0.3.0
 
 ### Added

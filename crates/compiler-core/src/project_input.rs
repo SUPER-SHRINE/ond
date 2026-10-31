@@ -15,6 +15,13 @@ pub struct ExternalSource {
 
 pub type ExternalSources = BTreeMap<String, ExternalSource>;
 
+#[derive(Debug, Clone, Default)]
+pub struct RoleLoadOptions {
+    pub allow_incomplete: bool,
+    pub selected: Option<String>,
+    pub dependencies: crate::roles::DependencyInputs,
+}
+
 /// Load project source overlays and resolved dependency sources through the shared frontend boundary.
 pub fn load_project_with_inputs(
     root: impl AsRef<Path>,
@@ -29,8 +36,7 @@ pub fn load_project_with_inputs(
         excluded_dirs,
         required_sources,
         external_sources,
-        false,
-        false,
+        RoleLoadOptions::default(),
     )
 }
 
@@ -49,26 +55,10 @@ pub fn load_project_with_inputs_allow_incomplete(
         excluded_dirs,
         required_sources,
         external_sources,
-        true,
-        true,
-    )
-}
-
-pub fn load_project_with_test_inputs(
-    root: impl AsRef<Path>,
-    overrides: &BTreeMap<PathBuf, String>,
-    excluded_dirs: &[PathBuf],
-    required_sources: &BTreeMap<String, String>,
-    external_sources: &ExternalSources,
-) -> Result<LoadedProject, FrontendError> {
-    load_project_with_inputs_impl(
-        root,
-        overrides,
-        excluded_dirs,
-        required_sources,
-        external_sources,
-        false,
-        true,
+        RoleLoadOptions {
+            allow_incomplete: true,
+            ..Default::default()
+        },
     )
 }
 
@@ -79,15 +69,10 @@ fn load_project_with_inputs_impl(
     excluded_dirs: &[PathBuf],
     required_sources: &BTreeMap<String, String>,
     external_sources: &ExternalSources,
-    allow_incomplete: bool,
-    include_tests: bool,
+    options: RoleLoadOptions,
 ) -> Result<LoadedProject, FrontendError> {
-    let mut loaded = crate::project::load_project_with_test_sources(
-        root,
-        overrides,
-        excluded_dirs,
-        include_tests,
-    )?;
+    let mut loaded =
+        crate::project::load_project_with_overrides_and_exclusions(root, overrides, excluded_dirs)?;
     let project_name = crate::project::project_name(&loaded.manifest_path)?;
     loaded.packages.retain(|package| {
         !excluded_dirs
@@ -108,10 +93,7 @@ fn load_project_with_inputs_impl(
             .chain(
                 required_sources
                     .iter()
-                    .filter(|(name, _)| {
-                        !name.contains('/')
-                            && (include_tests || !crate::project::is_test_source(Path::new(name)))
-                    })
+                    .filter(|(name, _)| !name.contains('/'))
                     .map(|(name, text)| (Path::new(name), text.as_str())),
             ),
     );
@@ -129,9 +111,6 @@ fn load_project_with_inputs_impl(
     let mut optional = BTreeSet::new();
 
     for (name, text) in required_sources {
-        if !include_tests && crate::project::is_test_source(Path::new(name)) {
-            continue;
-        }
         validate_source_name(name)?;
         let path = loaded.root.join(name);
         merge_source(
@@ -183,9 +162,44 @@ fn load_project_with_inputs_impl(
             )
         })
         .collect();
-    retain_reachable_packages(&mut loaded, &optional, &application_roots, allow_incomplete)?;
+    loaded.sources.set_dependency_inputs(options.dependencies);
+    crate::roles::capture(&mut loaded.sources, &loaded.root)?;
+    if let Some(role) = options.selected.as_deref() {
+        if !root_is_app {
+            return Err(failure("--role is only valid for an executable project"));
+        }
+        loaded
+            .sources
+            .select_role(&loaded.root, role)
+            .map_err(failure)?;
+    }
+    retain_reachable_packages(
+        &mut loaded,
+        &optional,
+        &application_roots,
+        options.allow_incomplete,
+    )?;
     assign_package_ids(&mut loaded);
     Ok(loaded)
+}
+
+/// Load a build snapshot with its root role selected before import reachability.
+pub fn load_project_with_role_inputs(
+    root: impl AsRef<Path>,
+    overrides: &BTreeMap<PathBuf, String>,
+    excluded_dirs: &[PathBuf],
+    required_sources: &BTreeMap<String, String>,
+    external_sources: &ExternalSources,
+    options: RoleLoadOptions,
+) -> Result<LoadedProject, FrontendError> {
+    load_project_with_inputs_impl(
+        root,
+        overrides,
+        excluded_dirs,
+        required_sources,
+        external_sources,
+        options,
+    )
 }
 
 fn merge_optional_packages(
@@ -195,13 +209,11 @@ fn merge_optional_packages(
 ) -> Result<(), FrontendError> {
     let mut external_packages = BTreeMap::<String, Vec<(&String, &ExternalSource)>>::new();
     for (name, source) in sources {
-        if !crate::project::is_test_source(Path::new(name)) {
-            validate_source_name(name)?;
-            external_packages
-                .entry(package_for_source_name(name))
-                .or_default()
-                .push((name, source));
-        }
+        validate_source_name(name)?;
+        external_packages
+            .entry(package_for_source_name(name))
+            .or_default()
+            .push((name, source));
     }
     for (package, files) in external_packages {
         if let Some(existing) = loaded
@@ -212,7 +224,6 @@ fn merge_optional_packages(
             let own_files = existing
                 .files
                 .iter()
-                .filter(|id| !crate::project::is_test_source(loaded.sources.file(**id).path()))
                 .map(|id| {
                     let source = loaded.sources.file(*id);
                     (
@@ -357,7 +368,7 @@ fn retain_reachable_packages(
         .difference(optional)
         .cloned()
         .collect::<BTreeSet<_>>();
-    let root_imports = match imports_for_packages(loaded, &reachable) {
+    let root_imports = match imports_for_packages(loaded, &reachable, allow_incomplete) {
         Ok(imports) => imports,
         Err(_) if allow_incomplete => return Ok(()),
         Err(error) => return Err(render_parse_error(loaded, error)),
@@ -376,11 +387,12 @@ fn retain_reachable_packages(
         if !optional.contains(&package) {
             continue;
         }
-        let imports = match imports_for_packages(loaded, &BTreeSet::from([package])) {
-            Ok(imports) => imports,
-            Err(_) if allow_incomplete => return Ok(()),
-            Err(error) => return Err(render_parse_error(loaded, error)),
-        };
+        let imports =
+            match imports_for_packages(loaded, &BTreeSet::from([package]), allow_incomplete) {
+                Ok(imports) => imports,
+                Err(_) if allow_incomplete => return Ok(()),
+                Err(error) => return Err(render_parse_error(loaded, error)),
+            };
         pending.extend(imports.into_values().flatten());
     }
 
@@ -405,6 +417,7 @@ fn render_parse_error(loaded: &LoadedProject, error: FrontendError) -> FrontendE
 fn imports_for_packages(
     loaded: &LoadedProject,
     selected: &BTreeSet<String>,
+    all_roles: bool,
 ) -> Result<BTreeMap<String, Vec<String>>, FrontendError> {
     let mut diagnostics = Diagnostics::new();
     let mut imports_by_package = BTreeMap::new();
@@ -415,7 +428,12 @@ fn imports_for_packages(
     {
         let mut imports = Vec::new();
         for &file_id in &package.files {
-            match crate::ond::parse_source_file(file_id, loaded.sources.file(file_id).text()) {
+            let cursor_project = all_roles
+                && loaded
+                    .sources
+                    .roles(file_id)
+                    .is_some_and(|roles| roles.project == loaded.root);
+            match crate::ond::parse_context_file(&loaded.sources, file_id, cursor_project) {
                 Ok(file) => {
                     for import in file.imports {
                         match crate::decode_import_path(&import.path) {

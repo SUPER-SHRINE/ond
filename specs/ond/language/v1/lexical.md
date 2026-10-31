@@ -26,14 +26,18 @@ package import const var type func struct return defer
 break continue if else for true false nil as new
 ```
 
-`operator`、`trap`、`len`は文脈により構文またはbuiltinを表すidentifierであり、bindingの成立条件は[scope規則](./names-and-scopes.md)に従う。\
+`operator`、`trap`、`len`、`role`は文脈により構文またはbuiltinを表すidentifierであり、bindingの成立条件は[scope規則](./names-and-scopes.md)に従う。\
 構文を構成するoperatorとpunctuationは次のとおりである。
 
 ```text
 + - * / % & | ^ &^ << >> == != < <= > >= && || !
 = += -= *= /= %= &= |= ^= &^= <<= >>= := ++ --
-( ) [ ] { } , . : ; -> ...
+( ) [ ] { } , . : ; -> <- <-> ...
 ```
+
+`<-`と`<->`は[inline assembly](./inline-assembly.md#構文)のbinding directionとして使用する。\
+既存の`->` tokenもbinding directionとして使用する。\
+方向tokenを認識する位置と`<->`の最長一致はinline assembly構文に従い、binding右辺と他の式位置では既存のtokenと式文法を適用する。
 
 integer literalは10進、`0b`/`0B` prefixの2進、先頭`0`または`0o`/`0O`の8進、`0x`/`0X`の16進で表す。\
 各基数に属する数字を1個以上持ち、underscoreは基数prefix（8進の先頭`0`を含む）直後または数字間に一つ置ける。\
@@ -99,8 +103,10 @@ EBNFの`{ X }`は0回以上、`[ X ]`は省略可能、`|`は選択、引用符�
 
 | Production群 | 定義元 |
 | --- | --- |
-| SourceFile、PackageClause、ImportDecl、QualifiedIdent | [package/import](./names-and-scopes.md#構文) |
+| SourceFile、SourceItem、PackageClause、ImportDecl、QualifiedIdent | [package/import](./names-and-scopes.md#構文) |
+| RoleDecl、RoleDeclBlock、RoleStmt、RoleNames | [role](./roles.md#構文) |
 | 宣言、receiver、signature、型parameter、IdentifierList | [宣言](./declarations.md#構文) |
 | Type、型argument、関数型、TypeList | [型](./types.md#構文) |
 | Block、Statement、assignment、if/for、return/defer/trap | [文](./statements.md#構文) |
+| InlineAssembly、asm binding | [inline assembly](./inline-assembly.md#構文) |
 | Expression、literal、call、conversion、ExpressionList | [式](./expressions.md#構文) |

@@ -1,0 +1,183 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 650" role="img" aria-labelledby="title desc">
+  <title id="title">アドレスごとの8 bitと8×8モニターの対応</title>
+  <desc id="desc">アドレス0x2000から0x2007へ左欄の値を書き込み、8×8画面にAを表示した例。各マスの数字はbit番号。</desc>
+  <style>
+    text { font-family: system-ui, "Yu Gothic", "Noto Sans JP", sans-serif; fill: #111; }
+    .title { font-size: 23px; font-weight: 700; }
+    .head { font-size: 17px; font-weight: 700; }
+    .label { font-size: 16px; }
+    .mono { font-family: ui-monospace, Consolas, monospace; font-size: 17px; }
+    .index { font-family: ui-monospace, Consolas, monospace; font-size: 20px; font-weight: 700; }
+    .index.light { fill: #fff; }
+    .index.dark { fill: #111; }
+  </style>
+  <rect width="900" height="620" rx="16" fill="#fff"/>
+  <text class="title" x="450" y="38" text-anchor="middle">モニターの表示領域：1 byteが1行</text>
+  <text class="head" x="65" y="91" text-anchor="middle">行</text>
+  <text class="head" x="150" y="91" text-anchor="middle">アドレス</text>
+  <text class="head" x="245" y="91" text-anchor="middle">16進数</text>
+  <text class="head" x="345" y="91" text-anchor="middle">2進数</text>
+  <text class="head" x="651" y="91" text-anchor="middle">モニターの画素（各マスにbit番号）</text>
+  <text class="label" x="65" y="165" text-anchor="middle">0</text>
+  <text class="mono" x="150" y="165" text-anchor="middle">0x2000</text>
+  <text class="mono" x="245" y="165" text-anchor="middle">0x18</text>
+  <text class="mono" x="345" y="165" text-anchor="middle">00011000</text>
+  <rect x="435" y="132" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="462" y="166" text-anchor="middle" fill="#111">7</text>
+  <rect x="489" y="132" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="516" y="166" text-anchor="middle" fill="#111">6</text>
+  <rect x="543" y="132" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="570" y="166" text-anchor="middle" fill="#111">5</text>
+  <rect x="597" y="132" width="54" height="54" fill="#fff" stroke="#666" stroke-width="1"/>
+  <text class="index dark" x="624" y="166" text-anchor="middle" fill="#fff">4</text>
+  <rect x="651" y="132" width="54" height="54" fill="#fff" stroke="#666" stroke-width="1"/>
+  <text class="index dark" x="678" y="166" text-anchor="middle" fill="#fff">3</text>
+  <rect x="705" y="132" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="732" y="166" text-anchor="middle" fill="#111">2</text>
+  <rect x="759" y="132" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="786" y="166" text-anchor="middle" fill="#111">1</text>
+  <rect x="813" y="132" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="840" y="166" text-anchor="middle" fill="#111">0</text>
+  <text class="label" x="65" y="219" text-anchor="middle">1</text>
+  <text class="mono" x="150" y="219" text-anchor="middle">0x2001</text>
+  <text class="mono" x="245" y="219" text-anchor="middle">0x24</text>
+  <text class="mono" x="345" y="219" text-anchor="middle">00100100</text>
+  <rect x="435" y="186" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="462" y="220" text-anchor="middle" fill="#111">7</text>
+  <rect x="489" y="186" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="516" y="220" text-anchor="middle" fill="#111">6</text>
+  <rect x="543" y="186" width="54" height="54" fill="#fff" stroke="#666" stroke-width="1"/>
+  <text class="index dark" x="570" y="220" text-anchor="middle" fill="#fff">5</text>
+  <rect x="597" y="186" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="624" y="220" text-anchor="middle" fill="#111">4</text>
+  <rect x="651" y="186" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="678" y="220" text-anchor="middle" fill="#111">3</text>
+  <rect x="705" y="186" width="54" height="54" fill="#fff" stroke="#666" stroke-width="1"/>
+  <text class="index dark" x="732" y="220" text-anchor="middle" fill="#fff">2</text>
+  <rect x="759" y="186" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="786" y="220" text-anchor="middle" fill="#111">1</text>
+  <rect x="813" y="186" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="840" y="220" text-anchor="middle" fill="#111">0</text>
+  <text class="label" x="65" y="273" text-anchor="middle">2</text>
+  <text class="mono" x="150" y="273" text-anchor="middle">0x2002</text>
+  <text class="mono" x="245" y="273" text-anchor="middle">0x42</text>
+  <text class="mono" x="345" y="273" text-anchor="middle">01000010</text>
+  <rect x="435" y="240" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="462" y="274" text-anchor="middle" fill="#111">7</text>
+  <rect x="489" y="240" width="54" height="54" fill="#fff" stroke="#666" stroke-width="1"/>
+  <text class="index dark" x="516" y="274" text-anchor="middle" fill="#fff">6</text>
+  <rect x="543" y="240" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="570" y="274" text-anchor="middle" fill="#111">5</text>
+  <rect x="597" y="240" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="624" y="274" text-anchor="middle" fill="#111">4</text>
+  <rect x="651" y="240" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="678" y="274" text-anchor="middle" fill="#111">3</text>
+  <rect x="705" y="240" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="732" y="274" text-anchor="middle" fill="#111">2</text>
+  <rect x="759" y="240" width="54" height="54" fill="#fff" stroke="#666" stroke-width="1"/>
+  <text class="index dark" x="786" y="274" text-anchor="middle" fill="#fff">1</text>
+  <rect x="813" y="240" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="840" y="274" text-anchor="middle" fill="#111">0</text>
+  <text class="label" x="65" y="327" text-anchor="middle">3</text>
+  <text class="mono" x="150" y="327" text-anchor="middle">0x2003</text>
+  <text class="mono" x="245" y="327" text-anchor="middle">0x7E</text>
+  <text class="mono" x="345" y="327" text-anchor="middle">01111110</text>
+  <rect x="435" y="294" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="462" y="328" text-anchor="middle" fill="#111">7</text>
+  <rect x="489" y="294" width="54" height="54" fill="#fff" stroke="#666" stroke-width="1"/>
+  <text class="index dark" x="516" y="328" text-anchor="middle" fill="#fff">6</text>
+  <rect x="543" y="294" width="54" height="54" fill="#fff" stroke="#666" stroke-width="1"/>
+  <text class="index dark" x="570" y="328" text-anchor="middle" fill="#fff">5</text>
+  <rect x="597" y="294" width="54" height="54" fill="#fff" stroke="#666" stroke-width="1"/>
+  <text class="index dark" x="624" y="328" text-anchor="middle" fill="#fff">4</text>
+  <rect x="651" y="294" width="54" height="54" fill="#fff" stroke="#666" stroke-width="1"/>
+  <text class="index dark" x="678" y="328" text-anchor="middle" fill="#fff">3</text>
+  <rect x="705" y="294" width="54" height="54" fill="#fff" stroke="#666" stroke-width="1"/>
+  <text class="index dark" x="732" y="328" text-anchor="middle" fill="#fff">2</text>
+  <rect x="759" y="294" width="54" height="54" fill="#fff" stroke="#666" stroke-width="1"/>
+  <text class="index dark" x="786" y="328" text-anchor="middle" fill="#fff">1</text>
+  <rect x="813" y="294" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="840" y="328" text-anchor="middle" fill="#111">0</text>
+  <text class="label" x="65" y="381" text-anchor="middle">4</text>
+  <text class="mono" x="150" y="381" text-anchor="middle">0x2004</text>
+  <text class="mono" x="245" y="381" text-anchor="middle">0x42</text>
+  <text class="mono" x="345" y="381" text-anchor="middle">01000010</text>
+  <rect x="435" y="348" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="462" y="382" text-anchor="middle" fill="#111">7</text>
+  <rect x="489" y="348" width="54" height="54" fill="#fff" stroke="#666" stroke-width="1"/>
+  <text class="index dark" x="516" y="382" text-anchor="middle" fill="#fff">6</text>
+  <rect x="543" y="348" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="570" y="382" text-anchor="middle" fill="#111">5</text>
+  <rect x="597" y="348" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="624" y="382" text-anchor="middle" fill="#111">4</text>
+  <rect x="651" y="348" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="678" y="382" text-anchor="middle" fill="#111">3</text>
+  <rect x="705" y="348" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="732" y="382" text-anchor="middle" fill="#111">2</text>
+  <rect x="759" y="348" width="54" height="54" fill="#fff" stroke="#666" stroke-width="1"/>
+  <text class="index dark" x="786" y="382" text-anchor="middle" fill="#fff">1</text>
+  <rect x="813" y="348" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="840" y="382" text-anchor="middle" fill="#111">0</text>
+  <text class="label" x="65" y="435" text-anchor="middle">5</text>
+  <text class="mono" x="150" y="435" text-anchor="middle">0x2005</text>
+  <text class="mono" x="245" y="435" text-anchor="middle">0x42</text>
+  <text class="mono" x="345" y="435" text-anchor="middle">01000010</text>
+  <rect x="435" y="402" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="462" y="436" text-anchor="middle" fill="#111">7</text>
+  <rect x="489" y="402" width="54" height="54" fill="#fff" stroke="#666" stroke-width="1"/>
+  <text class="index dark" x="516" y="436" text-anchor="middle" fill="#fff">6</text>
+  <rect x="543" y="402" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="570" y="436" text-anchor="middle" fill="#111">5</text>
+  <rect x="597" y="402" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="624" y="436" text-anchor="middle" fill="#111">4</text>
+  <rect x="651" y="402" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="678" y="436" text-anchor="middle" fill="#111">3</text>
+  <rect x="705" y="402" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="732" y="436" text-anchor="middle" fill="#111">2</text>
+  <rect x="759" y="402" width="54" height="54" fill="#fff" stroke="#666" stroke-width="1"/>
+  <text class="index dark" x="786" y="436" text-anchor="middle" fill="#fff">1</text>
+  <rect x="813" y="402" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="840" y="436" text-anchor="middle" fill="#111">0</text>
+  <text class="label" x="65" y="489" text-anchor="middle">6</text>
+  <text class="mono" x="150" y="489" text-anchor="middle">0x2006</text>
+  <text class="mono" x="245" y="489" text-anchor="middle">0x42</text>
+  <text class="mono" x="345" y="489" text-anchor="middle">01000010</text>
+  <rect x="435" y="456" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="462" y="490" text-anchor="middle" fill="#111">7</text>
+  <rect x="489" y="456" width="54" height="54" fill="#fff" stroke="#666" stroke-width="1"/>
+  <text class="index dark" x="516" y="490" text-anchor="middle" fill="#fff">6</text>
+  <rect x="543" y="456" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="570" y="490" text-anchor="middle" fill="#111">5</text>
+  <rect x="597" y="456" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="624" y="490" text-anchor="middle" fill="#111">4</text>
+  <rect x="651" y="456" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="678" y="490" text-anchor="middle" fill="#111">3</text>
+  <rect x="705" y="456" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="732" y="490" text-anchor="middle" fill="#111">2</text>
+  <rect x="759" y="456" width="54" height="54" fill="#fff" stroke="#666" stroke-width="1"/>
+  <text class="index dark" x="786" y="490" text-anchor="middle" fill="#fff">1</text>
+  <rect x="813" y="456" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="840" y="490" text-anchor="middle" fill="#111">0</text>
+  <text class="label" x="65" y="543" text-anchor="middle">7</text>
+  <text class="mono" x="150" y="543" text-anchor="middle">0x2007</text>
+  <text class="mono" x="245" y="543" text-anchor="middle">0x00</text>
+  <text class="mono" x="345" y="543" text-anchor="middle">00000000</text>
+  <rect x="435" y="510" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="462" y="544" text-anchor="middle" fill="#111">7</text>
+  <rect x="489" y="510" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="516" y="544" text-anchor="middle" fill="#111">6</text>
+  <rect x="543" y="510" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="570" y="544" text-anchor="middle" fill="#111">5</text>
+  <rect x="597" y="510" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="624" y="544" text-anchor="middle" fill="#111">4</text>
+  <rect x="651" y="510" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="678" y="544" text-anchor="middle" fill="#111">3</text>
+  <rect x="705" y="510" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="732" y="544" text-anchor="middle" fill="#111">2</text>
+  <rect x="759" y="510" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="786" y="544" text-anchor="middle" fill="#111">1</text>
+  <rect x="813" y="510" width="54" height="54" fill="#111" stroke="#666" stroke-width="1"/>
+  <text class="index light" x="840" y="544" text-anchor="middle" fill="#111">0</text>
+  <text class="label" x="450" y="590" text-anchor="middle">各行は1 byte（8 bit）。マス内の数字はbit番号（7〜0）です。</text>
+  <text class="label" x="450" y="620" text-anchor="middle">白は値1、黒は値0。各アドレスへ左欄の値を書き込み、Aを表示した例です。</text>
+</svg>

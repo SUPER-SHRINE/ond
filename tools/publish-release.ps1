@@ -9,10 +9,12 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'release-manifest-common.ps1')
+. (Join-Path $PSScriptRoot 'installer-common.ps1')
 $repository = 'SUPER-SHRINE/ond'
 & (Join-Path $PSScriptRoot 'release-manifest.ps1') -Mode Verify -Version $Version -Commit $Commit -AssetDirectory $AssetDirectory
 $manifest = Read-ReleaseJson (Join-Path $AssetDirectory "ond-$Version-manifest.json")
 $names = @($manifest.targets | ForEach-Object { $_.archive.name; "$($_.archive.name).sha256" }) + "ond-$Version-manifest.json"
+$names += @(Assert-InstallerChecksum $AssetDirectory $Version)
 $notes = "Specification: https://github.com/SUPER-SHRINE/ond/tree/$Commit/specs/ond"
 
 function Invoke-ReleaseApi {

@@ -95,8 +95,7 @@ pub fn parse_project(project: &LoadedProject) -> Result<ast::Project, FrontendEr
     for package in &project.packages {
         let mut files = Vec::new();
         for &file_id in &package.files {
-            let file = project.sources.file(file_id);
-            match parse_file(file_id, file.text()) {
+            match parse_snapshot_file(&project.sources, file_id) {
                 Ok(file_ast) => files.push(file_ast),
                 Err(err) => diagnostics.extend(err),
             }
@@ -115,8 +114,9 @@ pub fn parse_project(project: &LoadedProject) -> Result<ast::Project, FrontendEr
 }
 
 fn parse_file(file_id: FileId, text: &str) -> Result<ast::File, Diagnostics> {
+    role_regions(file_id, text, None)?;
     let tokens = tokenize(file_id, text)?;
-    Parser::new(file_id, tokens).parse_file()
+    Parser::new(file_id, tokens, text).parse_file()
 }
 
 pub fn parse_source_file(file_id: FileId, text: &str) -> Result<ast::File, Diagnostics> {

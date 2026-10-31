@@ -1,6 +1,6 @@
 use crate::{
     ExternalSource, ExternalSources, SemanticCache, compile_loaded_project, compile_project,
-    load_project, load_project_with_inputs, load_project_with_test_inputs,
+    load_project, load_project_with_inputs,
 };
 use std::collections::BTreeMap;
 use std::fs;
@@ -210,14 +210,14 @@ fn external_logical_paths_coexist_and_real_collisions_are_rejected() {
             text: "package math\nfunc Own() {}\n".to_string(),
         },
     )]);
-    load_project_with_test_inputs(
+    load_project_with_inputs(
         fixture.root(),
         &BTreeMap::new(),
         &[],
         &BTreeMap::new(),
         &identical,
     )
-    .unwrap();
+    .unwrap_err();
 }
 
 #[test]
@@ -307,31 +307,46 @@ fn optional_root_library_packages_require_an_identical_complete_file_set() {
                     )
                 })
                 .collect();
-            let result = load_project_with_test_inputs(
+            let result = load_project_with_inputs(
                 fixture.root(),
                 &BTreeMap::new(),
                 &[],
                 &BTreeMap::new(),
                 &external,
             );
-            if files == BTreeMap::from([("shared/api.ond".into(), own.into())]) {
-                let loaded = result.unwrap();
-                let package = loaded
-                    .packages
-                    .iter()
-                    .find(|p| p.logical_path == "shared")
-                    .unwrap();
-                assert_eq!(package.files.len(), 2, "own test file must be retained");
-            } else {
-                assert!(
-                    result
-                        .unwrap_err()
-                        .to_string()
-                        .contains("library conflicts with project package: shared")
-                );
-            }
+            assert!(
+                result
+                    .unwrap_err()
+                    .to_string()
+                    .contains("library conflicts with project package: shared")
+            );
         }
     }
+    let external = ExternalSources::from([
+        (
+            "shared/api.ond".into(),
+            ExternalSource {
+                path: fixture.root().join("vendor/shared/api.ond"),
+                text: own.into(),
+            },
+        ),
+        (
+            "shared/api_test.ond".into(),
+            ExternalSource {
+                path: fixture.root().join("vendor/shared/api_test.ond"),
+                text: "package shared\nfunc TestOwn() { Own() }\n".into(),
+            },
+        ),
+    ]);
+    let loaded = load_project_with_inputs(
+        fixture.root(),
+        &BTreeMap::new(),
+        &[],
+        &BTreeMap::new(),
+        &external,
+    )
+    .unwrap();
+    assert_eq!(loaded.packages[0].files.len(), 2);
 }
 
 #[test]
@@ -346,7 +361,7 @@ fn file_backed_root_library_package_cannot_mix_with_project_files() {
         "package shared\nfunc extra() {}\n",
     );
     let external = file_inputs(&sdk, &["shared/extra.ond"]);
-    let error = load_project_with_test_inputs(
+    let error = load_project_with_inputs(
         fixture.root(),
         &BTreeMap::new(),
         &[],
@@ -363,7 +378,25 @@ fn file_backed_root_library_package_cannot_mix_with_project_files() {
     fixture.write("target/sdk/shared/api.ond", own);
     let external = file_inputs(&sdk, &["shared/api.ond"]);
     assert_eq!(external.len(), 1);
-    let loaded = load_project_with_test_inputs(
+    let error = load_project_with_inputs(
+        fixture.root(),
+        &BTreeMap::new(),
+        &[],
+        &BTreeMap::new(),
+        &external,
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("library conflicts with project package: shared")
+    );
+    fixture.write(
+        "target/sdk/shared/api_test.ond",
+        "package shared\nfunc TestOwn() { Own() }\n",
+    );
+    let external = file_inputs(&sdk, &["shared/api.ond", "shared/api_test.ond"]);
+    let loaded = load_project_with_inputs(
         fixture.root(),
         &BTreeMap::new(),
         &[],

@@ -45,7 +45,7 @@ impl Fixture {
     }
     fn request(&self) -> CompileRequest {
         CompileRequest {
-            test: false,
+            role: None,
             excluded_dirs: Vec::new(),
             contract: Contract::default(),
             project_root: self.0.clone(),
@@ -441,7 +441,7 @@ fn corrupt_project_cache_manifest_reuses_valid_package_objects() {
     let f = Fixture::new();
     let id = compiler_identity().unwrap();
     let cold = compile(f.request(), &id).unwrap();
-    let cache_dir = f.0.join("target/ond-cache");
+    let cache_dir = f.0.join(".ond/target/ond-cache");
     let manifest = fs::read_dir(&cache_dir)
         .unwrap()
         .map(Result::unwrap)
@@ -811,4 +811,41 @@ fn relative_project_requests_keep_ignore_paths_canonical() {
     request.project_root = f.0.strip_prefix(&cwd).unwrap().to_path_buf();
     compile(request, &compiler_identity().unwrap())
         .expect("relative root uses the same absolute ignore boundary");
+}
+
+#[test]
+fn inline_asm_generic_artifacts_link_and_cache_body_changes() {
+    let f = Fixture::new();
+    f.put("main.ond", "package main\nimport \"test/shared\"\nfunc main(){var value=shared.Increment[u32](1);_=value}\n");
+    let shared = |immediate| {
+        format!(
+            "package shared\nfunc Increment[T](value:T)->T{{asm(r1<->value){{ADD r1,r1,r0,{immediate}}};return value}}\n"
+        )
+    };
+    f.put("shared/shared.ond", &shared(1));
+    let identity = compiler_identity().unwrap();
+    let cold = compile(f.request(), &identity).unwrap();
+    let cold_image = link(request_link(cold.manifest)).unwrap();
+    let warm = compile(f.request(), &identity).unwrap();
+    assert!(!warm.frontend_ran);
+    assert!(warm.rebuilt.is_empty());
+    assert_eq!(
+        cache::encode(&cold_image).unwrap(),
+        cache::encode(&link(request_link(warm.manifest)).unwrap()).unwrap()
+    );
+    f.put("shared/shared.ond", &shared(2));
+    let changed = compile(f.request(), &identity).unwrap();
+    assert!(changed.rebuilt.contains(&"test/shared".to_owned()));
+    let changed_image = link(request_link(changed.manifest)).unwrap();
+    assert_ne!(
+        cache::encode(&cold_image).unwrap(),
+        cache::encode(&changed_image).unwrap()
+    );
+    let mut request = f.request();
+    request.cache_dir = Some(f.0.join("fresh-asm-cache"));
+    let fresh = compile(request, &identity).unwrap();
+    assert_eq!(
+        cache::encode(&changed_image).unwrap(),
+        cache::encode(&link(request_link(fresh.manifest)).unwrap()).unwrap()
+    );
 }

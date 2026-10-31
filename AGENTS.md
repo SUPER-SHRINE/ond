@@ -100,7 +100,7 @@ case固有の入力・期待値と一般規則の再掲を区別し、各caseを
 ### Sourceとの管理境界
 <!-- ond-spec-id: decisions/specification-source-boundaries -->
 
-- 外部言語、target、ABI、成果物、linking、CLI、cache、debug、test buildの契約は`specs/ond/`へ置く
+- 外部言語、target、ABI、成果物、linking、CLI、cache、debugの契約は`specs/ond/`へ置く
 - Rust型、内部AST/HIR/MIR、phase、helper、validator構造、命令選択・探索方式はsourceで管理する
 - 実装検査IDは本書の追跡表でscopeと対応規範を記録し、別実装の外部適合条件を定義する根拠にしない
 
@@ -121,3 +121,17 @@ case固有の入力・期待値と一般規則の再掲を区別し、各caseを
 見出し名やファイル配置を変更しても既存 ID は維持し、別の意味へ再利用しない。\
 新しい見出しには一意な小文字 kebab-case のパスを割り当てる。\
 `tools/test-spec-ids.ps1` と共通品質チェックが、欠落、形式違反、重複を検出する。
+
+## ローカル文書サイト
+
+Ondの規範文書の原典は `specs/ond/` とする。\
+既存文書は `docs/` 等の現在の管理元を維持する。\
+Zensicalの設定、サイト入口、サイト用画像等は `website/` で管理する。\
+公開対象の原稿は既存文書から `target/website/sources/` へ生成コピーし、静的サイトは `target/website/public/` へ生成する。\
+生成入力と出力は再生成可能な作業物としてGit管理対象外とする。
+
+`tools/build-docs.ps1` をローカル閲覧と将来のCIで共用するサイト生成入口とする。\
+Zensicalのstrict buildおよび生成HTMLの検査で内部リンクとanchorを検証する。\
+公開原稿は日本語を原典とし、URLに `ja/` を設けない。\
+将来英訳を公開する場合は `en/` を用いる。\
+GitHub Pagesの公開処理は導入時に `.github/workflows/docs.yml` へ置き、検証済み静的成果物を受け取る。

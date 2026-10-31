@@ -2,7 +2,9 @@
 use crate::ir::object::{Object, RelocationKind, SectionKind};
 use ond_protocol::debug::{DebugInfo, DebugObject, DebugRange, FunctionDebug, UnwindRow};
 use std::collections::BTreeMap;
+mod executable;
 mod symbols;
+pub use executable::self_boot_prefix;
 #[cfg(test)]
 mod tests;
 mod thunks;
@@ -41,7 +43,7 @@ pub fn link_objects_with_debug(
     debug_objects: &[DebugObject],
     plan: &LinkPlan,
 ) -> Result<LinkedOutput, LinkError> {
-    link_with_ownership(objects, debug_objects, None, plan)
+    link_with_ownership(objects, debug_objects, None, plan, None)
 }
 
 /// Link object/debug pairs with an explicit owning object for every record.
@@ -58,7 +60,21 @@ pub fn link_object_pairs_with_debug(
         .map(|(_, debug)| (*debug).clone())
         .collect::<Vec<_>>();
     let ownership = (0..pairs.len()).collect::<Vec<_>>();
-    link_with_ownership(&objects, &debug, Some(&ownership), plan)
+    link_with_ownership(&objects, &debug, Some(&ownership), plan, None)
+}
+
+/// Resolve all addresses after reserving the ONDX header/table and optional boot prefix.
+pub fn link_executable_pairs_with_debug(
+    pairs: &[(&Object, &DebugObject)],
+    plan: &LinkPlan,
+    prefix_size: u32,
+) -> Result<(LinkedOutput, ond_protocol::executable::Executable), LinkError> {
+    let objects = pairs.iter().map(|(o, _)| (*o).clone()).collect::<Vec<_>>();
+    let debug = pairs.iter().map(|(_, d)| (*d).clone()).collect::<Vec<_>>();
+    let ownership = (0..pairs.len()).collect::<Vec<_>>();
+    let output = link_with_ownership(&objects, &debug, Some(&ownership), plan, Some(prefix_size))?;
+    let image = executable::wire(&output.image, plan, prefix_size)?;
+    Ok((output, image))
 }
 
 fn link_with_ownership(
@@ -66,6 +82,7 @@ fn link_with_ownership(
     debug_objects: &[DebugObject],
     ownership: Option<&[usize]>,
     plan: &LinkPlan,
+    executable_prefix: Option<u32>,
 ) -> Result<LinkedOutput, LinkError> {
     validate::validate(objects)?;
     let ram_size = plan.memory_size;
@@ -170,25 +187,29 @@ fn link_with_ownership(
 
     let mut load_cursor = plan.memory_base;
     let mut rom_cursor = plan.read_only.map_or(0, |r| r.base);
-    for section in &mut linked_sections {
-        if plan.read_only.is_some()
-            && matches!(section.kind, SectionKind::Text | SectionKind::Rodata)
-        {
-            rom_cursor = align_up(rom_cursor, section.alignment)?;
-            section.load_address = rom_cursor;
-            rom_cursor = rom_cursor
-                .checked_add(section.memory_size)
-                .ok_or_else(|| link_error("read-only size overflow"))?;
-            if rom_cursor > readonly_end.unwrap() {
-                return Err(link_error("read-only image does not fit"));
+    if let Some(prefix) = executable_prefix {
+        load_cursor = executable::place(&mut linked_sections, plan, prefix)?;
+    } else {
+        for section in &mut linked_sections {
+            if plan.read_only.is_some()
+                && matches!(section.kind, SectionKind::Text | SectionKind::Rodata)
+            {
+                rom_cursor = align_up(rom_cursor, section.alignment)?;
+                section.load_address = rom_cursor;
+                rom_cursor = rom_cursor
+                    .checked_add(section.memory_size)
+                    .ok_or_else(|| link_error("read-only size overflow"))?;
+                if rom_cursor > readonly_end.unwrap() {
+                    return Err(link_error("read-only image does not fit"));
+                }
+                continue;
             }
-            continue;
+            load_cursor = align_up(load_cursor, section.alignment)?;
+            section.load_address = load_cursor;
+            load_cursor = load_cursor
+                .checked_add(section.memory_size)
+                .ok_or_else(|| link_error("linked image address overflow"))?;
         }
-        load_cursor = align_up(load_cursor, section.alignment)?;
-        section.load_address = load_cursor;
-        load_cursor = load_cursor
-            .checked_add(section.memory_size)
-            .ok_or_else(|| link_error("linked image address overflow"))?;
     }
 
     let stack_bottom = plan
@@ -612,3 +633,6 @@ fn checked_address(target: u32, addend: i32) -> Result<u32, LinkError> {
     u32::try_from(i64::from(target) + i64::from(addend))
         .map_err(|_| link_error("relocation target address overflow"))
 }
+
+#[cfg(test)]
+mod executable_tests;
