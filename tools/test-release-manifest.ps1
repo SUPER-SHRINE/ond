@@ -161,8 +161,13 @@ try {
     Assert-Rejected 'different existing manifest' { Invoke-Manifest }
     [IO.File]::WriteAllBytes($manifestPath, $first)
     # 公開scriptのghをモックし、ネットワークも公開も行わず再実行契約を検査する。
+    $installerName = "ond-$version-windows-x86_64-setup.exe"
+    $installerPath = Join-Path $assets $installerName
+    [IO.File]::WriteAllText($installerPath, 'installer fixture')
+    $installerHash = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    [IO.File]::WriteAllText("$installerPath.sha256", "$installerHash  $installerName`n")
     $global:OndReleaseMock = @{
-        assets = $assets; names = @((Read-ReleaseJson $manifestPath).targets | ForEach-Object { $_.archive.name; "$($_.archive.name).sha256" }) + "ond-$version-manifest.json"
+        assets = $assets; names = @((Read-ReleaseJson $manifestPath).targets | ForEach-Object { $_.archive.name; "$($_.archive.name).sha256" }) + @("ond-$version-manifest.json", $installerName, "$installerName.sha256")
         version = $version; commit = $commit; uploads = [Collections.Generic.List[string]]::new(); missing = @(); corrupt = $false
         exists = $true; creates = 0
     }
@@ -204,6 +209,9 @@ try {
         & (Join-Path $PSScriptRoot 'publish-release.ps1') -Version $version -Commit $commit -AssetDirectory $assets
         if ($global:OndReleaseMock.uploads.Count -ne 0) { throw 'Identical assets must not be uploaded.' }
         $script:testCount++
+        [IO.File]::AppendAllText($installerPath, 'tampered')
+        Assert-Rejected 'installer checksum differs' { & (Join-Path $PSScriptRoot 'publish-release.ps1') -Version $version -Commit $commit -AssetDirectory $assets }
+        [IO.File]::WriteAllText($installerPath, 'installer fixture')
         $global:OndReleaseMock.corrupt = $true
         Assert-Rejected 'existing asset differs' { & (Join-Path $PSScriptRoot 'publish-release.ps1') -Version $version -Commit $commit -AssetDirectory $assets }
         if ($global:OndReleaseMock.uploads.Count -ne 0) { throw 'Different assets must stop before any upload.' }
