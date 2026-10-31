@@ -1,10 +1,5 @@
 # ユーザー向けドキュメント
 
-Ondは、プログラムを実行環境の違いから切り離すことを目指しています。
-
-まず[Ondの思想](getting-started/overview.md)でCPU・機器・プログラムの関係を読み、[最初のプログラム](getting-started/first-program.md)へ進んでください。\
-ビルド後の準備は[ビルドと起動の手順](getting-started/build-and-launch.md)で確認できます。
-
 この案内はOnd 0.4.0を対象とします。
 
 仕様の一般規則は[Specs](../../specs/README.md)を参照してください。
@@ -12,7 +7,7 @@ Ondは、プログラムを実行環境の違いから切り離すことを目�
 ## はじめに
 
 - [Ondの思想](getting-started/overview.md) — CPU・機器・プログラミング言語の役割と、Ondが目指すことを説明します
-- [インストール](getting-started/installation.md) — repositoryから0.4.0向けCLIをbuildします
+- [インストール](getting-started/installation.md) — 各種インストール方法を説明します
 - [最初のプログラム](getting-started/first-program.md) — 小さなプログラムを作り、実行fileを生成します
 - [ビルドと起動の手順](getting-started/build-and-launch.md) — 生成物と実行開始までの準備を説明します
 
