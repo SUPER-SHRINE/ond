@@ -38,7 +38,7 @@ ond compile .
 ond link --project .
 ```
 
-両commandがexit code `0`で終了し、`.ond/target/a.bin`と`.ond/target/a.onddebug`が生成されます。
+両commandがエラーなく終了し、`.ond/target/a.bin`と`.ond/target/a.onddebug`が生成されます。
 
 `.bin`はKagura規格を満たすVM上で実行するためのfileで、host OSから直接起動するファイルではありません。
 
