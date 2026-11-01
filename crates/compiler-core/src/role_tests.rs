@@ -18,7 +18,7 @@ impl Fixture {
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
-        fs::create_dir_all(&root).unwrap();
+        fs::create_dir(&root).unwrap();
         let fixture = Self(root, (!selected.is_empty()).then(|| selected.into()));
         fixture.put("ond.toml", "[project]\nname = \"game\"\n[roles]\nnames = [\"Debug\", \"Development\", \"Release\"]\n");
         fixture

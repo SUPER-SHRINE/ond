@@ -17,7 +17,7 @@ impl Fixture {
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
-        fs::create_dir_all(&root).unwrap();
+        fs::create_dir(&root).unwrap();
         fs::write(
             root.join("ond.toml"),
             format!("[project]\nname = \"{name}\"\n"),

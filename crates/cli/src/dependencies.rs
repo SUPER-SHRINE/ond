@@ -616,6 +616,9 @@ fn git_output<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_TEMP_ROOT: AtomicU64 = AtomicU64::new(0);
 
     #[test]
     fn resolves_relative_and_absolute_path_dependencies_with_subpackages() {
@@ -845,14 +848,15 @@ mod tests {
 
     fn tempfile_root(label: &str) -> PathBuf {
         let root = std::env::temp_dir().join(format!(
-            "ond-dependencies-{label}-{}-{}",
+            "ond-dependencies-{label}-{}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
-                .as_nanos()
+                .as_nanos(),
+            NEXT_TEMP_ROOT.fetch_add(1, Ordering::Relaxed)
         ));
-        fs::create_dir_all(&root).unwrap();
+        fs::create_dir(&root).unwrap();
         root
     }
 }
@@ -860,6 +864,10 @@ mod tests {
 #[cfg(test)]
 mod conformance_lock_tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_TEMP_ROOT: AtomicU64 = AtomicU64::new(0);
+
     const K: &str = "version = 2\n[[package]]\nowner = \"app\"\nname = \"math_dep\"\ngit = \"https://example.invalid/math.git\"\nrev = \"release\"\ncommit = \"0123456789012345678901234567890123456789\"\n";
     struct Scratch(PathBuf);
     impl Drop for Scratch {
@@ -867,19 +875,74 @@ mod conformance_lock_tests {
             let _ = fs::remove_dir_all(&self.0);
         }
     }
+    fn create_scratch(path: PathBuf) -> std::io::Result<Scratch> {
+        fs::create_dir(&path)?;
+        Ok(Scratch(path))
+    }
+    fn new_scratch() -> std::io::Result<Scratch> {
+        create_scratch(std::env::temp_dir().join(format!(
+            "ond-lock-conformance-{}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+            NEXT_TEMP_ROOT.fetch_add(1, Ordering::Relaxed)
+        )))
+    }
     fn read_input(text: &str) -> DriverResult<LockFile> {
-        let root = Scratch(std::env::temp_dir().join(format!(
-                "ond-lock-conformance-{}-{}",
-                std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos()
-            )));
-        fs::create_dir(&root.0).unwrap();
+        let root = new_scratch().unwrap();
         let path = root.0.join("ond.lock");
         fs::write(&path, text).unwrap();
         read_lock(&path)
+    }
+
+    #[test]
+    fn concurrent_scratch_roots_are_isolated() {
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+        let roots: Vec<_> = (0..8)
+            .map(|index| {
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    let root = new_scratch().unwrap();
+                    fs::write(root.0.join("owner"), index.to_string()).unwrap();
+                    root
+                })
+            })
+            .collect();
+        let roots: Vec<_> = roots
+            .into_iter()
+            .map(|thread| thread.join().unwrap())
+            .collect();
+        for (index, root) in roots.iter().enumerate() {
+            assert_eq!(
+                fs::read_to_string(root.0.join("owner")).unwrap(),
+                index.to_string()
+            );
+        }
+    }
+
+    #[test]
+    fn failed_scratch_creation_preserves_existing_directory() {
+        let path = std::env::temp_dir().join(format!(
+            "ond-lock-conformance-existing-{}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+            NEXT_TEMP_ROOT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&path).unwrap();
+        fs::write(path.join("sentinel"), "preserve").unwrap();
+
+        assert!(create_scratch(path.clone()).is_err());
+        assert_eq!(
+            fs::read_to_string(path.join("sentinel")).unwrap(),
+            "preserve"
+        );
+        fs::remove_dir_all(path).unwrap();
     }
     #[test]
     fn dep01_schema() {

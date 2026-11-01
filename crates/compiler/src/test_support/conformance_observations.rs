@@ -2,21 +2,29 @@ use super::{
     compile_image,
     machine::{LinkedMachine, MachineStatus},
 };
-use std::{fs, path::PathBuf, time::SystemTime};
+use std::{
+    fs,
+    path::PathBuf,
+    sync::atomic::{AtomicU64, Ordering},
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+static NEXT_TEMP_ROOT: AtomicU64 = AtomicU64::new(0);
 
 struct Fixture(PathBuf);
 
 impl Fixture {
     fn new(source: String) -> Self {
         let root = std::env::temp_dir().join(format!(
-            "ond-conformance-observation-{}-{}",
+            "ond-conformance-observation-{}-{}-{}",
             std::process::id(),
             SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
+                .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_nanos()
+                .as_nanos(),
+            NEXT_TEMP_ROOT.fetch_add(1, Ordering::Relaxed)
         ));
-        fs::create_dir_all(&root).unwrap();
+        fs::create_dir(&root).unwrap();
         fs::write(root.join("ond.toml"), "[project]\nname = \"test\"\n").unwrap();
         fs::write(
             root.join("main.ond"),

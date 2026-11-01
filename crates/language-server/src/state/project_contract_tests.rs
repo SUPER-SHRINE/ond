@@ -2,18 +2,22 @@ use super::ServerState;
 use crate::protocol::TextDocumentContentChangeEvent;
 use crate::util::uri_from_path;
 use std::fs;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_TEMP_ROOT: AtomicU64 = AtomicU64::new(0);
 use std::path::PathBuf;
 
 fn project(label: &str, name: &str) -> PathBuf {
     let root = std::env::temp_dir().join(format!(
-        "ond-lsp-project-contract-{label}-{}-{}",
+        "ond-lsp-project-contract-{label}-{}-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_nanos()
+            .as_nanos(),
+        NEXT_TEMP_ROOT.fetch_add(1, Ordering::Relaxed)
     ));
-    fs::create_dir_all(&root).unwrap();
+    fs::create_dir(&root).unwrap();
     let root = root.canonicalize().unwrap();
     fs::write(
         root.join("ond.toml"),

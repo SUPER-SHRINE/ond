@@ -363,6 +363,10 @@ fn looks_like_git(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_TEMP_ROOT: AtomicU64 = AtomicU64::new(0);
+
     fn root(label: &str) -> PathBuf {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("..")
@@ -370,14 +374,16 @@ mod tests {
             .join("target")
             .join("ond-unit-tests")
             .join(format!(
-                "build-{label}-{}-{}",
+                "build-{label}-{}-{}-{}",
                 std::process::id(),
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
-                    .as_nanos()
+                    .as_nanos(),
+                NEXT_TEMP_ROOT.fetch_add(1, Ordering::Relaxed)
             ));
-        fs::create_dir_all(&path).unwrap();
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::create_dir(&path).unwrap();
         fs::canonicalize(path).unwrap()
     }
     #[test]

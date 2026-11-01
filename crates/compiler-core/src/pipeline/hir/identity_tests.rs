@@ -159,7 +159,7 @@ fn compile_with_package_names(
             .as_nanos(),
         NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
-    fs::create_dir_all(&root).unwrap();
+    fs::create_dir(&root).unwrap();
     fs::write(root.join("ond.toml"), "[project]\nname = \"test\"\n").unwrap();
     for (name, source) in files {
         let path = root.join(name);

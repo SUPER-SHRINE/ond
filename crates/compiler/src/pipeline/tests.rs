@@ -4,14 +4,23 @@ mod tests {
     use std::env;
     use std::fs;
     use std::path::Path;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    static NEXT_TEMP_DIR: AtomicU64 = AtomicU64::new(0);
+
     fn temp_dir() -> std::path::PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        env::temp_dir().join(format!("ond-pipeline-test-{nanos}"))
+        let root = env::temp_dir().join(format!(
+            "ond-pipeline-test-{}-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+            NEXT_TEMP_DIR.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&root).unwrap();
+        root
     }
 
     fn write_file(root: &Path, relative: &str, contents: &str) {
@@ -24,7 +33,6 @@ mod tests {
 
     fn compile_project_error(files: &[(&str, &str)]) -> String {
         let root = temp_dir();
-        fs::create_dir_all(&root).unwrap();
         write_file(&root, "ond.toml", "[project]\nname=\"compile_fail\"\n");
         for (path, contents) in files {
             write_file(&root, path, contents);
@@ -37,7 +45,6 @@ mod tests {
     #[test]
     fn compile_project_builds_main_object_for_minimal_project() {
         let root = temp_dir();
-        fs::create_dir_all(&root).unwrap();
         fs::write(root.join("ond.toml"), "[project]\nname=\"sample\"\n").unwrap();
         fs::write(root.join("main.ond"), "package main\n\nfunc main() {\n}\n").unwrap();
 
@@ -58,7 +65,6 @@ mod tests {
             "package main\ntype str [2]u8\nfunc main() { var value: str; _ = value; }\n",
         ] {
             let root = temp_dir();
-            fs::create_dir_all(&root).unwrap();
             write_file(&root, "ond.toml", "[project]\nname=\"mir\"\n");
             write_file(&root, "main.ond", source);
             let compilation = compile_project(&root).unwrap();
@@ -82,7 +88,6 @@ mod tests {
     #[test]
     fn compile_project_accepts_u16_i8_i16_builtin_types() {
         let root = temp_dir();
-        fs::create_dir_all(&root).unwrap();
         fs::write(
             root.join("ond.toml"),
             "[project]\nname=\"small_int_types\"\n",
@@ -224,7 +229,6 @@ mod tests {
     #[test]
     fn compile_project_accepts_ordinary_function_named_init() {
         let root = temp_dir();
-        fs::create_dir_all(&root).unwrap();
         write_file(&root, "ond.toml", "[project]\nname=\"init_name\"\n");
         write_file(
             &root,

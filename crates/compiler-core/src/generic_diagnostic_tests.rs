@@ -2,11 +2,15 @@ use crate::test_support::compile;
 use std::{
     fs,
     process::{Command, Stdio},
-    sync::Mutex,
-    time::{Duration, Instant, SystemTime},
+    sync::{
+        Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 static TYPE05_CHILD: Mutex<()> = Mutex::new(());
+static NEXT_TEMP_ROOT: AtomicU64 = AtomicU64::new(0);
 
 fn type05_reject_isolated(test_name: &str, source: &str) {
     const ROOT_ENV: &str = "OND_TYPE05_CHILD_ROOT";
@@ -63,14 +67,15 @@ fn type05_reject_isolated(test_name: &str, source: &str) {
         .lock()
         .unwrap_or_else(|poison| poison.into_inner());
     let root = std::env::temp_dir().join(format!(
-        "ond-type05-{}-{}",
+        "ond-type05-{}-{}-{}",
         std::process::id(),
         SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
+            .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_nanos()
+            .as_nanos(),
+        NEXT_TEMP_ROOT.fetch_add(1, Ordering::Relaxed)
     ));
-    fs::create_dir_all(&root).unwrap();
+    fs::create_dir(&root).unwrap();
     fs::write(root.join("ond.toml"), "[project]\nname = \"test\"\n").unwrap();
     fs::write(root.join("main.ond"), source).unwrap();
     let module = module_path!().rsplit("::").next().unwrap();

@@ -507,6 +507,10 @@ fn failure(message: impl Into<String>) -> FrontendError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    static NEXT_TEMP_ROOT: AtomicU64 = AtomicU64::new(0);
 
     #[test]
     fn external_packages_are_optional_and_keep_their_real_paths() {
@@ -622,13 +626,16 @@ mod tests {
     }
 
     fn temp_directory(label: &str) -> PathBuf {
-        std::env::temp_dir().join(format!(
-            "ond-core-{label}-{}-{}",
+        let root = std::env::temp_dir().join(format!(
+            "ond-core-{label}-{}-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_nanos()
-        ))
+                .as_nanos(),
+            NEXT_TEMP_ROOT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&root).unwrap();
+        root
     }
 }
