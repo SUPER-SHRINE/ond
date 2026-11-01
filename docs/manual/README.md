@@ -48,13 +48,11 @@
 - operator定義: [算術](language-tour/operator-definitions/arithmetic.md)、[index getter](language-tour/operator-definitions/index-getter.md)、[index setter](language-tour/operator-definitions/index-setter.md)、[len](language-tour/operator-definitions/len.md)
 - 低水準: [asm（Kagura v1）](language-tour/low-level/asm.md)
 
-## 実用チュートリアル
-
-- [projectとpackage](tutorials/projects-and-packages.md)
-- [libraryと依存](tutorials/libraries-and-dependencies.md)
-- [roleで構成を選ぶ](tutorials/roles.md)
-- [診断を読み、修正する](tutorials/diagnostics.md)
-
 ## リファレンス
 
 - [`ond.toml`リファレンス](reference/manifest.md)
+
+## ツール
+
+- [単体テスト実行ツール](tools/unit.md)
+- [Language Server](tools/language-server.md)

@@ -59,6 +59,7 @@ $included = @()
 $included += (& git -C $repo ls-files --cached --others --exclude-standard 'specs/**/*.md' 'specs/*.md' 'docs/releases/**/*.md' 'docs/releases/*.md' 'docs/manual/**/*.md' 'docs/manual/*.md' 'docs/manual/**/*.svg' 'docs/manual/*.svg')
 foreach ($relative in $included) {
     if (-not $relative) { continue }
+    if (-not (Test-Path -LiteralPath (Join-Path $repo $relative) -PathType Leaf)) { continue }
     $destination = Join-Path $sources $relative
     New-Item -ItemType Directory -Path (Split-Path $destination) -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $repo $relative) -Destination $destination

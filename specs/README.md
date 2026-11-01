@@ -9,6 +9,8 @@
 - [Project role設定と選択](./ond/build/roles.md)、[Role構文と可視性](./ond/language/v1/roles.md)
 - [Compile and link commands](./ond/build/commands.md)
 - [Build cache](./ond/build/cache.md)
+- [ond-unit 規範仕様](./ond/tools/unit.md)
+- [Language Server command仕様](./ond/tools/language-server.md)
 - [Debug metadata v1](./ond/debug-metadata/v1.md)
 - [Conformance requirements](./ond/conformance/requirements.md)
 - [Conformance case index](./ond/conformance/cases/README.md)
