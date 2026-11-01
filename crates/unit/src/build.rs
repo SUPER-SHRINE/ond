@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::HashSet,
     fs,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     process::Command,
 };
 
@@ -24,11 +24,12 @@ pub fn build(config: &Config, config_path: &Path) -> Result<PathBuf, String> {
     {
         return Err("project.pathの対象はfinal=falseのprojectである必要があります".into());
     }
-    let directory = prepare_directory(&project)?;
+    let directory = prepare_directory(&parent.join(&config.work_dir))?;
     for name in ["ond.toml", "main.ond", "ond.lock"] {
         let path = directory.join(name);
         check_contained(&path, &directory)?;
     }
+    validate_work_directory(&directory)?;
     let output_directory = prepare_subdirectory(&directory, &[".ond", "target"])?;
     let compile_output = ".ond/target/build.ondbuild";
     let link_output = ".ond/target/a.bin";
@@ -234,8 +235,80 @@ fn check_contained(path: &Path, root: &Path) -> Result<Option<PathBuf>, String> 
         Err(error) => Err(format!("生成先 {}: {error}", path.display())),
     }
 }
-fn prepare_directory(project: &Path) -> Result<PathBuf, String> {
-    prepare_subdirectory(project, &[".ond", "target", "ond-unit"])
+fn prepare_directory(path: &Path) -> Result<PathBuf, String> {
+    let absolute = std::path::absolute(path).map_err(|e| format!("work_dir: {e}"))?;
+    let mut directory = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            Component::Prefix(_) => directory.push(component),
+            Component::RootDir => {
+                directory.push(component);
+                directory = fs::canonicalize(&directory).map_err(|e| format!("work_dir: {e}"))?;
+            }
+            Component::CurDir => {}
+            Component::ParentDir => {
+                directory.pop();
+            }
+            Component::Normal(name) => {
+                let next = directory.join(name);
+                directory = check_contained(&next, &directory)?.unwrap_or(next);
+            }
+        }
+    }
+    fs::create_dir_all(&directory).map_err(|e| format!("生成project作成: {e}"))?;
+    fs::canonicalize(&directory).map_err(|e| format!("生成project: {e}"))
+}
+fn validate_work_directory(directory: &Path) -> Result<(), String> {
+    let manifest_path = directory.join("ond.toml");
+    let generated = fs::read_to_string(&manifest_path)
+        .ok()
+        .and_then(|text| toml::from_str::<toml::Value>(&text).ok())
+        .is_some_and(|manifest| {
+            let field = |table, key| manifest.get(table).and_then(|v| v.get(key));
+            field("project", "final").and_then(|v| v.as_bool()) == Some(true)
+                && field("project", "name")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|name| {
+                        name.strip_prefix("ond_unit_generated")
+                            .is_some_and(|suffix| suffix.chars().all(|c| c == '_'))
+                    })
+                && field("dependencies", "subject")
+                    .and_then(|v| v.get("path"))
+                    .and_then(|v| v.as_str())
+                    .is_some()
+                && field("compile", "output").and_then(|v| v.as_str())
+                    == Some(".ond/target/build.ondbuild")
+                && field("link", "output").and_then(|v| v.as_str()) == Some(".ond/target/a.bin")
+        });
+    if generated {
+        return Ok(());
+    }
+    for name in ["ond.toml", "main.ond", "ond.lock"] {
+        let path = directory.join(name);
+        match fs::symlink_metadata(&path) {
+            Ok(_) => {
+                return Err(format!(
+                    "work_dirが利用者の入力と重なっています: {}",
+                    path.display()
+                ));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("work_dir {}: {error}", path.display())),
+        }
+    }
+    for entry in fs::read_dir(directory).map_err(|e| format!("work_dir: {e}"))? {
+        let path = entry.map_err(|e| format!("work_dir: {e}"))?.path();
+        let source = path.extension().is_some_and(|extension| {
+            extension == "ond" || cfg!(windows) && extension.eq_ignore_ascii_case("ond")
+        });
+        if source {
+            return Err(format!(
+                "work_dirが利用者の入力と重なっています: {}",
+                path.display()
+            ));
+        }
+    }
+    Ok(())
 }
 fn prepare_subdirectory(root: &Path, components: &[&str]) -> Result<PathBuf, String> {
     let mut directory = root.to_path_buf();
@@ -395,9 +468,29 @@ mod tests {
         fs::canonicalize(path).unwrap()
     }
     #[test]
+    fn work_directory_cannot_replace_the_tested_project() {
+        let project = root("input-collision");
+        let manifest = "[project]\nname='checks'\n";
+        let source = "package checks\nfunc Run() {}\n";
+        fs::write(project.join("ond.toml"), manifest).unwrap();
+        fs::write(project.join("main.ond"), source).unwrap();
+        let config = Config::parse("version=1\nwork_dir='.'\ncases=[]\n[project]\npath='.'\n[vm]\nram_size=1024\nstack_size=128\n", Path::new("ond-unit.toml")).unwrap();
+        let error = build(&config, &project.join("ond-unit.toml")).unwrap_err();
+        assert!(error.contains("入力と重なっています"), "{error}");
+        assert_eq!(
+            fs::read_to_string(project.join("ond.toml")).unwrap(),
+            manifest
+        );
+        assert_eq!(
+            fs::read_to_string(project.join("main.ond")).unwrap(),
+            source
+        );
+        assert!(!project.join(".ond").exists());
+    }
+    #[test]
     fn lock_matches_target_and_stale_generated_lock_is_removed() {
         let project = root("lock");
-        let generated = prepare_directory(&project).unwrap();
+        let generated = prepare_directory(&project.join(".ond/target/ond-unit")).unwrap();
         let lock = b"version=2\npackage=[]\n";
         fs::write(project.join("ond.lock"), lock).unwrap();
         sync_lock(&project, &generated).unwrap();
@@ -434,7 +527,7 @@ mod tests {
     fn compiler_discovery_renames_only_new_namespace_collisions() {
         let project = root("discovery");
         fs::write(project.join("ond.toml"), "[project]\nname='checks'\n").unwrap();
-        let directory = prepare_directory(&project).unwrap();
+        let directory = prepare_directory(&project.join(".ond/target/ond-unit")).unwrap();
         let config: Config = Config::parse("version=1\n[project]\npath='.'\n[vm]\nram_size=1024\nstack_size=128\n[[cases]]\nname='case'\npackage='checks/cases'\nfunction='Run'\n", Path::new("ond-unit.toml")).unwrap();
         let mut attempted = Vec::new();
         compile_with_names(&project, &directory, &config, |name| {
@@ -501,7 +594,7 @@ mod tests {
             "cached",
         ] {
             let project = root("back-edge");
-            let directory = prepare_directory(&project).unwrap();
+            let directory = prepare_directory(&project.join(".ond/target/ond-unit")).unwrap();
             let dependencies = if back_edge == "cached" {
                 let cache = directory.join(".ond/dependencies/stale");
                 fs::create_dir_all(&cache).unwrap();
@@ -548,7 +641,7 @@ mod tests {
         let project = root("dangling");
         let outside = root("outside");
         fs::write(project.join("ond.toml"), "[project]\nname='checks'\n").unwrap();
-        let directory = prepare_directory(&project).unwrap();
+        let directory = prepare_directory(&project.join(".ond/target/ond-unit")).unwrap();
         let config: Config = Config::parse("version=1\n[project]\npath='.'\n[vm]\nram_size=1024\nstack_size=128\n[[cases]]\nname='case'\npackage='checks/cases'\nfunction='Run'\n", Path::new("ond-unit.toml")).unwrap();
         fs::create_dir_all(directory.join(".ond/target")).unwrap();
         for name in [
@@ -583,6 +676,10 @@ mod tests {
             ".ond/target/ond-unit/.ond",
             ".ond/target/ond-unit/.ond/target",
             ".ond/target/ond-unit/.ond/target/ond-cache",
+            "custom/runner",
+            "custom/runner/.ond",
+            "custom/runner/.ond/target",
+            "custom/runner/.ond/target/ond-cache",
         ] {
             for destination in [outside.clone(), outside.join("missing-directory")] {
                 let project = root("linked-directory");
@@ -590,6 +687,10 @@ mod tests {
                 let link = project.join(boundary);
                 fs::create_dir_all(link.parent().unwrap()).unwrap();
                 symlink(&destination, &link).unwrap();
+                let mut config = Config::parse("version=1\ncases=[]\n[project]\npath='.'\n[vm]\nram_size=1024\nstack_size=128\n", Path::new("ond-unit.toml")).unwrap();
+                if boundary.starts_with("custom/") {
+                    config.work_dir = "custom/runner".into();
+                }
                 assert!(build(&config, &project.join("ond-unit.toml")).is_err());
                 assert!(fs::read_dir(&outside).unwrap().next().is_none());
                 fs::remove_file(link).unwrap();
@@ -599,7 +700,6 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn generated_directory_junctions_cannot_escape_project() {
-        let config: Config = Config::parse("version=1\n[project]\npath='.'\n[vm]\nram_size=1024\nstack_size=128\n[[cases]]\nname='case'\npackage='checks/cases'\nfunction='Run'\n", Path::new("ond-unit.toml")).unwrap();
         for boundary in [
             ".ond",
             ".ond/target",
@@ -607,6 +707,10 @@ mod tests {
             ".ond/target/ond-unit/.ond",
             ".ond/target/ond-unit/.ond/target",
             ".ond/target/ond-unit/.ond/target/ond-cache",
+            "custom/runner",
+            "custom/runner/.ond",
+            "custom/runner/.ond/target",
+            "custom/runner/.ond/target/ond-cache",
         ] {
             let outside = root("junction-outside");
             let project = root("junction");
@@ -628,6 +732,14 @@ mod tests {
                 "{}",
                 String::from_utf8_lossy(&output.stderr)
             );
+            let mut config = Config::parse(
+                "version=1\ncases=[]\n[project]\npath='.'\n[vm]\nram_size=1024\nstack_size=128\n",
+                Path::new("ond-unit.toml"),
+            )
+            .unwrap();
+            if boundary.starts_with("custom/") {
+                config.work_dir = "custom/runner".into();
+            }
             assert!(build(&config, &project.join("ond-unit.toml")).is_err());
             assert!(fs::read_dir(&outside).unwrap().next().is_none());
             fs::remove_dir(&outside).unwrap();

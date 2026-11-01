@@ -96,6 +96,53 @@ fn jump(pc: u32, target: u32) -> u32 {
     0xc0000000 | (((target.wrapping_sub(pc + 4) as i32 / 4) as u16) as u32)
 }
 #[test]
+fn work_dir_is_a_nonempty_root_string() {
+    assert_eq!(config(BASIC).work_dir, ".ond/target/ond-unit");
+    for value in ["'.ond/target/ond-unit'", "'../runner'", "'custom/runner'"] {
+        assert_eq!(
+            config(&BASIC.replace("version = 1", &format!("version = 1\nwork_dir={value}")))
+                .work_dir,
+            value.trim_matches('\'')
+        );
+    }
+    for value in ["''", "1", "[]", "{}"] {
+        rejects(&BASIC.replace("version = 1", &format!("version = 1\nwork_dir={value}")));
+    }
+    let f = ConfigFiles::new();
+    f.child(
+        "parts/cases.toml",
+        "work_dir='runner'\npackage='checks/cases'\ncases=[]",
+    );
+    assert!(f.read("case_files=['parts/cases.toml']", "").is_err());
+}
+#[test]
+fn work_dir_obeys_platform_path_rules() {
+    #[cfg(windows)]
+    {
+        for path in ["C:runner", "C:", "D:work/unit"] {
+            rejects(&BASIC.replace("version = 1", &format!("version = 1\nwork_dir='{path}'")));
+        }
+        for path in [
+            r"C:/work/unit",
+            r"C:\work\unit",
+            r"\\?\C:\work\unit",
+            "../runner",
+            "runner",
+        ] {
+            assert_eq!(
+                config(&BASIC.replace("version = 1", &format!("version = 1\nwork_dir='{path}'")))
+                    .work_dir,
+                path
+            );
+        }
+    }
+    #[cfg(not(windows))]
+    assert_eq!(
+        config(&BASIC.replace("version = 1", "version = 1\nwork_dir='C:runner'")).work_dir,
+        "C:runner"
+    );
+}
+#[test]
 fn config_closed_schema_and_required_fields() {
     rejects(&BASIC.replace("version = 1", "version = 2"));
     rejects(&BASIC.replace("version = 1", "version = 1\nunknown=1"));

@@ -5,6 +5,7 @@ pub const SPACE: u64 = 1 << 32;
 #[derive(Debug)]
 pub struct Config {
     pub version: u32,
+    pub work_dir: String,
     pub project: Project,
     pub vm: Vm,
     pub mmio: Vec<Device>,
@@ -14,6 +15,8 @@ pub struct Config {
 #[serde(deny_unknown_fields)]
 struct RootConfig {
     version: u32,
+    #[serde(default = "default_work_dir")]
+    work_dir: String,
     project: Project,
     vm: Vm,
     #[serde(default)]
@@ -61,6 +64,9 @@ pub struct Case {
     pub ram_expected: Vec<RamRegion>,
     #[serde(default)]
     pub mmio: Vec<CaseDevice>,
+}
+fn default_work_dir() -> String {
+    ".ond/target/ond-unit".into()
 }
 fn default_steps() -> u64 {
     1_000_000
@@ -225,6 +231,7 @@ impl Config {
         }
         let config = Self {
             version: root.version,
+            work_dir: root.work_dir,
             project: root.project,
             vm: root.vm,
             mmio: root.mmio,
@@ -238,6 +245,18 @@ impl Config {
     pub fn validate(&self) -> Result<(), String> {
         if self.version != 1 {
             return Err("version は1が必要です".into());
+        }
+        nonempty(&self.work_dir, "work_dir")?;
+        #[cfg(windows)]
+        {
+            let path = Path::new(&self.work_dir);
+            if matches!(
+                path.components().next(),
+                Some(std::path::Component::Prefix(_))
+            ) && !path.has_root()
+            {
+                return Err("work_dirのWindowsドライブ指定にはrootを含む絶対pathが必要です".into());
+            }
         }
         nonempty(&self.project.path, "project.path")?;
         if let Some(role) = &self.project.role {

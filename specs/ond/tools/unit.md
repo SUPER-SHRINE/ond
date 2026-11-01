@@ -44,7 +44,7 @@ final の型と省略値、および依存 graph の成立条件は [Ond project
 ond-unit は登録順と登録配置情報から、ケースの import 宣言、関数ポインタ配列、`main()`、および起動引数読出しを含む生成ソースを作る。\
 ホストと生成ソースは同一のケース一覧および配置情報を使用する。
 
-生成ソースは利用者ソースを編集せず、`project.path` の project 内の `.ond/target/ond-unit/` に生成専用プロジェクトとして置く。\
+生成ソースは利用者ソースを編集せず、§11.1 の `work_dir` に生成専用プロジェクトとして置く。\
 生成専用プロジェクトは `[project].final = true` とし、対象 project を直接の path 依存として登録する。\
 `project.role` を指定した場合はその依存 edge の `role` に同じ値を設定し、省略時は edge の `role` も省略して対象の role 未指定構成を選択する。\
 この選択を実行設定の全ケースと対象 project の全 package に適用する。\
@@ -225,7 +225,7 @@ STEP_LIMIT は PASS、FAIL、および ERROR と別の状態であり、診断�
 実行設定の各ファイルは、以下の表に定める field からなる閉じた schema とする。\
 key は lower_snake_case とし、未知 key、型不正、必須項目の欠落、および各表の成立条件に反する値は設定 ERROR である。\
 表中の integer は TOML 整数を指し、範囲の計算は数学的整数で行う。\
-`project.path` の相対 path は root 設定ファイル所在 directory を基準に解決する。\
+`project.path` の相対 path は root 設定ファイル所在 directory を基準に解決し、絶対 path はそのまま使用する。\
 CLI のケース選択にかかわらず、全ファイルと全登録ケースを検証し、設定 ERROR は VM 実行前に報告する。
 
 ### 11.1. Root と共通環境
@@ -234,6 +234,7 @@ CLI のケース選択にかかわらず、全ファイルと全登録ケース�
 | Table | Key | 型・値 | 必須・省略時の動作 |
 | --- | --- | --- | --- |
 | root | `version` | integer、`1` | 必須 |
+| root | `work_dir` | 生成専用プロジェクトの directory を表す非空 string、相対 path は root 設定ファイル所在 directory を基準に解決し、絶対 path はそのまま使用する | 省略時は `.ond/target/ond-unit` |
 | root | `project` | table | 必須 |
 | root | `vm` | table | 必須 |
 | root | `mmio` | table の配列 | 省略時は空列 |
@@ -249,6 +250,12 @@ CLI のケース選択にかかわらず、全ファイルと全登録ケース�
 
 共通 MMIO 領域は物理 RAM および他の共通 MMIO 領域と重ならないものとする。\
 通常 link 対象 RAM の容量不足など、§4 の link 成立条件を満たさない場合は VM 実行前に ERROR とする。
+
+`work_dir` は生成専用プロジェクトの入力と成果物を保存する作業領域とする。\
+Windows のドライブ指定を持つ `work_dir` は、root を含む絶対 path 形式とする。\
+保存先が利用者の既存 Ond project、source、または lock 入力と重なる場合は、その入力を変更する前に ERROR とする。\
+生成先の directory とファイルが link によりその親の許可領域外を参照する場合も、参照先を変更する前に ERROR とする。\
+既存の生成専用プロジェクトは、現在の実行設定に合わせて更新する。
 
 ### 11.2. ケース
 <!-- ond-spec-id: tools/unit/config-cases -->
