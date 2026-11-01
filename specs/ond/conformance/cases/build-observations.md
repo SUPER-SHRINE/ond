@@ -96,6 +96,48 @@ MemoryVmは[case共通契約](./README.md#入力と期待結果の読み方)のf
 | SYN-10.function-name-prefix | Core検査で各関数の宣言型を比較 | TestArgumentはu32 parameter 1個とu32 result 1個、TestResultはu32 result 1個、TestGenericは型parameter T 1個とT parameter/result各1個、TestMethodはDevice receiverとu32 result 1個として受理 |
 | PKG-01.source-file-lsp | mainのResult代入の右辺先頭、TestArgumentのreturn式先頭、Collectのreturn式先頭で補完 | 各位置の関数候補にprivateHelper、Collect、TestArgument、TestResult、TestGenericを含む。mainのvalue.secret位置ではsecret fieldを解決 |
 
+## Ignoreのliteral directoryと探索境界
+<!-- ond-spec-id: conformance/build-observations/literal-ignore-directories -->
+
+要件は`PKG-01`とし、[source探索境界](../../build/packages.md#source探索境界)を適用する。\
+各caseは独立した新しいdirectoryで行い、下表で本文を記したfileをUTF-8、LF、末尾LFありで置く。\
+bytesを指定したfileは、そのbyte列だけをそのまま保存する。\
+既存cacheと他のsourceは持たず、`p`をcwdとして`ond compile . -o -`を実行する。
+
+| File | 全内容 |
+| --- | --- |
+| `p/ond.toml` | <code>[project]<br>name="p"<br>[dependencies]<br>lib={path="../lib"}</code> |
+| `p/main.ond` | <code>package main<br>import "lib"<br>import "lib/kept"<br>import "lib/metadatao"<br>import "lib/generated/keep"<br>func main(){_=lib.Value()+kept.Value()+metadatao.Value()+keep.Value()}</code> |
+| `lib/ond.toml` | <code>[project]<br>name="lib"<br>[resolve]<br>ignore=["*","*data[old]","generated/kagura"]</code> |
+| `lib/api.ond` | <code>package lib<br>func Value()->u32{return 1}</code> |
+| `lib/kept/kept.ond` | <code>package kept<br>func Value()->u32{return 2}</code> |
+| `lib/metadatao/kept.ond` | <code>package metadatao<br>func Value()->u32{return 3}</code> |
+| `lib/generated/kagura/broken.ond` | bytes: `FF`（16進、1 byte） |
+| `lib/generated/keep/api.ond` | <code>package keep<br>func Value()->u32{return 4}</code> |
+| `lib/.ond/broken.ond` | bytes: `FF`（16進、1 byte） |
+| `lib/nested/ond.toml` | <code>[project]<br>name="nested"</code> |
+| `lib/nested/broken.ond` | bytes: `FF`（16進、1 byte） |
+
+各行はこの入力から独立して開始し、成功時はstdoutのCompilationManifest.packagesのpackage列を比較する。\
+その期待集合は`p`、`lib`、`lib/generated/keep`、`lib/kept`、`lib/metadatao`とする。\
+`*`を含むdirectory名を作成する行は、その名前をfilesystemが許容する環境に適用する。
+
+以下のDは`*`と`*data[old]`をそれぞれ独立した入力として代入する。\
+除外を解除するcaseでは、[source形式](../../language/v1/lexical.md#source形式)に不適合なbyte列を入力し、終了code 1とstderrの該当fileの読出しerror診断を比較する。
+
+| Case ID | 入力の変更 | 期待・比較方法 |
+| --- | --- | --- |
+| PKG-01.ignore-literal-absent | 変更なし | 終了code 0、期待集合と一致。存在しない`*`、`*data[old]`は通常directoryへ展開されない |
+| PKG-01.ignore-literal-root | pのmanifest末尾に<code>[resolve]<br>ignore=["*","*data[old]"]</code>を追記 | 終了code 0、期待集合と一致 |
+| PKG-01.ignore-literal-existing | `lib/D/child/broken.ond`を追加し、bytesを`FF`（16進、1 byte）とする | 終了code 0、期待集合と一致。literal directoryとその配下を除外 |
+| PKG-01.ignore-literal-removed | `ignore-literal-existing`の入力から、libのignore列を`["generated/kagura"]`へ置換 | `lib/D/child/broken.ond`の読出しerror |
+| PKG-01.ignore-boundaries | libのignore列を`["generated/kagura"]`へ置換 | 終了code 0、期待集合と一致。通常相対directory、常時除外の`.ond`、nested projectの境界を維持 |
+| PKG-01.ignore-relative-removed | `ignore-boundaries`の入力から、libのignore列を`[]`へ置換 | `lib/generated/kagura/broken.ond`の読出しerror |
+| PKG-01.ignore-internal-moved | `ignore-boundaries`の入力から、`lib/.ond`を`lib/visible`へ移動 | `lib/visible/broken.ond`の読出しerror |
+| PKG-01.ignore-nested-removed | `ignore-boundaries`の入力から、`lib/nested/ond.toml`を削除 | `lib/nested/broken.ond`の読出しerror |
+| PKG-01.ignore-absolute | libのignore列を`[A]`へ置換し、Aは`lib/generated/kagura`の絶対pathをTOML stringとして符号化 | 終了code 1、stderrにignore設定のerror診断 |
+| PKG-01.ignore-parent | libのignore列を`["generated/../kagura"]`へ置換 | 終了code 1、stderrにignore設定のerror診断 |
+
 ## Manifest依存のnamespaceと生成source
 <!-- ond-spec-id: conformance/build-observations/dependency-projects -->
 

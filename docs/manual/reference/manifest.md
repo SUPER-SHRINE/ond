@@ -86,6 +86,17 @@ address、memory map、起動方法、終了先も例示値です。\
 
 role未指定構成は常にあり、`names`は追加構成を宣言します。
 
+`resolve.ignore`へ生成directoryとliteral名を指定する例です。
+
+```toml
+[resolve]
+ignore = [".git", ".ond", "target", "generated/kagura", "*", "*data[old]"]
+```
+
+この例の`generated/kagura`はmanifest directoryからの相対pathです。\
+`*`と`*data[old]`は、その名前をfilesystemが許容する環境で使うliteral directory名を表します。\
+文字の解釈、存在しないdirectoryの扱いと入力の成立条件は[source探索境界](../../../specs/ond/build/packages.md#source探索境界)を参照してください。
+
 ## Dependencies
 
 依存登録nameごとに`dependencies.<name>`へ依存値を置きます。

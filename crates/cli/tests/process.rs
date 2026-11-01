@@ -299,6 +299,166 @@ fn manifest_resolve_ignore_excludes_generated_source_trees() {
             .contains("excluded from source discovery by ond.toml resolve.ignore")
     );
 }
+
+fn literal_ignore_project(ignore: &str) -> Fixture {
+    let f = Fixture::new();
+    f.put(
+        "p/ond.toml",
+        "[project]\nname=\"p\"\n[dependencies]\nlib={path=\"../lib\"}\n",
+    );
+    f.put(
+        "p/main.ond",
+        "package main\nimport \"lib\"\nimport \"lib/kept\"\nimport \"lib/metadatao\"\nimport \"lib/generated/keep\"\nfunc main(){_=lib.Value()+kept.Value()+metadatao.Value()+keep.Value()}\n",
+    );
+    f.put(
+        "lib/ond.toml",
+        &format!("[project]\nname=\"lib\"\n[resolve]\nignore={ignore}\n"),
+    );
+    f.put("lib/api.ond", "package lib\nfunc Value()->u32{return 1}\n");
+    for (path, package, value) in [
+        ("kept/kept.ond", "kept", 2),
+        ("metadatao/kept.ond", "metadatao", 3),
+        ("generated/keep/api.ond", "keep", 4),
+    ] {
+        f.put(
+            &format!("lib/{path}"),
+            &format!("package {package}\nfunc Value()->u32{{return {value}}}\n"),
+        );
+    }
+    for directory in ["generated/kagura", ".ond", "nested"] {
+        let path = format!("lib/{directory}/broken.ond");
+        f.put(&path, "");
+        fs::write(f.0.join(path), [0xff]).unwrap();
+    }
+    f.put("lib/nested/ond.toml", "[project]\nname=\"nested\"\n");
+    f
+}
+
+fn assert_literal_ignore_packages(f: &Fixture) {
+    let output = run(&f.0, &["compile", "p", "-o", "-"], None);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let manifest: CompilationManifest = serde_json::from_slice(&output.stdout).unwrap();
+    let mut packages = manifest
+        .packages
+        .iter()
+        .map(|package| package.package.as_str())
+        .collect::<Vec<_>>();
+    packages.sort_unstable();
+    assert_eq!(
+        packages,
+        [
+            "lib",
+            "lib/generated/keep",
+            "lib/kept",
+            "lib/metadatao",
+            "p"
+        ]
+    );
+}
+
+#[test]
+fn manifest_resolve_ignore_accepts_nonexistent_literal_entries_without_expansion() {
+    let f = literal_ignore_project(r#"["*","*data[old]","generated/kagura"]"#);
+    assert_literal_ignore_packages(&f);
+    f.put(
+        "p/ond.toml",
+        "[project]\nname=\"p\"\n[dependencies]\nlib={path=\"../lib\"}\n[resolve]\nignore=[\"*\",\"*data[old]\"]\n",
+    );
+    assert_literal_ignore_packages(&f);
+}
+
+#[test]
+#[cfg(unix)]
+fn manifest_resolve_ignore_excludes_existing_literal_directories_without_expansion() {
+    for directory in ["*", "*data[old]"] {
+        let f = literal_ignore_project(r#"["*","*data[old]","generated/kagura"]"#);
+        let path = format!("lib/{directory}/child/broken.ond");
+        f.put(&path, "");
+        fs::write(f.0.join(&path), [0xff]).unwrap();
+        assert_literal_ignore_packages(&f);
+        f.put(
+            "lib/ond.toml",
+            "[project]\nname=\"lib\"\n[resolve]\nignore=[\"generated/kagura\"]\n",
+        );
+        let output = run(&f.0, &["compile", "p", "-o", "-"], None);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(1), "{directory}: {stderr}");
+        assert!(
+            stderr.contains("failed to read") && stderr.contains(&path),
+            "{directory}: {stderr}"
+        );
+    }
+}
+
+#[test]
+fn manifest_resolve_ignore_preserves_relative_and_project_boundaries() {
+    for boundary in ["generated/kagura", ".ond", "nested"] {
+        let f = literal_ignore_project(r#"["generated/kagura"]"#);
+        assert_literal_ignore_packages(&f);
+        let path = match boundary {
+            "generated/kagura" => {
+                f.put(
+                    "lib/ond.toml",
+                    "[project]\nname=\"lib\"\n[resolve]\nignore=[]\n",
+                );
+                "lib/generated/kagura/broken.ond"
+            }
+            ".ond" => {
+                fs::rename(f.0.join("lib/.ond"), f.0.join("lib/visible")).unwrap();
+                "lib/visible/broken.ond"
+            }
+            _ => {
+                fs::remove_file(f.0.join("lib/nested/ond.toml")).unwrap();
+                "lib/nested/broken.ond"
+            }
+        };
+        let output = run(&f.0, &["compile", "p", "-o", "-"], None);
+        let stderr = String::from_utf8_lossy(&output.stderr).replace('\\', "/");
+        assert_eq!(output.status.code(), Some(1), "{boundary}: {stderr}");
+        assert!(
+            stderr.contains("failed to read") && stderr.contains(path),
+            "{boundary}: {stderr}"
+        );
+    }
+}
+
+#[test]
+fn manifest_resolve_ignore_rejects_absolute_and_parent_paths() {
+    let f = literal_ignore_project(r#"["generated/kagura"]"#);
+    let absolute = f.0.join("lib/generated/kagura");
+    for project in ["p", "lib"] {
+        for path in ["..", "generated/../kagura", absolute.to_str().unwrap()] {
+            let ignore = toml::Value::String(path.into());
+            let dependencies = if project == "p" {
+                "[dependencies]\nlib={path=\"../lib\"}\n"
+            } else {
+                ""
+            };
+            f.put(
+                &format!("{project}/ond.toml"),
+                &format!(
+                    "[project]\nname=\"{project}\"\n{dependencies}[resolve]\nignore=[{ignore}]\n"
+                ),
+            );
+            let output = run(&f.0, &["compile", "p", "-o", "-"], None);
+            assert_eq!(output.status.code(), Some(1));
+            assert!(
+                String::from_utf8_lossy(&output.stderr)
+                    .contains("resolve.ignore entry must be a project-relative directory"),
+                "{project}: {path}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        f.put(
+            "p/ond.toml",
+            "[project]\nname=\"p\"\n[dependencies]\nlib={path=\"../lib\"}\n",
+        );
+    }
+}
 const LINK: &[&str] = &["link", "-", "-o", "-"];
 #[test]
 fn project_defaults_write_all_outputs_under_ond_target() {
