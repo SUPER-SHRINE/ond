@@ -57,6 +57,16 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File tools/package-release.ps1 -Version $env:GITHUB_REF_NAME
 
+      - name: Windows installerを作成して検証
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path -LiteralPath $compiler)) { throw 'Inno Setup 6 is required on the Windows runner.' }
+          pwsh -NoProfile -File tools/build-installer.ps1 -Version $env:GITHUB_REF_NAME -Compiler $compiler
+          if ($LASTEXITCODE -ne 0) { throw 'Installer build failed.' }
+          pwsh -NoProfile -File tools/test-installer.ps1 -Version $env:GITHUB_REF_NAME -RunIntegration
+          if ($LASTEXITCODE -ne 0) { throw 'Installer integration failed.' }
       - name: 配布物を保存
         uses: actions/upload-artifact@v4
         with:

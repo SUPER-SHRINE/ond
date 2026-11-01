@@ -15,11 +15,13 @@ Statement     = DeclStmt
               | SimpleStmt
               | ReturnStmt
               | TrapStmt
+              | AsmStmt
               | DeferStmt
               | BreakStmt
               | ContinueStmt
               | IfStmt
               | ForStmt
+              | RoleStmt
               | Block .
 DeclStmt      = ConstDecl | VarDecl .
 SimpleStmt    = EmptyStmt | ExpressionStmt | Assignment | IncDecStmt | ShortVarDecl .
@@ -33,6 +35,7 @@ IncDecStmt    = Expression ( "++" | "--" ) .
 ShortVarDecl  = IdentifierList ":=" ExpressionList .
 ReturnStmt    = "return" [ ExpressionList ] .
 TrapStmt      = "trap" string_lit .
+AsmStmt       = InlineAssembly .
 DeferStmt     = "defer" Block .
 BreakStmt     = "break" .
 ContinueStmt  = "continue" .
@@ -50,6 +53,7 @@ ForClauseBlock= [ SimpleStmt ] ";" [ Expression ] ";" [ SimpleStmt ] Block .
 - defer blockの制御構文は[defer規則](#defer)に従う
 - `ExpressionStmt`はcall expressionで構成し、それ以外の単独式はcompile errorとなる
 - `TrapStmt`のoperandは[builtin trapの成立条件](./builtins.md#8-trap)に従う
+- `AsmStmt`は[inline assembly](./inline-assembly.md)の構文、名前解決、型、評価、出力代入に従う
 - `for init; cond; post {}` の `init` と `post` に使えるのは `SimpleStmt` のうち `ExpressionStmt`、`Assignment`、`IncDecStmt`、`ShortVarDecl` である
   - 空欄は省略を表す
 - `if init; cond {}` の `init` に使えるのも同じである
@@ -87,7 +91,10 @@ getterは[operator解決](./expressions.md#user-defined-operator)で選んだind
   - `for {}`とconditionを省略した3 clause forは、当該loopを対象とする構文上到達可能なbreakがない場合に後続文への経路を持たない
   - 内側loopを対象とするbreakは外側loopの退出経路を作らない
   - 呼出先の本体や実行時の定数真偽で構文上の経路を追加・削除しない
-- 到達判定で経路に寄与しない文にも、構文・名前・型など他の成立条件を適用する
+- role選択後の到達判定で経路に寄与しない文にも、構文・名前・型など他の成立条件を適用する
+  - `asm noreturn`は後続文へ通常継続しない終端経路とする
+
+RoleStmtの選択、block scopeと検査範囲は[role規則](./roles.md)に従う。
 
 ## 文と制御構文
 <!-- ond-spec-id: statements/control-flow -->
@@ -140,6 +147,7 @@ func process() -> i32 {
 ```
 
 - 登録済みの defer block は、関数本体末尾への到達または `return` による正常終了時に、登録と逆の順序で各 1 回実行する
+- `asm noreturn`による外部移行は正常終了ではなく、登録済みdefer blockを実行しない
 - `return` の戻り値とその副作用は defer block より先に評価する
   - 確定済みの戻り値はdefer完了後も保持する
 - defer block 内の式は登録時ではなく実行時に評価し、参照する local variable のその時点の値を使う

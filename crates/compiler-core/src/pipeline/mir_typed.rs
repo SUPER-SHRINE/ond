@@ -1,4 +1,5 @@
 //! Typed HIR to MIR CFG construction.
+mod inline_asm;
 mod memory;
 use crate::{
     FrontendError,
@@ -263,6 +264,15 @@ impl FunctionBuilder<'_> {
                 break;
             }
             match statement {
+                hir::Stmt::InlineAssembly {
+                    noreturn,
+                    inputs,
+                    outputs,
+                    program,
+                    span,
+                } => {
+                    self.lower_asm(*noreturn, inputs, outputs, program, *span)?;
+                }
                 hir::Stmt::LocalDecl {
                     locals,
                     values,
@@ -1025,7 +1035,7 @@ fn collect_defers<'a>(block: &'a hir::Block, output: &mut Vec<(usize, &'a hir::B
             | hir::Stmt::Return { .. }
             | hir::Stmt::Break(_)
             | hir::Stmt::Continue(_) => {}
-            hir::Stmt::Trap { .. } => {}
+            hir::Stmt::Trap { .. } | hir::Stmt::InlineAssembly { .. } => {}
         }
     }
 }

@@ -19,35 +19,22 @@
 ## 2. Address Space
 <!-- ond-spec-id: targets/kagura-v1/address-space -->
 
-RAM baseと容量は呼出側が[LinkPlan](../../artifacts.md#linkplanとlinkedimage)へ指定する。\
+RAM baseと容量は呼出側が[link設定](../../build/packages.md#compileとlink設定)へ指定する。\
 実行環境はRAM、MMIO map、unmapped領域を含むmemory mapと終了経路を定める。\
-OndのKagura profileはLinkPlanの配置値と実行環境のmemory map・終了経路を使う。
+OndのKagura profileはその配置値と実行環境のmemory map・終了経路を使う。
 
 ## 3. RAM Layout
 <!-- ond-spec-id: targets/kagura-v1/ram-layout -->
 
-[LinkPlan](../../linking.md)の`read_only = null`の場合、RAM内は低addressから次の順に配置する。
+実行可能バイナリのsection、コピー範囲、heap_base、STACK_BOTTOM、STACK_TOPと初期SPは、[配置契約](../../artifacts.md#配置容量と出力範囲)に従う。\
+heapはheap_baseから上方向へ、stackはSTACK_TOPから下方向へ成長する。\
+stack予約範囲は`[STACK_BOTTOM, STACK_TOP)`であり、heap allocatorはSTACK_BOTTOM以上を割り当てない。
 
-```text
-.text | .rodata | .data | .bss | heap ... free ... stack
-                                          ->       <-
-```
+stack_sizeが4 mod 8の場合も予約範囲全体を保持し、8-byte単位のframeに使えない下端4 byteをheapへ転用しない。\
+stack_size=4も配置の成立条件を満たせる。
 
-- startup segment は `.text`, `.rodata`, `.data`, `.bss` の順に置く
-- segment 間には alignment padding だけを置ける
-- `heap_base = align_up(end_of_bss, 4)` とし、heap は上方向へ成長する
-- `RAM_END = RAM_BASE + ram_size`
-- RAM_ENDは[LinkPlan成立条件](../../linking.md#symbol解決と配置)により8-byte alignedとする
-- `STACK_TOP = RAM_END`
-- `STACK_BOTTOM = STACK_TOP - stack_size`
-- stack は `STACK_TOP` から下方向へ成長する
-- startup segment の末尾は `STACK_BOTTOM` 以下でなければならない
-- heap allocator は `STACK_BOTTOM` 以上を割り当ててはならない
-
-stack_sizeが4 mod 8の場合も予約範囲[STACK_BOTTOM,STACK_TOP)全体を保持し、8-byte単位のframeに使えない下端4byteをheapへ転用しない。\
-初期SPはSTACK_TOPとし、stack_size=4もLinkPlanの成立条件を満たせる。
-
-sectionの保存形式は配布形式が定め、loaderはsectionをloadしてinitialized dataの末尾からmemory_sizeまでをzero初期化する。
+sectionの保存、ロード、zero初期化は[実行可能バイナリ](../../artifacts.md#ロード完了時の状態)を定義元とする。\
+配置と命令の個別検査でLinkPlan論理値を使う場合は、その検査に指定されたsection addressとruntime境界を入力とする。
 
 ### 3.1 Heap allocator
 <!-- ond-spec-id: targets/kagura-v1/heap-allocator -->
@@ -84,11 +71,9 @@ aggregate copyはsource snapshotの読取完了後にdestinationへ書く。\
 <!-- ond-spec-id: targets/kagura-v1/startup -->
 
 loaderは[責務の定義](../../build/packages.md#責務)に従ってsectionのロードとzero初期化、SPの設定を行い、linkされたruntime entryへ制御を渡す。\
+実行可能バイナリのexternalとselfのloader、および制御移行時の状態は、[起動方式](../../artifacts.md#外部起動とセルフ起動)と[ロード契約](../../artifacts.md#ロード完了時の状態)に従う。\
 entryは[言語の初期化順序](../../language/v1/execution.md#初期化とエントリ)に従ってinitializerを呼び、最後にmainを呼ぶ。\
-mainから戻った際の処理は呼出側が指定したtermination instructionsが定める。
-
-上記は通常buildのstartup契約である。\
-test buildでもloaderによるload・zero初期化・SP設定の境界を保ち、詳細は[テストビルド仕様](../../build/test-build.md)に従う。
+mainから戻った際の制御経路は[link.exit](../../build/packages.md#compileとlink設定)に従う。
 
 ## 5. Data Layout
 <!-- ond-spec-id: targets/kagura-v1/data-layout -->
@@ -143,7 +128,8 @@ test buildでもloaderによるload・zero初期化・SP設定の境界を保ち
 ## 7. Project Configuration
 <!-- ond-spec-id: targets/kagura-v1/project-configuration -->
 
-project、manifestとsource探索は[package build](../../build/packages.md#manifestとsource探索)、RAM配置とstack予約量は[linking](../../linking.md)を定義元とする。
+project、manifestとsource探索は[package build](../../build/packages.md#manifestとsource探索)を定義元とする。\
+実行可能バイナリの永続設定は[compileとlink設定](../../build/packages.md#compileとlink設定)、配置は[実行可能バイナリ](../../artifacts.md#配置容量と出力範囲)に従う。
 
 ## Faultと観測結果
 <!-- ond-spec-id: targets/kagura-v1/fault-observations -->

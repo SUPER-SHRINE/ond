@@ -1,23 +1,26 @@
 use crate::{CompileRequest, DriverResult};
-use ond_compiler_core::{LoadedProject, PackageId, PackageSources};
+use ond_compiler_core::LoadedProject;
 use std::collections::BTreeMap;
 
 pub fn load(request: &CompileRequest) -> DriverResult<LoadedProject> {
     request.contract.validate().map_err(|error| vec![error])?;
-    let loader = if request.test {
-        ond_compiler_core::load_project_with_test_inputs
-    } else {
-        ond_compiler_core::load_project_with_inputs
-    };
-    let resolved = crate::resolve_dependencies(&request.project_root)?;
+    let resolved = crate::dependencies::resolve_dependencies_with_role(
+        &request.project_root,
+        request.role.as_deref(),
+    )?;
     let mut excluded_dirs = request.excluded_dirs.clone();
     excluded_dirs.extend(resolved.ignored_directories);
-    let mut loaded = loader(
+    let loaded = ond_compiler_core::load_project_with_role_inputs(
         &request.project_root,
         &BTreeMap::new(),
         &excluded_dirs,
         &request.sources,
         &resolved.sources,
+        ond_compiler_core::RoleLoadOptions {
+            selected: request.role.clone(),
+            dependencies: resolved.role_inputs,
+            ..Default::default()
+        },
     )
     .map_err(|error| {
         error
@@ -26,32 +29,6 @@ pub fn load(request: &CompileRequest) -> DriverResult<LoadedProject> {
             .map(|diagnostic| diagnostic.message.clone())
             .collect::<Vec<_>>()
     })?;
-    if request.test
-        && !loaded
-            .packages
-            .iter()
-            .any(|package| package.logical_path == ".")
-    {
-        // The test linker enters through case wrappers. Give the existing graph
-        // and compiler an in-memory entry package without changing library files.
-        let directory = loaded.root.join(".ond/__test_entry__");
-        let file = loaded.sources.add_file(
-            directory.join("main.ond"),
-            "package main\nfunc main() {}\n".to_string(),
-        );
-        loaded.packages.insert(
-            0,
-            PackageSources {
-                id: PackageId(0),
-                logical_path: ".".to_string(),
-                directory,
-                files: vec![file],
-            },
-        );
-        for (index, package) in loaded.packages.iter_mut().enumerate() {
-            package.id = PackageId(index);
-        }
-    }
     Ok(loaded)
 }
 
@@ -78,9 +55,6 @@ pub(super) fn logical_packages(loaded: &mut LoadedProject) -> DriverResult<Optio
         .iter()
         .find(|package| package.logical_path == "." && package.directory == loaded.root)
         .map(|_| name.clone());
-    loaded
-        .packages
-        .retain(|package| package.logical_path != "." || package.directory == loaded.root);
     for package in &mut loaded.packages {
         if package.logical_path == "." {
             package.logical_path = name.clone();

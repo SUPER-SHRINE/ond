@@ -74,6 +74,12 @@ func calc() -> i32 {
     );
 }
 pub(super) fn machine(bytes: &crate::linker::LinkedImage) -> (Cpu, DefaultBus, u32) {
+    machine_with_output(bytes, Ram::new(4))
+}
+pub(super) fn machine_with_output(
+    bytes: &crate::linker::LinkedImage,
+    output: impl kagura::Device + 'static,
+) -> (Cpu, DefaultBus, u32) {
     let executable = bytes;
     let mut bus = DefaultBus::new();
     bus.map_device(
@@ -83,7 +89,7 @@ pub(super) fn machine(bytes: &crate::linker::LinkedImage) -> (Cpu, DefaultBus, u
     )
     .unwrap();
     bus.map_device(EXIT, 4, Ram::new(4)).unwrap();
-    bus.map_device(OUTPUT, 4, Ram::new(4)).unwrap();
+    bus.map_device(OUTPUT, 4, output).unwrap();
     bus.write32(EXIT, 0xdeadbeef).unwrap();
     for section in &executable.sections {
         // Mirror the machine loader contract explicitly, not Ram::new's zero fill.

@@ -832,6 +832,10 @@ fn find_in_stmt<'a>(
 ) -> Option<Reference<'a>> {
     let context = Some(function);
     match stmt {
+        ast::Stmt::InlineAssembly(statement) => statement
+            .bindings
+            .iter()
+            .find_map(|binding| find_in_expr(&binding.value, offset, context)),
         ast::Stmt::Const(decl) => decl.specs.iter().find_map(|spec| {
             spec.ty
                 .as_ref()
@@ -1730,6 +1734,7 @@ fn contains(span: Span, offset: usize) -> bool {
 
 fn stmt_span(stmt: &ast::Stmt) -> Span {
     match stmt {
+        ast::Stmt::InlineAssembly(statement) => statement.span,
         ast::Stmt::Const(decl) => decl.span,
         ast::Stmt::Var(decl) => decl.span,
         ast::Stmt::ShortVar(decl) => decl.span,

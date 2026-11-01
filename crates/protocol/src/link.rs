@@ -34,8 +34,8 @@ pub struct LinkedSection {
     pub data: Vec<u8>,
 }
 
-/// Runtime addresses and patched bytes only; no cartridge offsets or container headers.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+/// Logical link result; executable files use `crate::executable`, not JSON.
+#[derive(Serialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct LinkedImage {
     pub build_id: String,

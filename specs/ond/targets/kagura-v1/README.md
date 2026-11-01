@@ -5,6 +5,7 @@
 
 - [Target Runtime Contract](./machine.md)
 - [ABI](./abi.md)
+- [Inline assembly](./inline-assembly.md)
 - [Objectとlinking](../../linking.md)
 
 この profile は Ond に属し、Kagura 規格の一部ではない。

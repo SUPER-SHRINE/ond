@@ -4,14 +4,13 @@
 ## JSON wire形式
 <!-- ond-spec-id: artifacts/json-wire-format -->
 
-本書と[debug](./debug-metadata/v1.md)、[test sidecar](./build/test-build.md)の公開JSONは、BOMのないUTF-8で表す。\
+本書と[debug](./debug-metadata/v1.md)の公開JSONは、BOMのないUTF-8で表す。\
 読出し時にはJSONの値間の空白を許可し、文字列はUnicode scalar列として解釈する。\
 すべてのobjectは表で定義したfield集合だけを持つ閉schemaとし、未知fieldと重複keyはerrorとなる。\
 keyの同一性はescapeをdecodeしたstringで比較し、Unicode正規化は行わない。\
 `map<string,T>`は任意の相異なるstring keyからTへのobjectであり、mapの値にもTのschemaを適用する。
 
 各fieldは必須であり、型に`null`を含むfieldは明示的なnullまたは指定型の値を持つ。\
-省略できるfieldはPackageArtifactとCompilationManifestの`tests`だけであり、`tests`の明示nullはerrorとなる。\
 配列の長さは指定がある場合その長さに一致し、tuple `(A,B)`は長さ2のJSON array `[A,B]`で表す。
 
 | 値型 | JSON表現・成立条件 |
@@ -43,8 +42,7 @@ variant名は大文字・小文字を含め以下の綴りと完全一致し、�
 | ValueKind unit | `"Zero"`, `"Nil"` |
 | ValueKind payload | `{"Integer":u64}`, `{"Float32":u32}`, `{"Bool":bool}`, `{"Composite":[[u32,Value],...]}` |
 
-compiler_id、build_id、content_hashの保存値は[SHA-256識別子](./build/cache.md#公開識別子)の小文字hex64桁とする。\
-image hash計算用の空build_idは計算時だけの値であり、保存するimageは上記の識別子を持つ。
+compiler_id、build_id、content_hashの保存値は[SHA-256識別子](./build/cache.md#公開識別子)の小文字hex64桁とする。
 
 schema違反は公開入力のerrorとなり、compile/link CLIでは[失敗契約](./build/commands.md#入出力と失敗時)を適用する。\
 公開JSONの生成byte列とhashは[canonical JSONと識別子](./build/cache.md#canonical-json)に従う。
@@ -52,7 +50,7 @@ schema違反は公開入力のerrorとなり、compile/link CLIでは[失敗契�
 ## 公開interface
 <!-- ond-spec-id: build/public-metadata-revision-3 -->
 
-成果物の外層contractはrevision 6とし、[版識別と互換条件](#版識別と互換条件)を適用する。
+成果物の外層contractは[版識別と互換条件](#版識別と互換条件)に従う。
 
 `interface`はpackage、types（型定義の配列）、exports（公開名→宣言）からなる。\
 target-neutralな型・公開宣言情報であり、型参照はこの成果物localのtypes配列indexで表す。
@@ -120,13 +118,14 @@ cache再利用は[cache契約](./build/cache.md)に従う。
 | language | sourceの構文・型・意味 | Ond v1 | [language v1](./language/v1/README.md)の入力と規則に適用 |
 | target profile | machine/layout/runtime | `kagura-v1` | languageのtarget委譲を具体化 |
 | ABI | call/register/引数・戻り値 | `ond-kagura-v1` | `kagura-v1`に適用 |
-| artifact Contract | PackageArtifactとCompilationManifestの外層 | revision `6`, target `kagura-v1`, abi `ond-kagura-v1` | tuple全要素が表の値に一致すると受理。Contractの未知fieldはerror |
+| artifact Contract | PackageArtifactとCompilationManifestの外層 | revision `7`, target `kagura-v1`, abi `ond-kagura-v1` | tuple全要素が表の値に一致すると受理。Contractの未知fieldはerror |
 | compiler_id | artifact生成元とcache再利用の識別 | 実行executable全体のSHA-256 | CLI linkはmanifest、全artifact、実行linkerの同一値を要求 |
 
 language版、target版、ABI版は対応する規範文書の適用対象を識別する。\
 成果物に記録する版識別は上表のContract tupleである。\
 `compiler_id`は同じ生成元を識別する値であり、一致によって生成元と再利用の条件を判定する。\
-Object、LinkPlan、LinkedImageも本書のJSON wire形式と後掲の各field集合で表す。
+Objectも本書のJSON wire形式と後掲のfield集合で表す。\
+実行可能バイナリは[標準実行バイナリ](#標準実行バイナリ)の版識別を用いる。
 
 ## PackageArtifactとCompilationManifest
 <!-- ond-spec-id: artifacts/package-and-manifest -->
@@ -141,17 +140,12 @@ fieldの名前と意味を次の表で定義する。
 | PackageArtifact | `dependencies: map<string,string>` | 直接依存package pathからbuild_idへの対応 |
 | PackageArtifact | `imports: string[]`, `initializer: string or null` | source順のimport path、global初期化関数symbol |
 | PackageArtifact | `interface: Interface`, `object: Object`, `debug: DebugObject` | 公開interface、Object、link前debug情報 |
-| PackageArtifact | `tests: TestMetadata` | test compile時の[tests object](./build/test-build.md#buildと起動入口)。通常compileはfieldを省略 |
 | CompilationManifest | `contract: Contract`, `compiler_id: string` | 外層契約と生成元 |
 | CompilationManifest | `packages: ArtifactRef[]`, `program: ProgramMetadata` | 決定的なObject入力順のartifact列、実行計画 |
-| CompilationManifest | `tests: TestMetadata` | test compile時のTestMetadata。case 0件も`cases: []`を記録 |
 | ArtifactRef | `package: string`, `build_id: string`, `path: string`, `content_hash: string` | package path、内容識別、artifact file path、file bytesのSHA-256 |
 | ProgramMetadata | `entry_symbol: string`, `initializers: string[]` | entry symbol、言語初期化順に並ぶinitializer symbol |
 
 Object入力順とinitializer実行順は別の列として保持する。\
-testsのcase列と`.ondtest`は[test build契約](./build/test-build.md)を定義元とする。\
-CompilationManifest、Contract、TestMetadataとcaseは上表と[test schema](./build/test-build.md#buildと起動入口)のfield集合で検査し、未知fieldはerrorとなる。\
-明示`tests: null`はerrorとなり、field省略とcase 0件のtest buildを区別する。\
 PackageArtifactとinterfaceのpackageは一致し、型参照、public名、nominal名、method名/symbol、aggregate indexの整合性を読出時に検査する。\
 build_idとcache keyの生成は[cache契約](./build/cache.md)、debug schemaは[debug metadata](./debug-metadata/v1.md)に従う。
 
@@ -172,21 +166,12 @@ linkは以下の入力整合を検査し、違反はlink errorとなる。
 | import/dependency | importsの集合がdependenciesのkey集合に一致、各依存artifactが存在しそのbuild_idが依存値に一致 |
 | import graph | 各packageのimports列をsource定義順として、[packageと循環の規則](./language/v1/names-and-scopes.md#packageとimport)を満たす |
 | initializer | nullまたは対応packageのExported Function symbolで、列挙されたinitializerが全て解決できる |
-| mode | manifestと全artifactのtestsの有無が一致 |
-| test case | package/name/symbolの組が一意で、manifestのcase集合が全artifactのcase集合の和に一致 |
 
 imports列の重複は[同じimportの言語規則](./language/v1/names-and-scopes.md#scopeとshadowing)に従い、集合の一致検査で列順を変更しない。\
 packages列のObject入力順とProgramMetadata.initializersの順も保持する。
 
-ProgramMetadataは通常startup計画を表す。\
-通常buildのentry_symbolはmain.mainを指し、そのExported Functionを持つpackageをrootとして、[言語の初期化順](./language/v1/execution.md#初期化とエントリ)から導く全initializer列とprogram.initializersが一致することを要求する。
-
-test起動は各case.packageから導くwrapper計画とする。\
-compileは[test sourceの成立条件](./build/test-build.md#sourceと文脈)を満たす宣言からtest caseを収録する。\
-各artifactのcase.packageは当該artifact.packageに一致する。\
-linkはcase.symbolが[名前規則](#link-symbolの名前と所属)と対応する所属packageのExported Function定義に一致することを検査する。\
-wrapperは所属packageと依存先のinitializer列、対象functionの順を[test起動契約](./build/test-build.md#buildと起動入口)で実行する。\
-test modeのprogram.entry_symbolに通常mainの解決を要求せず、library testは同章のlibrary成立条件に従う。
+ProgramMetadataはstartup計画を表す。\
+entry_symbolはmain.mainを指し、そのExported Functionを持つpackageをrootとして、[言語の初期化順](./language/v1/execution.md#初期化とエントリ)から導く全initializer列とprogram.initializersが一致することを要求する。
 
 ## Object
 <!-- ond-spec-id: artifacts/object -->
@@ -219,7 +204,6 @@ CLIが生成するstartupのentryは`__ond.entry`、heap境界は`__ond_heap_bas
 | --- | --- |
 | startup | `__ond.entry`、`__ond_heap_cursor`、`__ond_heap_base_slot`、`__ond_stack_bottom_slot` |
 | heap/stack境界 | LinkPlan.heap_base_symbol、LinkPlan.stack_bottom_symbol |
-| test wrapper | `__ond.test.`にcases列の0始まりindexをleading zeroのない10進で続けた名前 |
 | runtime helper | U+0001に`ond.runtime.`を続けたprefix（JSON表記`"\u0001ond.runtime."`） |
 
 表の名前の定義者は対応する生成者とし、source/package ObjectはImported symbolとrelocationで参照できる。\
@@ -228,19 +212,180 @@ CLIが生成するstartupのentryは`__ond.entry`、heap境界は`__ond_heap_bas
 ## LinkPlanとLinkedImage
 <!-- ond-spec-id: artifacts/link-plan-and-image -->
 
+LinkPlanとLinkedImageは配置入力と解決済みlink結果を記述する論理モデルであり、公開JSON wire形式または保存成果物のschemaを定義しない。\
+実行可能バイナリの保存形式は[後掲の定義](#実行可能バイナリ)に従う。
+
 | 型 | Field | 値と意味 |
 | --- | --- | --- |
 | MemoryRegion | `base: u32`, `size: u32` | byte addressとbyte size |
 | LinkPlan | `read_only: MemoryRegion or null`, `memory_base: u32`, `memory_size: u32`, `stack_size: u32` | optional Text/Rodata領域、RAM領域、stack予約量 |
 | LinkPlan | `entry_symbol: string`, `heap_base_symbol: string`, `stack_bottom_symbol: string` | entryとruntime境界symbol |
 | LinkedSection | `kind: SectionKind`, `alignment: u32`, `load_address: u32`, `memory_size: u32`, `data: bytes` | 配置済みsectionとpatch済みinitialized bytes |
-| LinkedImage | `build_id: string`, `entry_point: u32`, `ram_size: u32`, `stack_size: u32`, `sections: LinkedSection[]` | image識別、entry address、容量、loadするsection列 |
+| LinkedImage | `entry_point: u32`, `ram_size: u32`, `stack_size: u32`, `sections: LinkedSection[]` | entry address、容量、配置済みsection列 |
 | LinkedImage | `heap_base: u32`, `stack_bottom: u32`, `stack_top: u32`, `symbols: map<string,u32>` | runtime境界と下記の公開symbol address |
 
 LinkedImage.symbolsは全入力ObjectのExported定義とLinkPlanの合成heap/stack境界だけのmapとする。\
 同名LocalのObject間共存と解決は[linking](./linking.md#symbol解決と配置)に従う。\
 startup/runtime symbolもExportedなら同じ規則で収録する。\
 LinkedImageはruntime addressとpatch済みbytesを表す。\
-loaderはこれをloadし、各sectionのdata末尾からmemory_sizeまでをzero初期化する。\
-配布ツールはLinkedImageを配布形式へ配置する。\
-image build_idは[公開識別子](./build/cache.md#公開識別子)の規則で求める。
+各値は[linking](./linking.md)と実行可能バイナリの配置契約から導く。
+
+## 実行可能バイナリ
+<!-- ond-spec-id: artifacts/executable-binary-draft -->
+
+本節は、Ond Language v1、target profile `kagura-v1`、ABI `ond-kagura-v1`のbuildを表す実行可能バイナリを定義する。\
+永続的な配置・起動・終了設定は、projectの[compileとlink設定](./build/packages.md#compileとlink設定)に従う。
+
+中間成果物`.ondpkg`と`.ondbuild`は[PackageArtifactとCompilationManifest](#packageartifactとcompilationmanifest)のJSON wire形式に従う。\
+debug sidecarのJSON表現は、[debug metadata](./debug-metadata/v1.md)に従う。
+
+### 標準実行バイナリ
+<!-- ond-spec-id: artifacts/standard-executable-binary -->
+
+標準実行バイナリは、32 byteの固定ヘッダ、24 byteのレコードを`section_count`個並べたセクション表、paddingとセクションデータから構成する。
+
+```text
+[固定ヘッダ: 32 byte | セクション表: 24 × section_count byte | padding・セクションデータ]
+```
+
+magic以外の全fieldはlittle-endianのu32とし、offsetとsizeの単位はbyteとする。\
+固定ヘッダのoffsetと全`file_offset`は、標準実行バイナリの先頭を0として数える。
+
+| ヘッダ内offset | Field | 値と意味 |
+| --- | --- | --- |
+| 0 | magic | ASCIIの`ONDX`を表す4 byte `4f 4e 44 58` |
+| 4 | version | `1` |
+| 8 | target | `1` = `kagura-v1` |
+| 12 | abi | `1` = `ond-kagura-v1` |
+| 16 | image_size | 固定ヘッダから最後のセクションデータ末尾までの標準実行バイナリ全長 |
+| 20 | entry_address | ロード完了後に制御を渡すruntime entryの絶対address |
+| 24 | initial_sp | entryへ制御を渡す際のstack pointer値 |
+| 28 | section_count | セクション表のレコード数 |
+
+セクション表はoffset 32から始まり、各レコードを次の形式で格納する。
+
+| レコード内offset | Field | 値と意味 |
+| --- | --- | --- |
+| 0 | kind | `1` = Text、`2` = Rodata、`3` = Data、`4` = Bss |
+| 4 | file_offset | 格納byte列の開始offset |
+| 8 | file_size | ファイルに格納するbyte数 |
+| 12 | memory_address | 実行時にセクションの先頭となる絶対address |
+| 16 | memory_size | 実行時にセクションが占有するbyte数 |
+| 20 | alignment | 実行時配置に必要なbyte単位のalignment |
+
+レコードはkindの昇順とし、kindごとに最大1個を格納する。\
+`memory_size`が0のセクションは省略し、Textは必須、`section_count`は1〜4とする。\
+セクションの実行時範囲は`[memory_address, memory_address + memory_size)`であり、格納範囲は`file_size > 0`の場合の`[file_offset, file_offset + file_size)`である。
+
+| 対象 | 成立条件 |
+| --- | --- |
+| 全セクション | `memory_size > 0`、alignmentは正の2冪、memory_addressはalignmentの倍数 |
+| Text・Rodata | `file_size = memory_size` |
+| Text | alignmentは4以上、memory_sizeは4の倍数 |
+| Data | `0 <= file_size <= memory_size` |
+| Bss | `file_offset = 0`、`file_size = 0` |
+| 格納byte列が空のData | `file_offset = 0` |
+| entry_address | 4-byte alignedで、Textの実行時範囲内の命令先頭 |
+| 格納範囲 | 固定ヘッダ・セクション表と分離し、互いに重ならず、image_size以内 |
+| 実行時範囲 | 互いに重ならず、[配置先領域](#配置容量と出力範囲)以内 |
+
+`file_size > 0`の各格納範囲に対応するbyte列をセクションデータとする。\
+固定ヘッダ・セクション表・セクションデータ以外の標準実行バイナリ内のbyteはpaddingであり、値を0とする。\
+`image_size`は格納範囲の末尾の最大値に一致し、標準実行バイナリはちょうど`image_size` byteを持つ。
+
+範囲端、セクション表の長さ、address、alignmentの切上げは数学的な整数として計算する。\
+file範囲とu32 address範囲への切り詰めや折り返しを行わず、各計算結果は0〜4294967295の範囲に収める。\
+magic、version、target、abiの不一致、欠落byte、未知kind、上記の成立条件違反は読出しerrorとなり、loaderはentryへ制御を渡さない。
+
+### ロード完了時の状態
+<!-- ond-spec-id: artifacts/executable-load-state -->
+
+loaderは[配置方式](#配置容量と出力範囲)に従って、各セクションの格納byte列が`memory_address`から同じ順序で参照できる状態を成立させる。\
+ROM上で直接参照するText・Rodataはその格納byte列を使い、RAMへ配置するbyte列は指定先へコピーする。\
+各セクションの`[memory_address + file_size, memory_address + memory_size)`をzero初期化し、Bssと格納byte列が空のDataは実行時範囲全体をzeroとする。
+
+`entry_address`へ制御を渡す時点では、全セクションの準備が完了し、stack pointerが`initial_sp`に一致する。\
+ロード時にaddressの再配置は行わず、entryはRAMやROMの先頭addressではなくヘッダの指定値を使う。\
+initializerと`main`の呼出しはentry側の責務であり、[言語の初期化とエントリ](./language/v1/execution.md#初期化とエントリ)に従う。
+
+### 外部起動とセルフ起動
+<!-- ond-spec-id: artifacts/executable-launch-modes -->
+
+`link.startup = 'external'`の出力は標準実行バイナリそのものとする。\
+外部loaderが[ロード完了時の状態](#ロード完了時の状態)を成立させ、entryへ制御を渡す。
+
+```text
+external = [標準実行バイナリ]
+```
+
+`link.startup = 'self'`の出力は、標準実行バイナリの前に起動処理を置いたセルフ起動形式とする。
+
+```text
+self = [前置起動処理 | 標準実行バイナリ]
+```
+
+selfは`link.rom`を必須とし、ROM baseを0とする。\
+実行環境は出力全体をROM address 0から同じ順序で配置し、CPUをresetする。\
+CPU resetによる実行開始は、[固定Kagura規範](./targets/kagura-v1/README.md#参照するkagura規範)のPC 0に従う。\
+PC 0から始まる前置起動処理がloaderの役割を担い、SPを含む[ロード完了時の状態](#ロード完了時の状態)を成立させてentryへ制御を渡す。\
+外部bootloaderやhostによるSP設定をselfの成立前提に含めない。
+
+前置起動処理の格納長は標準実行バイナリまでのpaddingを含む4の倍数とし、link時に確定する。\
+前置起動処理はその確定位置のヘッダを使い、magicの探索によって標準実行バイナリを検出しない。\
+selfでも`file_offset`の基準と`image_size`の対象は標準実行バイナリだけであり、前置起動処理を含めない。
+
+### 配置容量と出力範囲
+<!-- ond-spec-id: artifacts/executable-placement-capacity -->
+
+ROMとRAMは、それぞれ[link設定](./build/packages.md#compileとlink設定)で指定した単一の連続するflat address範囲とする。\
+実行時の配置とaddress解決はこの範囲に対してlink時に確定し、bank切替による実行addressの変更を含めない。\
+externalの保存元とその読出し方法は外部loaderが管理し、保存元bankからRAMへのコピーもこの責務に属する。
+
+`link.rom`がある場合、Text・RodataをROM上で直接参照し、Data・BssをRAMへ配置する。\
+標準実行バイナリ先頭のROM addressを`B`とし、Text・Rodataの`memory_address = B + file_offset`を要求する。\
+externalでは標準実行バイナリ全体を`link.rom.base`から配置する前提でlinkし、`B = link.rom.base`とする。\
+selfでは前置起動処理を含む出力全体をROM base 0から配置するため、`B`は前置起動処理の格納長に一致する。\
+Data・BssのRAM配置は[Objectの結合順とalignment](./linking.md#symbol解決と配置)に従う。
+
+`link.rom`を省略したexternalは、固定ヘッダを含む標準実行バイナリ全体を`link.ram.base`から同じ順序でRAMへコピーする前提でlinkする。\
+`file_size > 0`の全セクションは`memory_address = link.ram.base + file_offset`を満たす。\
+Textは必須であるため、loaderはTextの`memory_address - file_offset`からこのコピー先のbaseを得られる。\
+ヘッダ・セクション表・paddingもRAMを占有し、コピー範囲をheapへ転用しない。\
+Dataのzero末尾、格納byte列が空のData、Bssは、コピー範囲の末尾`link.ram.base + image_size`以降へ配置し、他セクションの実行時範囲と分離する。\
+ファイル内のセクション配置は、このコピー範囲とzero初期化範囲の分離、および[セクションの成立条件](#標準実行バイナリ)を満たす。
+
+`RAM_END = link.ram.base + link.ram.size`、`STACK_TOP = RAM_END`、`initial_sp = STACK_TOP`、`STACK_BOTTOM = STACK_TOP - link.stack-size`とする。\
+RAM baseとstack-sizeは4-byte aligned、RAM_ENDは8-byte alignedで、`0 < link.stack-size < link.ram.size`を要求する。\
+heap_baseはRAM baseとRAM上の全セクション末尾の最大値を4-byte alignedへ切り上げたaddressとし、ROM省略時はコピー範囲の末尾も最大値の候補に含める。\
+RAM上のセクション、コピー範囲、heap_baseはSTACK_BOTTOM以下に収め、heapとstackの利用は[targetのRAM layout](./targets/kagura-v1/machine.md#3-ram-layout)に従う。
+
+ROM指定時はexternalの標準実行バイナリ全体、selfの前置起動処理を含む出力全体をROM容量内へ収める。\
+ROM省略時は標準実行バイナリ全体とRAM上のzero初期化領域をRAM容量内へ収める。\
+ROM容量とRAM容量は配置先の上限であり、容量末尾までのpaddingを出力へ付けない。\
+出力の末尾は標準実行バイナリの末尾と一致する。\
+起動方式ごとのaddressを解決してlinkするため、共通の標準形式を使うことはexternalとselfの出力byte列の一致を意味しない。
+
+### RAMコピーのwire例
+<!-- ond-spec-id: artifacts/executable-ram-copy-example -->
+
+次の例は、target `kagura-v1`、ABI `ond-kagura-v1`、startup external、ROM省略、RAM base `0x10000000`、RAM size `0x100`、stack-size `0x40`に対するwire読出しとロードの適合判定を対象とする。\
+観測点はentryへ制御を渡す直前とし、RAMの初期byte値は任意とする。\
+Textの命令列をOnd programとして実行する場合の適合判定は、[言語規則](./language/v1/README.md)と[startup](./targets/kagura-v1/machine.md#4-startup)に従って別に行う。
+
+| ヘッダfield | 値 |
+| --- | --- |
+| magic・version・target・abi | `ONDX`・`1`・`1`・`1` |
+| image_size | `0x54` |
+| entry_address | `0x10000050` |
+| initial_sp | `0x10000100` |
+| section_count | `2` |
+
+| kind | file_offset | file_size | memory_address | memory_size | alignment |
+| --- | --- | --- | --- | --- | --- |
+| Text (`1`) | `0x50` | `4` | `0x10000050` | `4` | `4` |
+| Bss (`4`) | `0` | `0` | `0x10000054` | `4` | `4` |
+
+ヘッダと2個のレコードを前記のlittle-endian形式で並べ、offset `0x50`へTextのbyte列`00 00 00 c0`を置くと、標準実行バイナリは84 byteとなる。\
+loaderはTextの`memory_address - file_offset = 0x10000000`をコピー先として84 byte全体をRAMへコピーし、`[0x10000054, 0x10000058)`をzero初期化する。\
+観測点では、コピー先の84 byteが標準実行バイナリとbyte単位で一致し、続くBssの4 byteがすべて0、SPが`0x10000100`、制御移行先が`0x10000050`となる。\
+配置契約からheap_baseは`0x10000058`、STACK_BOTTOMは`0x100000c0`に定まる。

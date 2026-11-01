@@ -150,17 +150,17 @@ fn is_exported(name: &str) -> bool {
 
 fn symbol_at(
     project: &ast::Project,
-    package: &ast::Package,
+    _package: &ast::Package,
     file: &ast::File,
     sources: &SourceDb,
     position: &Position,
 ) -> Option<SymbolAt> {
     let offset = lsp_offset(sources.file(file.file_id).text(), position).ok()?;
-    if let Some(resolved) = resolve_reference(project, package, file, offset)
+    if let Some(resolved) = crate::role_context::resolve_reference(project, sources, file, offset)
         && let ResolvedTarget::Declaration(target) = resolved.target
         && resolved.reference.start <= offset
         && offset < resolved.reference.end
-        && target_visible_from(project, sources, target, resolved.reference)
+        && compiler::roles::visible(sources, target, resolved.reference)
     {
         return Some(SymbolAt {
             target,
@@ -190,14 +190,17 @@ fn occurrences(project: &ast::Project, sources: &SourceDb, target: Span) -> Vec<
     for package in &project.packages {
         for file in &package.files {
             for span in identifier_spans(file) {
-                let resolved_target = resolve_reference(project, package, file, span.start)
-                    .and_then(|resolved| (resolved.reference == span).then_some(resolved.target));
+                let resolved_target =
+                    crate::role_context::resolve_reference(project, sources, file, span.start)
+                        .and_then(|resolved| {
+                            (resolved.reference == span).then_some(resolved.target)
+                        });
                 let matches = match resolved_target {
                     Some(ResolvedTarget::Declaration(declaration)) => declaration == target,
                     Some(ResolvedTarget::Package(_)) => false,
                     None => declarations.contains(&span) && span == target,
                 };
-                if matches && target_visible_from(project, sources, target, span) {
+                if matches && compiler::roles::visible(sources, target, span) {
                     result.insert(span);
                 }
             }
@@ -206,25 +209,6 @@ fn occurrences(project: &ast::Project, sources: &SourceDb, target: Span) -> Vec<
     let mut result = result.into_iter().collect::<Vec<_>>();
     result.sort_by_key(|span| (span.file, span.start, span.end));
     result
-}
-
-fn target_visible_from(
-    project: &ast::Project,
-    sources: &SourceDb,
-    target: Span,
-    occurrence: Span,
-) -> bool {
-    if !compiler::project::is_test_source(sources.file(target.file).path()) {
-        return true;
-    }
-    compiler::project::is_test_source(sources.file(occurrence.file).path())
-        && project.packages.iter().any(|package| {
-            package.files.iter().any(|file| file.file_id == target.file)
-                && package
-                    .files
-                    .iter()
-                    .any(|file| file.file_id == occurrence.file)
-        })
 }
 
 fn target_is_editable(target: Span, sources: &SourceDb, editable_root: Option<&Path>) -> bool {
@@ -272,6 +256,7 @@ fn reject_direct_conflict(
         record.span != target
             && record.scope == target_record.scope
             && record.name == new_name
+            && compiler::roles::overlap(sources, record.span, target)
             && (!record.short || short_declaration_introduces(project, record.span))
     }) {
         let path = sources.file(target.file).path();
@@ -434,6 +419,7 @@ fn collect_stmt_declarations(
     records: &mut Vec<DeclarationRecord>,
 ) {
     match stmt {
+        ast::Stmt::InlineAssembly(_) => {}
         ast::Stmt::Const(decl) => collect_const_declarations(decl, scope, records),
         ast::Stmt::Var(decl) => collect_var_declarations(decl, scope, records),
         ast::Stmt::ShortVar(decl) => {
@@ -613,6 +599,11 @@ fn collect_block_identifier_spans(block: &ast::Block, spans: &mut Vec<Span>) {
 
 fn collect_stmt_identifier_spans(stmt: &ast::Stmt, spans: &mut Vec<Span>) {
     match stmt {
+        ast::Stmt::InlineAssembly(statement) => {
+            for binding in &statement.bindings {
+                collect_expr_identifier_spans(&binding.value, spans);
+            }
+        }
         ast::Stmt::Const(decl) => collect_const_identifier_spans(decl, spans),
         ast::Stmt::Var(decl) => collect_var_identifier_spans(decl, spans),
         ast::Stmt::ShortVar(decl) => {
@@ -788,6 +779,47 @@ mod tests {
             packages: vec![package.clone()],
         };
         (sources, project, package, file)
+    }
+
+    #[test]
+    fn asm_header_references_rename_ond_values_without_touching_registers_or_labels() {
+        let text = "package main\nfunc main(){var r1:u32=1;asm(r1<->r1){r1:;ADD r1,r1,r0,1}}\n";
+        let (sources, project, package, file) = fixture(text);
+        let edit = rename(
+            &project,
+            &package,
+            &file,
+            &sources,
+            &position(text, "r1", 0),
+            None,
+            "value",
+        )
+        .unwrap();
+        let edits = edit["changes"]
+            .as_object()
+            .unwrap()
+            .values()
+            .next()
+            .unwrap()
+            .as_array()
+            .unwrap();
+        assert_eq!(
+            edits.len(),
+            2,
+            "only declaration and binding RHS are Ond references: {edit}"
+        );
+        assert!(
+            prepare_rename(
+                &project,
+                &package,
+                &file,
+                &sources,
+                &position(text, "r1", 1),
+                None
+            )
+            .is_none(),
+            "binding LHS is a register"
+        );
     }
 
     #[test]

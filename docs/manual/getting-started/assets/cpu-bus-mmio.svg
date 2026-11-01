@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 620" role="img" aria-labelledby="title desc">
+  <title id="title">CPUからBUSを通るアドレス空間と機器の縦型接続図</title>
+  <desc id="desc">上部のCPUがBUSへ読み書き要求を送り、BUSの下にアドレス空間の一部を示す帯がある。帯は未割り当ての0x0000〜0x00FF、RAM対応の0x0100〜0x01FF、未割り当ての0x0200〜0x1FFF、8×8モニターのMMIO表示領域0x2000〜0x2007、未割り当ての0x2008以降に分かれる。割り当てられたRAM領域とモニター領域から、それぞれの機器へ線がつながる。領域の幅は容量比ではない。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0 0 10 4 0 8Z" fill="#263746"/></marker>
+    <pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="#f0f2f4"/><path d="M0 0V8" stroke="#d7dce1" stroke-width="2"/></pattern>
+    <style>
+      text { font-family: system-ui, "Yu Gothic", "Noto Sans JP", sans-serif; fill: #17212b; }
+      .box { fill: #fff; stroke: #263746; stroke-width: 2; }
+      .head { font-size: 22px; font-weight: 700; }
+      .body { font-size: 17px; }
+      .small { font-size: 15px; }
+      .segment { stroke: #52616d; stroke-width: 1.5; }
+      .assigned { fill: #e3f2e9; stroke: #3a7753; stroke-width: 2.5; }
+      .mmio { fill: #e5effa; stroke: #35658e; stroke-width: 2.5; }
+      .flow { fill: none; stroke: #263746; stroke-width: 3; marker-end: url(#arrow); }
+      .connector { fill: none; stroke: #52616d; stroke-width: 3; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="900" height="620" rx="18" fill="#fff"/>
+
+  <rect class="box" x="350" y="24" width="200" height="90" rx="14"/>
+  <text class="head" x="450" y="61" text-anchor="middle">CPU</text>
+  <text class="body" x="450" y="82" text-anchor="middle">アドレスを指定</text>
+  <text class="body" x="450" y="105" text-anchor="middle">読み書きを要求</text>
+
+  <path class="flow" d="M450 114 V145"/>
+  <rect class="box" x="20" y="150" width="860" height="248" rx="16"/>
+  <text class="head" x="450" y="184" text-anchor="middle">BUS（バス）</text>
+  <text class="body" x="450" y="213" text-anchor="middle">CPUから見えるアドレス空間の一部</text>
+
+  <rect class="segment" x="20" y="252" width="172" height="112" rx="5" fill="url(#hatch)"/>
+  <rect class="assigned" x="192" y="252" width="172" height="112" rx="5"/>
+  <rect class="segment" x="364" y="252" width="172" height="112" rx="5" fill="url(#hatch)"/>
+  <rect class="mmio" x="536" y="252" width="172" height="112" rx="5"/>
+  <rect class="segment" x="708" y="252" width="172" height="112" rx="5" fill="url(#hatch)"/>
+
+  <text class="body" x="106" y="288" text-anchor="middle">未割り当て</text>
+  <text class="small" x="106" y="319" text-anchor="middle">0x0000〜0x00FF</text>
+  <text class="body" x="278" y="288" text-anchor="middle">RAM対応</text>
+  <text class="small" x="278" y="319" text-anchor="middle">0x0100〜0x01FF</text>
+  <text class="body" x="450" y="288" text-anchor="middle">未割り当て</text>
+  <text class="small" x="450" y="319" text-anchor="middle">0x0200〜0x1FFF</text>
+  <text class="body" x="622" y="288" text-anchor="middle">MMIO表示領域</text>
+  <text class="small" x="622" y="319" text-anchor="middle">0x2000〜0x2007</text>
+  <text class="body" x="794" y="288" text-anchor="middle">未割り当て</text>
+  <text class="small" x="794" y="319" text-anchor="middle">0x2008以降</text>
+
+  <path class="connector" d="M278 364 V432"/>
+  <path class="connector" d="M622 364 V432"/>
+  <rect class="box" x="150" y="438" width="256" height="82" rx="14"/>
+  <text class="head" x="278" y="473" text-anchor="middle">RAM</text>
+  <text class="body" x="278" y="501" text-anchor="middle">256 byteの領域</text>
+  <rect class="box" x="494" y="438" width="256" height="82" rx="14"/>
+  <text class="head" x="622" y="473" text-anchor="middle">8×8モニター</text>
+  <text class="body" x="622" y="501" text-anchor="middle">表示領域は8 byte</text>
+
+  <text class="small" x="450" y="553" text-anchor="middle">未割り当ては読み書きの接続先がない領域</text>
+  <text class="small" x="450" y="584" text-anchor="middle">説明用の配置例。帯の幅は容量比ではありません</text>
+</svg>

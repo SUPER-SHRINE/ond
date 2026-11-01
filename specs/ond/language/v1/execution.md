@@ -1,7 +1,7 @@
 # Memory、初期化、entry
 <!-- ond-spec-id: language/v1-execution -->
 
-本章は言語levelのmemory契約、初期化、通常build entryを定義する。\
+本章は言語levelのmemory契約、初期化、entryを定義する。\
 target固有の挙動はtarget profileを参照する。
 
 ## メモリ管理
@@ -27,32 +27,32 @@ bounds checkの失敗は追加のstack frameやheap allocationに依存しない
 ## 初期化とエントリ
 <!-- ond-spec-id: runtime/initialization-and-entry -->
 
+本節の宣言集合、import列と初期化順は[role選択](./roles.md#対象集合と選択)後のsourceへ適用する。\
+除外した宣言を`main`の個数やglobal集合へ数えず、選択部分の元のsource順を保持する。
+
 - package-level `var` は initializer を省略した zero value、または compile-time constant initializer だけを持てる
   - runtime 呼び出しを伴う initializer は compile error とする
 - compilerはglobal initializerを適用する内部関数を生成できる
   - sourceの`init`は次項の通常関数規則に従う
 - `init`は通常の関数名として宣言し、明示callで起動する
-- 通常buildの`main` packageはparameterと戻り値を持たない`func main()`をちょうど1個宣言する
+- 実行projectの`main` packageはparameterと戻り値を持たない`func main()`をちょうど1個宣言する
 - `main` の return は正常終了 code `0` とする
 
 package内のsource fileをファイル名の辞書順で巡回し、各fileのimportをsource記述順に深さ優先で訪問する。\
 各packageは一度だけ初期化し、依存先の初期化を先に完了する。\
 package内のglobal initializerはsource file順、各fileの宣言順に適用する。\
-通常buildではrootから到達するpackageのinitializerを実行する。\
+rootから到達するpackageのinitializerを実行する。\
 全globalのzero初期化を完了した後、この順序でinitializerを適用し、最後に`main.main`を呼び出す。
 
-ここで定めるentryは通常buildのentryである。\
-test buildの個別起動入口は[テストビルド仕様](../../build/test-build.md)を参照する。
-
-Kagura target の runtime entry と正常終了通知は [Ond for Kagura Machine Profile v1](../../targets/kagura-v1/machine.md) に従う。
+Kagura targetのruntime entryと正常終了後の制御経路は[Ond for Kagura Machine Profile v1](../../targets/kagura-v1/machine.md)に従う。
 
 ## Build Output
 <!-- ond-spec-id: build/output -->
 
-- compilerはsourceから[Object](../../artifacts.md)を生成し、linkerは[linking契約](../../linking.md)に従いLinkedImageを生成する
-  - 配布ツールはLinkedImageを配布形式またはROMへまとめる
+- compilerはsourceから[Object](../../artifacts.md)を生成し、linkerは[linking契約](../../linking.md)に従い[実行可能バイナリ](../../artifacts.md#実行可能バイナリ)を生成する
+  - 配布ツールは実行可能バイナリを配布形式またはROMへまとめる
 - assembly は中間生成物または診断用出力として生成できる
-- 全packageとruntimeは静的にlinkし、呼出側が指定する配置値に従ってLinkedImageを生成する
+- 全packageとruntimeは静的にlinkし、呼出側が指定する配置値でaddressを解決する
 - build toolはasset discoveryとresource IDを管理し、実行環境はdevice protocolとmemory mappingを定める
-- 配布ツールはLinkedImageとassetを配布形式へ同梱する
+- 配布ツールは実行可能バイナリとassetを配布形式へ同梱する
 - 正常終了後の制御経路はcallerが指定するtermination instructionsに従う

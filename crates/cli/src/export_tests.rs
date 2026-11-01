@@ -15,7 +15,7 @@ impl Fixture {
     }
     pub(crate) fn request(&self) -> CompileRequest {
         CompileRequest {
-            test: false,
+            role: None,
             excluded_dirs: Vec::new(),
             contract: Contract::default(),
             project_root: self.0.clone(),

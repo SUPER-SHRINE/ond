@@ -29,6 +29,19 @@ try {
     $sourceCopyrightHash = (Get-FileHash -LiteralPath (Join-Path $repoRoot 'COPYRIGHT-library.html') -Algorithm SHA256).Hash
     $archiveCopyrightHash = (Get-FileHash -LiteralPath $copyrightPath -Algorithm SHA256).Hash
     if ($sourceCopyrightHash -cne $archiveCopyrightHash) { throw 'Archived Rust standard-library copyright report differs from source bytes.' }
-    Write-Host "Native release archive verified: $target; both third-party notice files match source bytes."
+    $suffix = if ($IsWindows) { '.exe' } else { '' }
+    $binaries = @("ond$suffix", "ond-lsp$suffix")
+    if ([version]$version -ge [version]'0.4.0') { $binaries += "ond-unit$suffix" }
+    foreach ($binary in $binaries) {
+        $releaseBinary = Join-Path $repoRoot "target/release/$binary"
+        $archiveBinary = Join-Path $root $binary
+        if (-not (Test-Path -LiteralPath $archiveBinary -PathType Leaf) -or (Get-Item -LiteralPath $archiveBinary).Length -eq 0) {
+            throw "Archive is missing or has an empty release binary: $binary"
+        }
+        $releaseHash = (Get-FileHash -LiteralPath $releaseBinary -Algorithm SHA256).Hash
+        $archiveHash = (Get-FileHash -LiteralPath $archiveBinary -Algorithm SHA256).Hash
+        if ($releaseHash -cne $archiveHash) { throw "Archived binary differs from the release build: $binary" }
+    }
+    Write-Host "Native release archive verified: $target; required binaries and both third-party notice files match source bytes."
 }
 finally { Remove-Item -LiteralPath $root -Recurse -Force }

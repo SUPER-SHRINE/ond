@@ -1,5 +1,5 @@
 //! Declaration checks shared by independently validated source groups.
-use crate::diagnostic::{Diagnostic, Diagnostics, FrontendError};
+use crate::diagnostic::{Diagnostic, Diagnostics};
 use crate::ir::{ast, hir};
 use crate::project::{LoadedProject, PackageId};
 use crate::source::{FileId, Span};
@@ -60,37 +60,7 @@ pub(super) fn duplicate_declarations(project: &ast::Project) -> Diagnostics {
     diagnostics
 }
 
-pub(super) fn validate_test_signatures(
-    loaded: &LoadedProject,
-    ast: &ast::Project,
-) -> Result<(), FrontendError> {
-    let mut invalid_tests = Diagnostics::new();
-    for file in ast
-        .packages
-        .iter()
-        .flat_map(|p| &p.files)
-        .filter(|f| crate::project::is_test_source(loaded.sources.file(f.file_id).path()))
-    {
-        for decl in &file.decls {
-            if let ast::TopLevelDecl::Func(function) = decl
-                && function.name.name.starts_with("Test")
-                && (function.receiver.is_some()
-                    || !function.type_params.is_empty()
-                    || !function.signature.params.is_empty()
-                    || !function.signature.results.is_empty())
-            {
-                invalid_tests.push(Diagnostic::error(function.name.span, "test function must be top-level with no parameters, results, type parameters or receiver"));
-            }
-        }
-    }
-    if !invalid_tests.is_empty() {
-        return Err(FrontendError::new(invalid_tests.into_vec()));
-    }
-    Ok(())
-}
-
 pub(super) fn collect_symbols(
-    loaded: &LoadedProject,
     ast: &ast::Project,
     logical_to_package: &BTreeMap<String, PackageId>,
 ) -> Vec<hir::Symbol> {
@@ -141,9 +111,7 @@ pub(super) fn collect_symbols(
                             &name.name,
                         ),
                         kind,
-                        exported: !crate::project::is_test_source(
-                            loaded.sources.file(file.file_id).path(),
-                        ) && name
+                        exported: name
                             .name
                             .as_bytes()
                             .first()
@@ -172,7 +140,12 @@ pub(super) fn import_declaration_conflicts(
     for (file, imports) in imports {
         for name in imports.keys() {
             if let Some(declaration) = names.get(name.as_str())
-                && owner.visible_from(*declaration, Span::new(*file, 0, 0))
+                && owner
+                    .import_spans
+                    .get(&(*file, name.clone()))
+                    .is_some_and(|import| {
+                        owner.declaration_conflicts_with_import(*declaration, *import)
+                    })
             {
                 diagnostics.push(Diagnostic::error(
                     *declaration,
@@ -208,12 +181,10 @@ pub(super) fn validate_project(
         ast.packages.iter().any(|package| {
             package.logical_path == "."
                 && (selected.is_empty()
-                    || package.files.iter().any(|file| {
-                        selected.contains(&file.file_id)
-                            && !crate::project::is_test_source(
-                                loaded.sources.file(file.file_id).path(),
-                            )
-                    }))
+                    || package
+                        .files
+                        .iter()
+                        .any(|file| selected.contains(&file.file_id)))
         })
     });
     if check_entry && !root_main {
@@ -230,14 +201,7 @@ pub(super) fn validate_project(
                 .items
                 .iter()
                 .filter_map(|item| match item {
-                    hir::Item::Func(function)
-                        if function.name == "main"
-                            && !crate::project::is_test_source(
-                                loaded.sources.file(function.span.file).path(),
-                            ) =>
-                    {
-                        Some(function)
-                    }
+                    hir::Item::Func(function) if function.name == "main" => Some(function),
                     _ => None,
                 })
                 .collect::<Vec<_>>()
@@ -245,11 +209,9 @@ pub(super) fn validate_project(
         .unwrap_or_default();
     if check_entry
         && main_functions.is_empty()
-        && !symbols.iter().any(|s| {
-            s.canonical_name == "main.main"
-                && s.kind == hir::SymbolKind::Function
-                && !crate::project::is_test_source(loaded.sources.file(s.span.file).path())
-        })
+        && !symbols
+            .iter()
+            .any(|s| s.canonical_name == "main.main" && s.kind == hir::SymbolKind::Function)
     {
         diagnostics.push(Diagnostic::error(
             Span::synthetic(),

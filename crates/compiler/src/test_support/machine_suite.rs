@@ -4,20 +4,28 @@ use super::{MachineStatus, LinkedMachine};
 use kagura::Fault;
 use std::env;
 use std::fs;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+static NEXT_TEMP_DIR: AtomicU64 = AtomicU64::new(0);
+
 fn temp_dir() -> std::path::PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    env::temp_dir().join(format!("ond-linked-machine-{nanos}"))
+    let root = env::temp_dir().join(format!(
+        "ond-linked-machine-{}-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+        NEXT_TEMP_DIR.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir(&root).unwrap();
+    root
 }
 
 #[test]
 fn runs_minimal_linked_image() {
     let root = temp_dir();
-    fs::create_dir_all(&root).unwrap();
     fs::write(root.join("ond.toml"), "[project]\nname=\"sample\"\n").unwrap();
     fs::write(root.join("main.ond"), "package main\n\nfunc main() {\n}\n").unwrap();
 
@@ -30,7 +38,6 @@ fn runs_minimal_linked_image() {
 #[test]
 fn counts_only_successfully_retired_instructions() {
     let root = temp_dir();
-    fs::create_dir_all(&root).unwrap();
     fs::write(root.join("ond.toml"), "[project]\nname=\"counter\"\n").unwrap();
     fs::write(root.join("main.ond"), "package main\n\nfunc main() {\n}\n").unwrap();
 
@@ -50,7 +57,6 @@ fn counts_only_successfully_retired_instructions() {
 #[test]
 fn fibonacci_example_exits_and_writes_debug_output() {
     let root = temp_dir();
-    fs::create_dir_all(&root).unwrap();
     fs::write(root.join("ond.toml"), "[project]\nname=\"fibonacci\"\n").unwrap();
     fs::write(
         root.join("main.ond"),
@@ -76,7 +82,6 @@ fn fibonacci_example_exits_and_writes_debug_output() {
 #[test]
 fn nil_function_pointer_call_faults() {
     let root = temp_dir();
-    fs::create_dir_all(&root).unwrap();
     fs::write(root.join("ond.toml"), "[project]\nname=\"nil_fn\"\n").unwrap();
     fs::write(
         root.join("main.ond"),
@@ -110,7 +115,6 @@ fn nil_function_pointer_call_faults() {
 #[test]
 fn array_bounds_faults() {
     let root = temp_dir();
-    fs::create_dir_all(&root).unwrap();
     fs::write(root.join("ond.toml"), "[project]\nname=\"bounds\"\n").unwrap();
     fs::write(
         root.join("main.ond"),
@@ -129,7 +133,6 @@ fn array_bounds_faults() {
 #[test]
 fn array_bounds_fixture_does_not_depend_on_legacy_string_lowering() {
     let root = temp_dir();
-    fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("ond.toml"),
         "[project]\nname=\"byte_array_bounds\"\n",
@@ -152,7 +155,6 @@ fn array_bounds_fixture_does_not_depend_on_legacy_string_lowering() {
 #[test]
 fn nested_call_arguments_preserve_previous_argument_values() {
     let root = temp_dir();
-    fs::create_dir_all(&root).unwrap();
     fs::write(root.join("ond.toml"), "[project]\nname=\"nested_call\"\n").unwrap();
     fs::write(
         root.join("main.ond"),
@@ -169,7 +171,6 @@ fn nested_call_arguments_preserve_previous_argument_values() {
 #[test]
 fn invalid_float_to_integer_cast_faults() {
     let root = temp_dir();
-    fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("ond.toml"),
         "[project]\nname=\"float_cast_fault\"\n",
@@ -192,7 +193,6 @@ fn invalid_float_to_integer_cast_faults() {
 #[test]
 fn float_arithmetic_pipeline_exits_zero() {
     let root = temp_dir();
-    fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("ond.toml"),
         "[project]\nname=\"float_pipeline\"\n",
@@ -213,7 +213,6 @@ fn float_arithmetic_pipeline_exits_zero() {
 #[test]
 fn float_add_outputs_raw_bytes() {
     let root = temp_dir();
-    fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("ond.toml"),
         "[project]\nname=\"float_add_bytes\"\n",
@@ -236,7 +235,6 @@ fn float_add_outputs_raw_bytes() {
 #[test]
 fn float_neg_outputs_expected_bytes() {
     let root = temp_dir();
-    fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("ond.toml"),
         "[project]\nname=\"float_neg_bytes\"\n",
@@ -259,7 +257,6 @@ fn float_neg_outputs_expected_bytes() {
 #[test]
 fn float_from_i32_outputs_expected_bytes() {
     let root = temp_dir();
-    fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("ond.toml"),
         "[project]\nname=\"float_from_i32_bytes\"\n",
@@ -282,7 +279,6 @@ fn float_from_i32_outputs_expected_bytes() {
 #[test]
 fn mixed_i32_u32_multi_return_exits_zero() {
     let root = temp_dir();
-    fs::create_dir_all(&root).unwrap();
     fs::write(root.join("ond.toml"), "[project]\nname=\"mixed_ret\"\n").unwrap();
     fs::write(
         root.join("main.ond"),
@@ -299,7 +295,6 @@ fn mixed_i32_u32_multi_return_exits_zero() {
 #[test]
 fn address_of_local_u32_supports_byte_reads() {
     let root = temp_dir();
-    fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("ond.toml"),
         "[project]\nname=\"addr_local_u32\"\n",
@@ -320,7 +315,6 @@ fn address_of_local_u32_supports_byte_reads() {
 #[test]
 fn address_of_local_f32_supports_byte_reads() {
     let root = temp_dir();
-    fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("ond.toml"),
         "[project]\nname=\"addr_local_f32\"\n",
@@ -341,7 +335,6 @@ fn address_of_local_f32_supports_byte_reads() {
 #[test]
 fn dynamic_shift_ops_on_u32_work() {
     let root = temp_dir();
-    fs::create_dir_all(&root).unwrap();
     fs::write(root.join("ond.toml"), "[project]\nname=\"dynamic_shift\"\n").unwrap();
     fs::write(
         root.join("main.ond"),
@@ -358,7 +351,6 @@ fn dynamic_shift_ops_on_u32_work() {
 #[test]
 fn nested_bit_expression_on_u32_works() {
     let root = temp_dir();
-    fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("ond.toml"),
         "[project]\nname=\"nested_bit_expr\"\n",
@@ -379,7 +371,6 @@ fn nested_bit_expression_on_u32_works() {
 #[test]
 fn byte_reassembly_expression_works() {
     let root = temp_dir();
-    fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("ond.toml"),
         "[project]\nname=\"byte_reassembly\"\n",
@@ -400,7 +391,6 @@ fn byte_reassembly_expression_works() {
 #[test]
 fn divide_by_zero_faults() {
     let root = temp_dir();
-    fs::create_dir_all(&root).unwrap();
     fs::write(root.join("ond.toml"), "[project]\nname=\"div_zero\"\n").unwrap();
     fs::write(
         root.join("main.ond"),

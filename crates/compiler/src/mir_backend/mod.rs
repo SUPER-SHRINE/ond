@@ -16,6 +16,7 @@ mod global_tests;
 mod globals;
 #[cfg(test)]
 mod heap_tests;
+mod inline_asm;
 pub mod layout;
 mod memory;
 #[cfg(test)]

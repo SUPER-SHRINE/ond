@@ -371,10 +371,7 @@ impl BodyLowerer<'_> {
             .find(|package| package.id == package_id)?;
         let source = package.functions.get(name)?.clone();
         if !package.visible_from(source.span, span) {
-            return self.fail(
-                span,
-                format!("test-only function `{name}` is not visible here"),
-            );
+            return self.fail(span, package.visibility_error("function", name));
         }
         let symbol = super::super::canonical_symbol_name(&package.logical_path, name);
         let mut diagnostics = Diagnostics::new();
@@ -568,10 +565,7 @@ impl BodyLowerer<'_> {
                     .find(|package| package.id == self.package_id)?;
                 let declaration = package.generic_functions.get(&name.name)?.clone();
                 if !package.visible_from(declaration.span, span) {
-                    return self.fail(
-                        span,
-                        format!("test-only function `{}` is not visible here", name.name),
-                    );
+                    return self.fail(span, package.visibility_error("function", &name.name));
                 }
                 (package.id, package.logical_path.clone(), declaration)
             }
@@ -591,10 +585,7 @@ impl BodyLowerer<'_> {
                     .find(|package| package.id == package_id)?;
                 let declaration = package.generic_functions.get(&name.name)?.clone();
                 if !package.visible_from(declaration.span, span) {
-                    return self.fail(
-                        span,
-                        format!("test-only function `{}` is not visible here", name.name),
-                    );
+                    return self.fail(span, package.visibility_error("function", &name.name));
                 }
                 (package.id, package.logical_path.clone(), declaration)
             }
@@ -724,12 +715,11 @@ impl BodyLowerer<'_> {
                 .universe
                 .iter()
                 .find(|package| package.id == self.package_id)
-                .and_then(|package| package.imports.get(&path.span.file))
-                .and_then(|imports| imports.get(&qualifier.name))
+                .and_then(|package| package.import_from(&qualifier.name, path.span))
                 .and_then(|package_id| {
                     self.universe
                         .iter()
-                        .find(|package| package.id == *package_id)
+                        .find(|package| package.id == package_id)
                 })
                 .is_some_and(|package| {
                     package
@@ -931,9 +921,8 @@ impl BodyLowerer<'_> {
         let receiver_name = receiver_name.to_string();
         let logical_path = package.logical_path.clone();
         let declaration = package.declarations.get(&receiver_name)?;
-        // A test-defined receiver can reach a normal template through a type
-        // argument. Resolving that receiver's method is dependent dispatch;
-        // adding a method to a normal, fixed receiver does not change its scope.
+        // A role-limited receiver can reach a generic template through a type argument.
+        // Dependent dispatch retains that receiver declaration's role context.
         if !package.visible_from(method.span, caller)
             && package.visible_from(declaration.span, caller)
         {

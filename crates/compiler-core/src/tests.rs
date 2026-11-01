@@ -1,16 +1,28 @@
 use std::fs;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::compile_project;
 
+static NEXT_TEMP_ROOT: AtomicU64 = AtomicU64::new(0);
+
+fn temp_root(label: &str) -> std::path::PathBuf {
+    let root = std::env::temp_dir().join(format!(
+        "ond-compiler-core-{label}-{}-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+        NEXT_TEMP_ROOT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir(&root).unwrap();
+    root
+}
+
 #[test]
 fn import_aliases_disambiguate_packages_with_the_same_declared_name() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root =
-        std::env::temp_dir().join(format!("ond-import-alias-{}-{unique}", std::process::id()));
+    let root = temp_root("import-alias");
     fs::create_dir_all(root.join("my/json")).unwrap();
     fs::create_dir_all(root.join("json")).unwrap();
     fs::write(root.join("ond.toml"), "[project]\nname = \"test\"\n").unwrap();
@@ -45,13 +57,7 @@ fn import_aliases_disambiguate_packages_with_the_same_declared_name() {
 
 #[test]
 fn compiles_source_through_target_neutral_mir() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root =
-        std::env::temp_dir().join(format!("ond-compiler-core-{}-{unique}", std::process::id()));
-    fs::create_dir_all(&root).unwrap();
+    let root = temp_root("project");
     fs::write(
         root.join("ond.toml"),
         "[project]\nname = \"test\"\n[target.unrelated]\nvalue = 1\n",
@@ -70,12 +76,7 @@ fn compiles_source_through_target_neutral_mir() {
 
 #[test]
 fn resolves_function_signature_without_target_layout() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!("ond-typed-hir-{}-{unique}", std::process::id()));
-    fs::create_dir_all(&root).unwrap();
+    let root = temp_root("typed-hir");
     fs::write(root.join("ond.toml"), "[project]\nname = \"test\"\n").unwrap();
     fs::write(
         root.join("main.ond"),
@@ -126,13 +127,7 @@ fn resolves_function_signature_without_target_layout() {
 
 #[test]
 fn lowers_integer_division_checks_before_the_operation() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root =
-        std::env::temp_dir().join(format!("ond-mir-division-{}-{unique}", std::process::id()));
-    fs::create_dir_all(&root).unwrap();
+    let root = temp_root("mir-division");
     fs::write(root.join("ond.toml"), "[project]\nname = \"test\"\n").unwrap();
     fs::write(
         root.join("main.ond"),
@@ -169,12 +164,7 @@ fn lowers_integer_division_checks_before_the_operation() {
 
 #[test]
 fn resolves_an_imported_defined_type_in_a_signature() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root =
-        std::env::temp_dir().join(format!("ond-imported-type-{}-{unique}", std::process::id()));
+    let root = temp_root("imported-type");
     fs::create_dir_all(root.join("shared")).unwrap();
     fs::write(root.join("ond.toml"), "[project]\nname = \"test\"\n").unwrap();
     fs::write(
@@ -217,13 +207,7 @@ fn resolves_an_imported_defined_type_in_a_signature() {
 
 #[test]
 fn types_local_declarations_and_assignments_before_mir_lowering() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root =
-        std::env::temp_dir().join(format!("ond-typed-locals-{}-{unique}", std::process::id()));
-    fs::create_dir_all(&root).unwrap();
+    let root = temp_root("typed-locals");
     fs::write(root.join("ond.toml"), "[project]\nname = \"test\"\n").unwrap();
     fs::write(
         root.join("main.ond"),
@@ -264,15 +248,7 @@ fn types_local_declarations_and_assignments_before_mir_lowering() {
 
 #[test]
 fn represents_pointer_recursive_structs_with_type_ids() {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "ond-recursive-type-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
+    let root = temp_root("recursive-type");
     fs::write(root.join("ond.toml"), "[project]\nname = \"test\"\n").unwrap();
     fs::write(
         root.join("main.ond"),

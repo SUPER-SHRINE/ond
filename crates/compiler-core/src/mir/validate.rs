@@ -214,6 +214,52 @@ impl Validator<'_> {
     fn validate_instruction(&mut self, block: BlockId, instruction: &Instruction) {
         let result_count = instruction.results.len();
         match &instruction.kind {
+            InstructionKind::InlineAssembly {
+                program,
+                noreturn,
+                inputs,
+                outputs,
+            } => {
+                self.expect_results(block, instruction, outputs.len());
+                for (_, value) in inputs {
+                    if let Some(ty) = self.value_type(block, *value)
+                        && !crate::inline_asm::scalar(self.types, ty)
+                    {
+                        self.error(Some(block), "asm input requires a scalar type".into());
+                    }
+                }
+                for (index, (_, ty)) in outputs.iter().enumerate() {
+                    self.expect_result_type(block, instruction, index, ty);
+                    if !crate::inline_asm::scalar(self.types, *ty) {
+                        self.error(Some(block), "asm output requires a scalar type".into());
+                    }
+                }
+                for diagnostic in crate::inline_asm::validate(
+                    program,
+                    *noreturn,
+                    &inputs
+                        .iter()
+                        .map(|(reg, _)| reg.clone())
+                        .collect::<Vec<_>>(),
+                    &outputs
+                        .iter()
+                        .map(|(reg, _)| reg.clone())
+                        .collect::<Vec<_>>(),
+                ) {
+                    self.error(Some(block), diagnostic.message);
+                }
+                if *noreturn
+                    && self.function.blocks.get(block.0 as usize).is_none_or(|b| {
+                        b.instructions.last().map(|i| i.id) != Some(instruction.id)
+                            || !matches!(b.terminator.kind, TerminatorKind::Unreachable)
+                    })
+                {
+                    self.error(
+                        Some(block),
+                        "noreturn asm must be last before unreachable terminator".into(),
+                    );
+                }
+            }
             InstructionKind::Constant(constant) => {
                 self.expect_results(block, instruction, 1);
                 self.expect_result_type(block, instruction, 0, &constant.ty());

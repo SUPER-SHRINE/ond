@@ -1,6 +1,6 @@
 [package]
 name = "ond-protocol"
-description = "Serializable Object, LinkedImage, and build protocol types for Ond"
+description = "Object, executable binary, and build protocol types for Ond"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -1,19 +1,19 @@
 //! In-memory package validation. Each entry owns its source and type IDs.
-use super::{lower_context_to_hir, validate_generic_body_names, validate_test_signatures};
+use super::{lower_context_to_hir, validate_generic_body_names};
 use crate::diagnostic::{Diagnostic, FrontendError};
 use crate::ir::{ast, hir};
-use crate::project::{LoadedProject, PackageId, PackageSources, is_test_source};
+use crate::project::{LoadedProject, PackageId, PackageSources};
 use crate::source::{FileId, SourceDb, Span};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-/// Reuses typed validation independently for ordinary and test sources of each package.
+/// Reuses typed validation for each package.
 /// Entries are process-local and never expose their snapshot-local source or type IDs.
 #[derive(Debug, Default)]
 pub struct SemanticCache {
-    entries: BTreeMap<(String, bool), Entry>,
+    entries: BTreeMap<String, Entry>,
     #[cfg(test)]
-    recomputed: Vec<(String, bool)>,
+    recomputed: Vec<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -21,13 +21,19 @@ struct Inputs {
     root: PathBuf,
     ignored_paths: Vec<String>,
     packages: Vec<PackageInput>,
+    dependencies: crate::roles::DependencyInputs,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 struct PackageInput {
     logical: String,
     directory: Option<PathBuf>,
-    files: Vec<(PathBuf, String, Option<String>)>,
+    files: Vec<(
+        PathBuf,
+        String,
+        Option<String>,
+        Option<crate::roles::SourceRoles>,
+    )>,
 }
 
 #[derive(Debug)]
@@ -45,50 +51,37 @@ impl SemanticCache {
         #[cfg(test)]
         self.recomputed.clear();
         let ast = crate::ond::parse_project(loaded)?;
-        validate_test_signatures(loaded, &ast)?;
-        // Definition-time checks of names hidden by test visibility are cheap,
-        // and must reflect added/removed test declarations even on normal hits.
         let mut diagnostics = validate_generic_body_names(loaded, &ast).into_vec();
         diagnostics.extend(super::validation::import_cycles(&ast).into_vec());
         let mut current = BTreeSet::new();
         for package in &ast.packages {
-            for test in [false, true] {
-                if test
-                    && !package
-                        .files
-                        .iter()
-                        .any(|file| is_test_source(loaded.sources.file(file.file_id).path()))
-                {
-                    continue;
-                }
-                let key = (package.logical_path.clone(), test);
-                current.insert(key.clone());
-                let inputs = collect_inputs(loaded, &ast, &package.logical_path, test);
-                if self
-                    .entries
-                    .get(&key)
-                    .is_none_or(|entry| entry.inputs != inputs)
-                {
-                    let entry = validate_entry(inputs, &key);
-                    self.entries.insert(key.clone(), entry);
-                    #[cfg(test)]
-                    self.recomputed.push(key.clone());
-                }
-                let entry = &self.entries[&key];
-                if let Err(error) = &entry.result {
-                    for diagnostic in error.diagnostics() {
-                        let mut diagnostic = diagnostic.clone();
-                        rebind_span(
-                            &mut diagnostic.primary.span,
-                            &entry.sources,
-                            &loaded.sources,
-                        );
-                        for label in &mut diagnostic.related {
-                            rebind_span(&mut label.span, &entry.sources, &loaded.sources);
-                        }
-                        if !diagnostics.contains(&diagnostic) {
-                            diagnostics.push(diagnostic);
-                        }
+            let key = package.logical_path.clone();
+            current.insert(key.clone());
+            let inputs = collect_inputs(loaded, &ast, &package.logical_path);
+            if self
+                .entries
+                .get(&key)
+                .is_none_or(|entry| entry.inputs != inputs)
+            {
+                let entry = validate_entry(inputs, &key);
+                self.entries.insert(key.clone(), entry);
+                #[cfg(test)]
+                self.recomputed.push(key.clone());
+            }
+            let entry = &self.entries[&key];
+            if let Err(error) = &entry.result {
+                for diagnostic in error.diagnostics() {
+                    let mut diagnostic = diagnostic.clone();
+                    rebind_span(
+                        &mut diagnostic.primary.span,
+                        &entry.sources,
+                        &loaded.sources,
+                    );
+                    for label in &mut diagnostic.related {
+                        rebind_span(&mut label.span, &entry.sources, &loaded.sources);
+                    }
+                    if !diagnostics.contains(&diagnostic) {
+                        diagnostics.push(diagnostic);
                     }
                 }
             }
@@ -102,7 +95,7 @@ impl SemanticCache {
     }
 }
 
-fn collect_inputs(loaded: &LoadedProject, ast: &ast::Project, owner: &str, test: bool) -> Inputs {
+fn collect_inputs(loaded: &LoadedProject, ast: &ast::Project, owner: &str) -> Inputs {
     let mut pending = vec![owner.to_string()];
     let mut visited = BTreeSet::new();
     let mut packages = Vec::new();
@@ -117,10 +110,6 @@ fn collect_inputs(loaded: &LoadedProject, ast: &ast::Project, owner: &str, test:
         let files = package
             .into_iter()
             .flat_map(|package| &package.files)
-            .filter(|file| {
-                !is_test_source(loaded.sources.file(file.file_id).path())
-                    || (logical == owner && test)
-            })
             .collect::<Vec<_>>();
         for import in files.iter().flat_map(|file| &file.imports) {
             if let Ok(path) = crate::string_literal::import_path(&import.path) {
@@ -135,6 +124,7 @@ fn collect_inputs(loaded: &LoadedProject, ast: &ast::Project, owner: &str, test:
                     source.path().to_path_buf(),
                     source.text().to_string(),
                     source.display_path().map(str::to_string),
+                    loaded.sources.roles(file.file_id).cloned(),
                 )
             })
             .collect::<Vec<_>>();
@@ -154,10 +144,11 @@ fn collect_inputs(loaded: &LoadedProject, ast: &ast::Project, owner: &str, test:
         root: loaded.root.clone(),
         ignored_paths: loaded.ignored_paths.clone(),
         packages,
+        dependencies: loaded.sources.dependency_inputs().clone(),
     }
 }
 
-fn validate_entry(inputs: Inputs, key: &(String, bool)) -> Entry {
+fn validate_entry(inputs: Inputs, owner: &str) -> Entry {
     let mut loaded = LoadedProject {
         root: inputs.root.clone(),
         manifest_path: inputs.root.join("ond.toml"),
@@ -165,6 +156,9 @@ fn validate_entry(inputs: Inputs, key: &(String, bool)) -> Entry {
         sources: SourceDb::default(),
         packages: Vec::new(),
     };
+    loaded
+        .sources
+        .set_dependency_inputs(inputs.dependencies.clone());
     let mut selected = BTreeSet::new();
     for package in &inputs.packages {
         let Some(directory) = &package.directory else {
@@ -173,7 +167,7 @@ fn validate_entry(inputs: Inputs, key: &(String, bool)) -> Entry {
         let files = package
             .files
             .iter()
-            .map(|(path, text, display_path)| {
+            .map(|(path, text, display_path, roles)| {
                 let id = if let Some(display_path) = display_path {
                     loaded.sources.add_file_with_display_path(
                         path.clone(),
@@ -183,7 +177,10 @@ fn validate_entry(inputs: Inputs, key: &(String, bool)) -> Entry {
                 } else {
                     loaded.sources.add_file(path.clone(), text.clone())
                 };
-                if package.logical == key.0 && is_test_source(path) == key.1 {
+                if let Some(roles) = roles {
+                    loaded.sources.set_roles(id, roles.clone());
+                }
+                if package.logical == owner {
                     selected.insert(id);
                 }
                 id
@@ -199,7 +196,7 @@ fn validate_entry(inputs: Inputs, key: &(String, bool)) -> Entry {
     let result = crate::ond::parse_project(&loaded).and_then(|ast| {
         let hir = lower_context_to_hir(&loaded, &ast, Some(&selected))?;
         let mir = crate::pipeline::lower_to_mir(&hir)?;
-        // Package validation has external ordinary function/global references;
+        // Package validation has external function/global references;
         // whole-project linkage checks belong to compile_loaded_project.
         for function in mir.packages.iter().flat_map(|package| &package.functions) {
             crate::mir::validate_function(&mir.types, function).map_err(|errors| {

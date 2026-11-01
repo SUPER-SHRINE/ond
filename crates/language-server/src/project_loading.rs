@@ -21,7 +21,6 @@ pub(super) fn load_project(
                     .extension()
                     .and_then(|extension| extension.to_str())
                     == Some("ond")
-                && !compiler::project::is_test_source(&entry.path())
         });
     let self_sources =
         ond_cli::resolve_project_sources(root).map_err(|diagnostics| diagnostics.join("\n"))?;
@@ -58,12 +57,17 @@ pub(super) fn load_project(
         synthetic_entry = Some(synthetic_main);
         excluded_library_roots.extend(self_sources.ignored_directories);
     }
-    let mut project = compiler::load_project_with_inputs_allow_incomplete(
+    let mut project = compiler::load_project_with_role_inputs(
         root,
         overrides,
         &excluded_library_roots,
         &BTreeMap::new(),
         &libraries,
+        compiler::RoleLoadOptions {
+            allow_incomplete: true,
+            dependencies: resolved.role_inputs,
+            ..Default::default()
+        },
     )
     .map_err(render_frontend_error)?;
     if let Some(namespace) = library_namespace

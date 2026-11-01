@@ -148,10 +148,7 @@ impl BodyLowerer<'_> {
             };
         };
         if !package.visible_from(source.span(), span) {
-            return self.fail(
-                span,
-                format!("test-only constant `{name}` is not visible here"),
-            );
+            return self.fail(span, package.visibility_error("constant", name));
         }
         let key = (package_id, name.to_string());
         if !self.const_stack.insert(key.clone()) {

@@ -14,76 +14,24 @@ pub(super) fn validate_generic_body_names(
     loaded: &crate::project::LoadedProject,
     project: &ast::Project,
 ) -> Diagnostics {
-    let names = |types: bool, normal_only: bool| {
-        project
-            .packages
-            .iter()
-            .map(|package| {
-                let names = package
-                    .files
-                    .iter()
-                    .filter(|file| {
-                        !normal_only
-                            || !crate::project::is_test_source(
-                                loaded.sources.file(file.file_id).path(),
-                            )
-                    })
-                    .flat_map(|file| &file.decls)
-                    .flat_map(|decl| {
-                        if types {
-                            match decl {
-                                ast::TopLevelDecl::Type(decl) => decl
-                                    .specs
-                                    .iter()
-                                    .map(|spec| spec.name.name.clone())
-                                    .collect(),
-                                _ => Vec::new(),
-                            }
-                        } else {
-                            top_level_value_names(decl)
-                        }
-                    })
-                    .collect::<BTreeSet<_>>();
-                (package.logical_path.clone(), names)
-            })
-            .collect::<BTreeMap<_, _>>()
-    };
-    let all_values = names(false, false);
-    let normal_values = names(false, true);
-    let all_types = names(true, false);
-    let normal_types = names(true, true);
-    let hidden_names = project
+    let package_values = project
         .packages
         .iter()
         .map(|package| {
-            let path = &package.logical_path;
-            let hidden_types = all_types[path]
-                .difference(&normal_types[path])
-                .cloned()
+            let names = package
+                .files
+                .iter()
+                .flat_map(|file| &file.decls)
+                .flat_map(top_level_value_names)
                 .collect::<BTreeSet<_>>();
-            let mut hidden = all_values[path]
-                .difference(&normal_values[path])
-                .cloned()
-                .collect::<BTreeSet<_>>();
-            hidden.extend(hidden_types.iter().cloned());
-            (path.as_str(), (hidden, hidden_types))
+            (package.logical_path.clone(), names)
         })
         .collect::<BTreeMap<_, _>>();
-    let empty = BTreeSet::new();
     let mut diagnostics = Diagnostics::new();
     for package in &project.packages {
         for file in &package.files {
-            let test = crate::project::is_test_source(loaded.sources.file(file.file_id).path());
-            let values = if test {
-                &all_values[&package.logical_path]
-            } else {
-                &normal_values[&package.logical_path]
-            };
-            let hidden_types = if test {
-                &empty
-            } else {
-                &hidden_names[package.logical_path.as_str()].1
-            };
+            let role_context = RoleNameContext::new(&loaded.sources, project, package, file);
+            let values = &package_values[&package.logical_path];
             let imports = file
                 .imports
                 .iter()
@@ -100,22 +48,6 @@ pub(super) fn validate_generic_body_names(
                     )
                 })
                 .collect::<BTreeSet<_>>();
-            let imported_names = file
-                .imports
-                .iter()
-                .filter_map(|import| {
-                    let logical = crate::string_literal::import_path(&import.path).ok()?;
-                    let alias = import
-                        .alias
-                        .as_ref()
-                        .map(|name| name.name.clone())
-                        .unwrap_or_else(|| {
-                            logical.rsplit('/').next().unwrap_or_default().to_string()
-                        });
-                    let names = hidden_names.get(logical.as_str())?.0.clone();
-                    Some((alias, names))
-                })
-                .collect::<BTreeMap<String, BTreeSet<String>>>();
             let mut generic_functions = package
                 .files
                 .iter()
@@ -167,9 +99,8 @@ pub(super) fn validate_generic_body_names(
                         let mut validator = NameValidator::new(
                             values,
                             &imports,
-                            hidden_types,
-                            &imported_names,
                             &generic_functions,
+                            &role_context,
                             &mut diagnostics,
                         );
                         validator
@@ -197,9 +128,8 @@ pub(super) fn validate_generic_body_names(
                         let mut validator = NameValidator::new(
                             values,
                             &imports,
-                            hidden_types,
-                            &imported_names,
                             &generic_functions,
+                            &role_context,
                             &mut diagnostics,
                         );
                         validator
@@ -223,9 +153,8 @@ pub(super) fn validate_generic_body_names(
                             let mut validator = NameValidator::new(
                                 values,
                                 &imports,
-                                hidden_types,
-                                &imported_names,
                                 &generic_functions,
+                                &role_context,
                                 &mut diagnostics,
                             );
                             validator
@@ -269,11 +198,77 @@ enum Binding {
     Constant,
 }
 
+struct RoleNameContext<'a> {
+    sources: &'a crate::source::SourceDb,
+    declarations: BTreeMap<String, Vec<crate::source::Span>>,
+}
+impl<'a> RoleNameContext<'a> {
+    fn new(
+        sources: &'a crate::source::SourceDb,
+        project: &ast::Project,
+        package: &ast::Package,
+        file: &ast::File,
+    ) -> Self {
+        let mut context = Self {
+            sources,
+            declarations: BTreeMap::new(),
+        };
+        context.add_package(package, "");
+        for import in &file.imports {
+            let Ok(path) = crate::decode_import_path(&import.path) else {
+                continue;
+            };
+            let alias = import
+                .alias
+                .as_ref()
+                .map(|alias| alias.name.clone())
+                .unwrap_or_else(|| path.rsplit('/').next().unwrap_or_default().into());
+            context
+                .declarations
+                .entry(alias.clone())
+                .or_default()
+                .push(import.span);
+            if let Some(package) = project
+                .packages
+                .iter()
+                .find(|package| package.logical_path == path)
+            {
+                context.add_package(package, &format!("{alias}."));
+            }
+        }
+        context
+    }
+    fn add_package(&mut self, package: &ast::Package, prefix: &str) {
+        for declaration in package.files.iter().flat_map(|file| &file.decls) {
+            let names = if let ast::TopLevelDecl::Type(decl) = declaration {
+                decl.specs
+                    .iter()
+                    .map(|spec| spec.name.name.clone())
+                    .collect()
+            } else {
+                top_level_value_names(declaration)
+            };
+            for name in names {
+                self.declarations
+                    .entry(format!("{prefix}{name}"))
+                    .or_default()
+                    .push(crate::ond::declaration_span(declaration));
+            }
+        }
+    }
+    fn visible(&self, name: &str, caller: crate::source::Span) -> bool {
+        self.declarations.get(name).is_none_or(|declarations| {
+            declarations
+                .iter()
+                .any(|declaration| crate::roles::visible(self.sources, *declaration, caller))
+        })
+    }
+}
+
 struct NameValidator<'a> {
+    role_context: &'a RoleNameContext<'a>,
     package_values: &'a BTreeSet<String>,
     imports: &'a BTreeSet<String>,
-    hidden_types: &'a BTreeSet<String>,
-    imported_names: &'a BTreeMap<String, BTreeSet<String>>,
     generic_functions: &'a BTreeSet<Vec<String>>,
     type_parameters: BTreeSet<String>,
     scopes: Vec<BTreeMap<String, Binding>>,
@@ -284,16 +279,14 @@ impl<'a> NameValidator<'a> {
     fn new(
         package_values: &'a BTreeSet<String>,
         imports: &'a BTreeSet<String>,
-        hidden_types: &'a BTreeSet<String>,
-        imported_names: &'a BTreeMap<String, BTreeSet<String>>,
         generic_functions: &'a BTreeSet<Vec<String>>,
+        role_context: &'a RoleNameContext<'a>,
         diagnostics: &'a mut Diagnostics,
     ) -> Self {
         Self {
+            role_context,
             package_values,
             imports,
-            hidden_types,
-            imported_names,
             generic_functions,
             type_parameters: BTreeSet::new(),
             scopes: vec![BTreeMap::new()],
@@ -320,11 +313,11 @@ impl<'a> NameValidator<'a> {
         }
     }
 
-    fn known(&self, name: &str) -> bool {
+    fn known(&self, name: &str, span: crate::source::Span) -> bool {
         name == "_"
             || BUILTINS.contains(&name)
-            || self.package_values.contains(name)
-            || self.imports.contains(name)
+            || (self.package_values.contains(name) && self.role_context.visible(name, span))
+            || (self.imports.contains(name) && self.role_context.visible(name, span))
             || self
                 .scopes
                 .iter()
@@ -366,6 +359,14 @@ impl<'a> NameValidator<'a> {
 
     fn statement(&mut self, statement: &ast::Stmt) {
         match statement {
+            ast::Stmt::InlineAssembly(statement) => {
+                for diagnostic in crate::inline_asm::validate_source(statement) {
+                    self.diagnostics.push(diagnostic);
+                }
+                for binding in &statement.bindings {
+                    self.expr(&binding.value);
+                }
+            }
             ast::Stmt::Const(declaration) => {
                 for spec in &declaration.specs {
                     if let Some(ty) = &spec.ty {
@@ -486,8 +487,9 @@ impl<'a> NameValidator<'a> {
         {
             return;
         }
-        if let Some(names) = self.imported_names.get(&alias.name)
-            && names.contains(&name.name)
+        if !self
+            .role_context
+            .visible(&format!("{}.{}", alias.name, name.name), name.span)
         {
             self.diagnostics.push(Diagnostic::error(
                 name.span,
@@ -502,7 +504,7 @@ impl<'a> NameValidator<'a> {
     fn type_path(&mut self, path: &ast::Path) {
         match path.segments.as_slice() {
             [name]
-                if self.hidden_types.contains(&name.name)
+                if !self.role_context.visible(&name.name, name.span)
                     && !self.type_parameters.contains(&name.name) =>
             {
                 self.diagnostics.push(Diagnostic::error(
@@ -510,7 +512,16 @@ impl<'a> NameValidator<'a> {
                     format!("unknown type `{}`", name.name),
                 ));
             }
-            [alias, name] => self.imported_member(alias, name),
+            [alias, name] => {
+                if !self.role_context.visible(&alias.name, alias.span) {
+                    self.diagnostics.push(Diagnostic::error(
+                        alias.span,
+                        format!("import alias `{}` is not visible here", alias.name),
+                    ));
+                } else {
+                    self.imported_member(alias, name);
+                }
+            }
             _ => {}
         }
     }
@@ -557,7 +568,7 @@ impl<'a> NameValidator<'a> {
                     self.imported_member(alias, name);
                 }
                 if let Some(name) = path.segments.first()
-                    && !self.known(&name.name)
+                    && !self.known(&name.name, name.span)
                 {
                     self.diagnostics.push(Diagnostic::error(
                         name.span,

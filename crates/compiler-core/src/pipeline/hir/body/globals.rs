@@ -16,10 +16,7 @@ impl BodyLowerer<'_> {
         let package = self.universe.iter().find(|p| p.id == package_id)?;
         let spec = package.globals.get(name)?.clone();
         if !package.visible_from(spec.span, span) {
-            return self.fail(
-                span,
-                format!("test-only global `{name}` is not visible here"),
-            );
+            return self.fail(span, package.visibility_error("global", name));
         }
         let symbol = super::super::canonical_symbol_name(&package.logical_path, name);
         let key = (package_id, name.to_string());

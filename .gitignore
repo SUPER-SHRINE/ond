@@ -1,5 +1,4 @@
 /target/
-/examples/**/target/
 *.rs.bk
 *.pdb
 editors/vscode-ond/node_modules/

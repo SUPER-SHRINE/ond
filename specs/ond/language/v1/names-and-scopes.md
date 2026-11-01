@@ -10,17 +10,20 @@
 他章のproductionは[文法索引](./lexical.md#文法の定義元)を参照する。
 
 ```ebnf
-SourceFile    = PackageClause ";" { ImportDecl ";" } { TopLevelDecl ";" } .
+SourceFile    = PackageClause ";" { SourceItem ";" } .
+SourceItem    = ImportDecl | TopLevelDecl | RoleDecl .
 PackageClause = "package" identifier .
 ImportDecl    = "import" [ identifier ] string_lit .
 QualifiedIdent= identifier "." identifier .
 ```
 
+SourceItemのimport順序とRoleDeclによる展開は[roleの検査規則](./roles.md#検査範囲とimport)に従う。
+
 ## Sourceとproject
 <!-- ond-spec-id: language/source-and-packages -->
 
 source fileとpackageは次節の構文・名前規則に従う。\
-project manifestとsource探索は[package build](../../build/packages.md)、通常/test sourceの可視性は[test build](../../build/test-build.md)を定義元とする。
+project manifestとsource探索は[package build](../../build/packages.md)を定義元とする。
 
 ## Packageとimport
 <!-- ond-spec-id: syntax/packages-and-imports -->
@@ -31,7 +34,7 @@ project manifestとsource探索は[package build](../../build/packages.md)、通
 - rootで`package main`を宣言したprojectは実行projectとする。実行projectのrootは`main` packageであり、`main.ond`と`func main`を含む
 root直下の全`.ond` fileは`package main`を宣言する。\
 実行projectのroot packageの論理package pathは、そのprojectの`[project].name`を`p`とすると`p`である。\
-この`p`をrootのpackage成果物・公開interface・debug metadata・具体化identity・test metadataの所属に用いる。\
+この`p`をrootのpackage成果物・公開interface・debug metadata・具体化identityの所属に用いる。\
 通常の非generic関数とglobalのlink symbolのnamespaceは[Link symbol規則](../../artifacts.md#link-symbolの名前と所属)に従う。\
 library projectはrootの`main.ond`と`func main`がなくても編集・依存として利用できる。\
 library rootにsourceがある場合、そのpackage名はproject名と一致する。
@@ -46,8 +49,6 @@ import pathの先頭にproject名がない入力はcompile errorとなる\
 - alias を省略した import は、その package の宣言名で参照する
 - package間のimportが循環する入力はcompile errorとなる
 
-`test.ond`と`_test.ond`のsource収集と通常/test文脈の分離は、[テストビルド仕様](../../build/test-build.md)で扱う。
-
 package-qualified name は `packageName.ExportedName` とする。
 
 - `packageName` は import した package 名でなければならない
@@ -58,6 +59,7 @@ package-qualified name は `packageName.ExportedName` とする。
 <!-- ond-spec-id: syntax/scope-and-shadowing -->
 
 - package-level declaration は package scope に属し、同一 package 内の全 file から見える
+  - role限定宣言、import aliasと同じprojectのpackage-qualified参照には[role可視性](./roles.md#名前解決とscope)を併せて適用する
 - import 名の scope は宣言した file に限る
   - 同じ package の別 file でも、使用する package は各 file で import する
 - 同一 import path は file ごとに異なる alias で宣言できる
@@ -65,10 +67,9 @@ package-qualified name は `packageName.ExportedName` とする。
 - import 名と package-level declaration が衝突した場合は compile error とする
 - 関数 parameter、method receiver、関数本体直下の local declaration は、その関数本体の block scope に属する
 - 内側の block で宣言した名前は、外側の block、import 名、package-level declaration を shadow できる
-- 同一 block 内で同名の `var`、`const`、parameter を重複宣言してはならない
-- 同一 package scope 内で同名の top-level declaration を重複宣言してはならない
+- 同一 block 内の同名の `var`、`const`、parameterと、同一 package scope 内の同名の top-level declarationには[role対象集合を含む重複規則](./roles.md#名前解決とscope)を適用する
 - method名はreceiverのbase named typeごとのnamespaceに属する
-  - 同じbase typeではvalue/pointer receiverを通して一意名とし、top-level関数名のnamespaceから独立する
+  - 同じbase typeではvalue/pointer receiverを通して[role対象集合を含む重複規則](./roles.md#名前解決とscope)を適用し、top-level関数名のnamespaceから独立する
 - `_` は blank identifier とし、宣言または代入の値を破棄する位置で使える
   - 値として参照できず、binding を作らない
 - `:=` は現在の block に未宣言の `_` 以外の名前を 1 個以上含まなければならない

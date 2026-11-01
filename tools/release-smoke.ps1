@@ -32,6 +32,7 @@ $binaryDirectory = Join-Path (Join-Path $repoRoot "target") $cargoProfile
 $executableSuffix = if ($IsWindows) { ".exe" } else { "" }
 $ond = Join-Path $binaryDirectory "ond$executableSuffix"
 $ondLsp = Join-Path $binaryDirectory "ond-lsp$executableSuffix"
+$ondUnit = Join-Path $binaryDirectory "ond-unit$executableSuffix"
 
 if (-not $SkipBuild) {
     $buildArguments = @("build", "--workspace", "--locked")
@@ -41,7 +42,7 @@ if (-not $SkipBuild) {
     Invoke-Checked -FileName "cargo" -Arguments $buildArguments
 }
 
-foreach ($binary in @($ond, $ondLsp)) {
+foreach ($binary in @($ond, $ondLsp, $ondUnit)) {
     if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
         throw "Missing release smoke-test binary: $binary"
     }
@@ -53,24 +54,33 @@ $project = Join-Path $tempRoot "hello"
 [System.IO.Directory]::CreateDirectory($project) | Out-Null
 
 try {
-    Get-ChildItem -LiteralPath (Join-Path $repoRoot "examples/hello") | Copy-Item -Destination $project -Recurse
+    Push-Location $project
+    try {
+        Invoke-Checked -FileName $ond -Arguments @("init")
+    }
+    finally {
+        Pop-Location
+    }
 
     Invoke-Checked -FileName $ond -Arguments @("compile", $project)
-    $manifest = Join-Path $project "target/build.ondbuild"
+    $manifest = Join-Path $project ".ond/target/build.ondbuild"
     if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) {
         throw "Compile smoke test did not create $manifest."
     }
 
-    $image = Join-Path $tempRoot "hello.ondimage"
+    $image = Join-Path $tempRoot "hello.bin"
     Invoke-Checked -FileName $ond -Arguments @(
         "link", $manifest,
-        "--ram", "4096:65536",
-        "--stack", "8192",
-        "--return-to", "0",
+        "--project", $project,
         "-o", $image
     )
     if (-not (Test-Path -LiteralPath $image -PathType Leaf) -or (Get-Item -LiteralPath $image).Length -eq 0) {
-        throw "Link smoke test did not create a non-empty LinkedImage."
+        throw "Link smoke test did not create a non-empty ONDX binary."
+    }
+
+    $imageBytes = [System.IO.File]::ReadAllBytes($image)
+    if ($imageBytes.Length -lt 32 -or [System.Text.Encoding]::ASCII.GetString($imageBytes, 0, 4) -ne "ONDX") {
+        throw "Link smoke test output is not an ONDX binary."
     }
 
     $initialize = '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
@@ -119,6 +129,32 @@ try {
         }
     }
     if (-not $initialized) { throw 'Initialize response is missing.' }
+
+    $checks = Join-Path $tempRoot 'unit-checks'
+    New-Item -ItemType Directory -Force -Path (Join-Path $checks 'checks/cases') | Out-Null
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'crates/unit/tests/fixtures/checks/ond.toml') -Destination (Join-Path $checks 'checks/ond.toml')
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'crates/unit/tests/fixtures/checks/cases/api.ond') -Destination (Join-Path $checks 'checks/cases/api.ond')
+    @'
+version = 1
+[project]
+path = "checks"
+[vm]
+ram_size = 65536
+stack_size = 4096
+[[cases]]
+name = "release-smoke"
+package = "checks/cases"
+function = "Pass"
+'@ | Set-Content -Encoding utf8 (Join-Path $checks 'ond-unit.toml')
+    $previousPath = $env:PATH
+    try {
+        $env:PATH = "$binaryDirectory$([IO.Path]::PathSeparator)$previousPath"
+        $unitOutput = & $ondUnit (Join-Path $checks 'ond-unit.toml') 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0 -or $unitOutput -notmatch 'release-smoke: PASS' -or $unitOutput -notmatch 'PASS=1 FAIL=0 STEP_LIMIT=0 ERROR=0') {
+            throw "ond-unit release smoke test failed: $unitOutput"
+        }
+    }
+    finally { $env:PATH = $previousPath }
     Write-Host "Release smoke test passed ($Profile, LSP $version)."
 }
 finally {

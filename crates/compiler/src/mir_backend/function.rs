@@ -119,13 +119,23 @@ pub(super) fn lower(
             cx.instruction(i)?;
             let end = cx.e.offset(i.span)?;
             let operation = instruction_operation(i, cx.e.has_call_since(start));
-            cx.record_range(start, end, operation, None, i.span);
+            if !matches!(i.kind, mir::InstructionKind::InlineAssembly { .. }) {
+                cx.record_range(start, end, operation, None, i.span);
+            }
         }
         let start = cx.e.offset(b.terminator.span)?;
         cx.terminator(&b.terminator)?;
         let end = cx.e.offset(b.terminator.span)?;
         let (operation, message) = terminator_operation(&b.terminator);
         cx.record_range(start, end, operation, message, b.terminator.span);
+    }
+    if f.blocks.iter().flat_map(|b| &b.instructions).any(|i| {
+        matches!(
+            i.kind,
+            mir::InstructionKind::InlineAssembly { noreturn: true, .. }
+        )
+    }) {
+        cx.unwind.clear();
     }
     Ok(PendingFunctionDebug {
         frame_size: cx.frame.size,
@@ -146,7 +156,7 @@ pub(super) struct Context<'a> {
     pub ranges: &'a mut Vec<PendingDebugRange>,
 }
 impl Context<'_> {
-    fn record_range(
+    pub(super) fn record_range(
         &mut self,
         start: u32,
         end: u32,
@@ -239,6 +249,14 @@ impl Context<'_> {
                 self.e.emit(0, 5, 4, 0, 0);
                 memory::address(self.e, 4, self.frame.scratch);
                 memory::copy(self.e, &self.p.types, source.ty, i.span)?;
+            }
+            I::InlineAssembly {
+                program,
+                noreturn,
+                inputs,
+                outputs,
+            } => {
+                return self.inline_asm(i, program, *noreturn, inputs, outputs);
             }
             I::Check(check) => self.numeric_check(check, i.span)?,
             I::Unary { op, operand } => {

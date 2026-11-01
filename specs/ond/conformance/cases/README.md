@@ -72,6 +72,7 @@ allocatorの外部観測は[言語のheap契約](../../language/v1/execution.md#
 <!-- ond-spec-id: conformance/cases/additional-observations -->
 
 - [成果物・build・link](./artifact-contracts.md)
+- [ONDX wire・配置・CLI](./executable-binaries.md)
 - [公開interfaceと型付きwire値](./interface-values.md)
 - [Package build_idの完全入力](./package-hash.md)
 - [診断の原因とgeneric関連位置](./diagnostic-causes.md)
@@ -82,6 +83,7 @@ allocatorの外部観測は[言語のheap契約](../../language/v1/execution.md#
 - [Kagura回帰の外部観測](./kagura-regression-observations.md)
 - [Stackとstartup storageの外部観測](./memory-placement.md)
 - [cacheとlink](./build-observations.md)
+- [Roleの設定・選択・可視性・補完・cache](./roles.md)
 
 ## Kagura backendの実行入力
 <!-- ond-spec-id: conformance/kagura-case-inventory -->
@@ -89,3 +91,4 @@ allocatorの外部観測は[言語のheap契約](../../language/v1/execution.md#
 - [整数336件](./kagura-integers.md)
 - [数値変換93件](./kagura-casts.md)
 - [評価/fault8件、共有50件](./kagura-evaluation-combinations.md)
+- [Inline assembly適合case](./inline-assembly.md)
