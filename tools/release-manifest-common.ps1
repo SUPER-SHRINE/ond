@@ -61,6 +61,7 @@ function Get-ReleaseArchivePaths {
     @('LICENSE.md', 'README.md', "ond-lsp$suffix", "ond$suffix")
     # 公開済み0.1.1の5ファイル契約は変更しない。
     if ([version]$Version -ge [version]'0.1.3') { 'THIRD-PARTY-NOTICES.txt'; 'COPYRIGHT-library.html' }
+    if ([version]$Version -ge [version]'0.4.0') { "ond-unit$suffix" }
 }
 
 function Assert-ThirdPartyNoticeInventory {
@@ -71,7 +72,7 @@ function Assert-ThirdPartyNoticeInventory {
         if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Missing required third-party notice file: $required" }
     }
     if ((Get-FileHash -Algorithm SHA256 -LiteralPath $noticePath).Hash.ToLowerInvariant() -cne
-        'e73e809e1592c0fd90e83319943686c2df75dd24ea5bc2bf5d91756e10a67cc4') {
+        'b2c7edc9531ac00eb735dbeaf7c352ccd8e262b381293293fc68404a9f1c1a82') {
         throw 'Third-party notice contents changed; review the legal text and explicitly refresh its pinned SHA-256.'
     }
     if ((Get-FileHash -Algorithm SHA256 -LiteralPath $copyrightPath).Hash.ToLowerInvariant() -cne
@@ -88,6 +89,15 @@ function Assert-ThirdPartyNoticeInventory {
         $name = $Matches[1]
         if ($body -notmatch '(?m)^version\s*=\s*"([^"]+)"' -or $Matches[1] -eq '') { throw 'Invalid Cargo.lock package version.' }
         $version = $Matches[1]
+        if ($body -match '(?m)^source\s*=\s*"git\+https://github\.com/SUPER-SHRINE/kagura\?tag=0\.1\.0#([0-9a-f]{40})"') {
+            $gitCommit = $Matches[1]
+            if ($gitCommit -cne '457a48502f6726a8ac617561579bdd43670d0387' -or
+                -not $notice.Contains("PACKAGE: $name $version`nGIT COMMIT: $gitCommit`nDECLARED LICENSE: MIT")) {
+                throw "Kagura third-party notice inventory is stale or missing: $name $version"
+            }
+            $expectedCount++
+            continue
+        }
         if ($body -notmatch '(?m)^source\s*=\s*"registry\+[^"\r\n]+"') { continue }
         if ($body -notmatch '(?m)^checksum\s*=\s*"([0-9a-f]{64})"') { throw "Registry package lacks a lock checksum: $name $version" }
         $checksum = $Matches[1]
@@ -133,8 +143,9 @@ function Get-ArchiveEntrySha256 {
 function Assert-ArchiveNoticeHashes {
     param([string]$Archive, [string]$Target, [string]$Version)
     if ([version]$Version -lt [version]'0.1.3') { return }
+    $noticeHash = if ([version]$Version -ge [version]'0.4.0') { 'b2c7edc9531ac00eb735dbeaf7c352ccd8e262b381293293fc68404a9f1c1a82' } else { 'e73e809e1592c0fd90e83319943686c2df75dd24ea5bc2bf5d91756e10a67cc4' }
     $expectedNotices = [ordered]@{
-        'THIRD-PARTY-NOTICES.txt' = 'e73e809e1592c0fd90e83319943686c2df75dd24ea5bc2bf5d91756e10a67cc4'
+        'THIRD-PARTY-NOTICES.txt' = $noticeHash
         'COPYRIGHT-library.html' = '3aa41caccecaeddad6fcf2f36ce14146ab7baae57064b05b12ecc6b52d5e917f'
     }
     foreach ($name in $expectedNotices.Keys) {

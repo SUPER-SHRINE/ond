@@ -1,20 +1,13 @@
 # ユーザー向けドキュメント
 
-Ondは、プログラムを実行環境の違いから切り離すことを目指しています。
-
-まず[Ondの思想](getting-started/overview.md)でCPU・機器・プログラムの関係を読み、[最初のプログラム](getting-started/first-program.md)へ進んでください。\
-ビルド後の準備は[ビルドと起動の手順](getting-started/build-and-launch.md)で確認できます。
-
-この案内は現在の開発版を対象とします。
-
-公開済みOnd 0.3.0とは機能が異なり、たとえばrole機能は開発版CLIで使います。
+この案内はOnd 0.4.0を対象とします。
 
 仕様の一般規則は[Specs](../../specs/README.md)を参照してください。
 
 ## はじめに
 
 - [Ondの思想](getting-started/overview.md) — CPU・機器・プログラミング言語の役割と、Ondが目指すことを説明します
-- [インストール](getting-started/installation.md) — リポジトリから開発版CLIをbuildします
+- [インストール](getting-started/installation.md) — 各種インストール方法を説明します
 - [最初のプログラム](getting-started/first-program.md) — 小さなプログラムを作り、実行fileを生成します
 - [ビルドと起動の手順](getting-started/build-and-launch.md) — 生成物と実行開始までの準備を説明します
 
@@ -55,13 +48,11 @@ Ondは、プログラムを実行環境の違いから切り離すことを目�
 - operator定義: [算術](language-tour/operator-definitions/arithmetic.md)、[index getter](language-tour/operator-definitions/index-getter.md)、[index setter](language-tour/operator-definitions/index-setter.md)、[len](language-tour/operator-definitions/len.md)
 - 低水準: [asm（Kagura v1）](language-tour/low-level/asm.md)
 
-## 実用チュートリアル
-
-- [projectとpackage](tutorials/projects-and-packages.md)
-- [libraryと依存](tutorials/libraries-and-dependencies.md)
-- [roleで構成を選ぶ](tutorials/roles.md)
-- [診断を読み、修正する](tutorials/diagnostics.md)
-
 ## リファレンス
 
 - [`ond.toml`リファレンス](reference/manifest.md)
+
+## ツール
+
+- [単体テスト実行ツール](tools/unit.md)
+- [Language Server](tools/language-server.md)

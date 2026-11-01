@@ -2,6 +2,14 @@
 
 package外から直接参照するtop-level宣言名とstruct field名はASCII大文字で始めます。
 
+```text
+app/
+├─ ond.toml
+├─ main.ond
+└─ profile/
+   └─ profile.ond
+```
+
 ```ond title="profile/profile.ond"
 package profile
 

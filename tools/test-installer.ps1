@@ -65,7 +65,7 @@ function Assert-LockedUpdatePreservesInstallation([string]$Directory, [string]$B
     if ((Get-InstallationSnapshot $Directory) -cne $before) { throw 'Rejected locked update changed files, registration, or SYSTEM PATH.' }
 }
 function Assert-Installed([string]$Directory, [bool]$OnPath = $true) {
-    foreach ($file in @('ond.exe', 'ond-lsp.exe', 'LICENSE.md', 'THIRD-PARTY-NOTICES.txt', 'COPYRIGHT-library.html')) {
+    foreach ($file in @('ond.exe', 'ond-lsp.exe', 'ond-unit.exe', 'LICENSE.md', 'THIRD-PARTY-NOTICES.txt', 'COPYRIGHT-library.html')) {
         if (-not (Test-Path -LiteralPath (Join-Path $Directory $file))) { throw "Missing installed file: $file" }
     }
     $registration = $registry.OpenSubKey($uninstallKey)
@@ -88,6 +88,7 @@ try {
     Invoke-CheckedInstaller $setup $quiet
     Assert-Installed $defaultRoot
     Assert-LockedUpdatePreservesInstallation $defaultRoot 'ond.exe' ''
+    Assert-LockedUpdatePreservesInstallation $defaultRoot 'ond-unit.exe' ''
     Invoke-CheckedInstaller $setup $quiet
     Assert-Installed $defaultRoot
     # Invalid PATH choices must fail before removing the existing installation.

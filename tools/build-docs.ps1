@@ -59,6 +59,7 @@ $included = @()
 $included += (& git -C $repo ls-files --cached --others --exclude-standard 'specs/**/*.md' 'specs/*.md' 'docs/releases/**/*.md' 'docs/releases/*.md' 'docs/manual/**/*.md' 'docs/manual/*.md' 'docs/manual/**/*.svg' 'docs/manual/*.svg')
 foreach ($relative in $included) {
     if (-not $relative) { continue }
+    if (-not (Test-Path -LiteralPath (Join-Path $repo $relative) -PathType Leaf)) { continue }
     $destination = Join-Path $sources $relative
     New-Item -ItemType Directory -Path (Split-Path $destination) -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $repo $relative) -Destination $destination
@@ -118,10 +119,23 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Markdownの入れ子list検査に失敗しました ($LASTEXITCODE)" }
     & $Python website/ond_highlight.py
     if ($LASTEXITCODE -ne 0) { throw "Ond構文ハイライト検査に失敗しました ($LASTEXITCODE)" }
-    & $Python -m zensical build --config-file target/website/zensical.toml --clean --strict
-    if ($LASTEXITCODE -ne 0) { throw "Zensical buildに失敗しました ($LASTEXITCODE)" }
-    & $Python tools/check-docs-links.py target/website/public
-    if ($LASTEXITCODE -ne 0) { throw "生成HTMLのリンク検査に失敗しました ($LASTEXITCODE)" }
+    # Zensical v0.0.73にあるpage処理raceへの限定回避で、generator自体を修正するものではない。
+    # https://github.com/zensical/zensical/blob/v0.0.73/crates/zensical/src/workflow/cached.rs#L83
+    $maxAttempts = 5
+    for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+        & $Python -m zensical build --config-file target/website/zensical.toml --clean --strict
+        if ($LASTEXITCODE -ne 0) { throw "Zensical buildに失敗しました ($LASTEXITCODE)" }
+
+        & $Python tools/check-docs-links.py $public $sources
+        $linkCheckExit = $LASTEXITCODE
+        if ($linkCheckExit -eq 0) { break }
+        if ($linkCheckExit -eq 2 -and $attempt -lt $maxAttempts) {
+            Write-Host "生成HTMLに欠落があります。再生成します ($attempt/$maxAttempts)"
+            continue
+        }
+        if ($linkCheckExit -eq 2) { throw "再生成後もHTMLページが欠落しています ($attempt/$maxAttempts)" }
+        throw "生成HTMLのリンク検査に失敗しました ($linkCheckExit)"
+    }
 } finally {
     $env:PYTHONPATH = $oldPythonPath
     $env:PYTHONDONTWRITEBYTECODE = $oldNoBytecode

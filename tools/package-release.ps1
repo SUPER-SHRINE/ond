@@ -34,11 +34,13 @@ if ((Test-Path $archive) -or (Test-Path "$archive.sha256") -or (Test-Path $descr
 $staging = Join-Path ([IO.Path]::GetTempPath()) ("ond-package-" + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $staging | Out-Null
 try {
-    foreach ($binary in @("ond$suffix", "ond-lsp$suffix")) {
+    $binaries = @("ond$suffix", "ond-lsp$suffix")
+    if ([version]$Version -ge [version]'0.4.0') { $binaries += "ond-unit$suffix" }
+    foreach ($binary in $binaries) {
         Copy-Item -LiteralPath (Join-Path $repoRoot "target/release/$binary") -Destination $staging
     }
     $paths = @(Get-ReleaseArchivePaths $target $Version)
-    foreach ($document in @($paths | Where-Object { $_ -cnotin @("ond$suffix", "ond-lsp$suffix") })) {
+    foreach ($document in @($paths | Where-Object { $_ -cnotin @("ond$suffix", "ond-lsp$suffix", "ond-unit$suffix") })) {
         $destination = Join-Path $staging $document
         New-Item -ItemType Directory -Force -Path (Split-Path $destination -Parent) | Out-Null
         Copy-Item -LiteralPath (Join-Path $repoRoot $document) -Destination $destination
@@ -54,7 +56,8 @@ try {
         finally { $zip.Dispose() }
     }
     else {
-        & chmod 755 (Join-Path $staging 'ond') (Join-Path $staging 'ond-lsp')
+        $executables = @($binaries | ForEach-Object { Join-Path $staging $_ })
+        & chmod 755 @executables
         if ($LASTEXITCODE -ne 0) { throw 'Could not set executable permissions.' }
         & tar -czf $archive -C $staging -- @paths
         if ($LASTEXITCODE -ne 0) { throw 'Could not create Linux archive.' }

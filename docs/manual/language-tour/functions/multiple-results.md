@@ -12,7 +12,7 @@ func bounds(value: u32) -> (u32, u32) {
 }
 
 func main() {
-    var low, high: u32 = bounds(8)
+    low, high := bounds(8)
     _ = low
     _ = high
 }

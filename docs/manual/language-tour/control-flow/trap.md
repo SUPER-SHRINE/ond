@@ -17,10 +17,13 @@ func main() {
 
 `trap`の後ろに文字列リテラルを置き、faultの理由を示します。
 
-## 実行経路
+## compileとlinkで理由を確認する
 
-例では条件がtrueとなるため、実行時にtrap文へ到達します。\
-\
-compileとlinkは実行環境でtrapが起きることを意味しません。
+共通の[最初のプログラム](../../getting-started/first-program.md)と同じmanifestを用意し、この例のdirectoryで`ond compile .`、続けて`ond link --project .`を実行します。\
+両commandはexit `0`で終了し、`.ond/target/a.bin`と`.ond/target/a.onddebug`が生成されます。\
+debug sidecarには`count must be nonzero`の理由が記録されます。
 
-共通manifestとcompile/linkは[最初のプログラム](../../getting-started/first-program.md)、trapの契約は[組み込み仕様](../../../../specs/ond/language/v1/builtins.md#8-trap)を参照してください。
+compileとlinkはprogramを実行しません。\
+この例では`count`が0で条件を満たすため、実行時にはtrap文へ到達します。
+
+trap理由とdebug metadataの定義は[組み込み仕様](../../../../specs/ond/language/v1/builtins.md#8-trap)および[debug metadata仕様](../../../../specs/ond/debug-metadata/v1.md)を参照してください。

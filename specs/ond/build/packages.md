@@ -18,7 +18,7 @@ compilerはprojectのsourceを検査してpackage成果物を生成し、linker�
 SDK（Software Development Kit）は、特定の実行環境向けにライブラリ・ツール・文書をまとめた開発キットである。\
 各SDKが含める機能は、そのkitの文書が定める。\
 上記の役割は同じtoolが複数を兼ねられる。\
-テスト対象の選定・自動発見、起動用source・metadata・sidecarの生成、実行、合否判定と結果報告の方針は、外部toolとuser codeが定める。\
+テスト対象の選定・自動発見、起動用source・metadata・sidecarの生成、実行、合否判定と結果報告の方針は、それを提供するtoolとuser codeが定める。\
 OndはCLI/APIから直接利用できる。\
 sourceのpackage/import/公開名は[言語規則](../language/v1/names-and-scopes.md)、成果物fieldは[artifact契約](../artifacts.md)を定義元とする。
 

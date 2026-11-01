@@ -2,6 +2,32 @@
 
 `role`はmanifestで宣言した構成ごとに、選択するsource文を切り替えます。
 
+```text
+roles/
+├─ ond.toml
+└─ main.ond
+```
+
+```toml title="ond.toml"
+[project]
+name = "roles"
+
+[roles]
+names = ["Debug", "Development"]
+
+[link]
+startup = "external"
+stack-size = 8192
+output = ".ond/target/roles.bin"
+
+[link.ram]
+base = 4096
+size = 65536
+
+[link.exit]
+mode = "loop"
+```
+
 ```ond title="main.ond"
 package main
 
@@ -17,35 +43,23 @@ func main() {
 }
 ```
 
-## 構成を宣言する
-
-manifestには`Debug`と`Development`を宣言します。\
-roleを指定しない構成では共通部分だけが選択されます。
-
 ## roleを選んでcompileする
 
-`--role Debug`または`--role Development`を指定すると、対応するblockが選択されます。\
-各構成は同じsourceから別々にcompileします。
+project rootで次の各組を実行し、同じsourceを構成ごとにcompileしてlinkします。
 
-この例では`ond init`の設定に追加role名を宣言します。
-
-```toml title="ond.toml"
-[project]
-name = "app"
-
-[roles]
-names = ["Debug", "Development"]
-
-[link]
-startup = "external"
-stack-size = 8192
-
-[link.ram]
-base = 4096
-size = 65536
-
-[link.exit]
-mode = "loop"
+```sh
+ond compile .
+ond link --project .
+ond compile . --role Debug
+ond link --project .
+ond compile . --role Development
+ond link --project .
 ```
 
-roleの選択規則は[言語role仕様](../../../../specs/ond/language/v1/roles.md)、manifestとCLIは[project role仕様](../../../../specs/ond/build/roles.md)を参照してください。
+role未指定では共通部分が選ばれ、`mode`は0です。\
+`--role Debug`では`mode = 1`、`--role Development`では`mode = 2`の文が選ばれます。
+
+**結果:** 3構成それぞれのcompileとlinkはexit `0`で終了し、`.ond/target/roles.bin`と`.ond/target/roles.onddebug`が生成されます。\
+例では生成fileを実行しないため、ここで示す値は選択された代入文から分かる値です。
+
+role構文の選択規則は[言語role仕様](../../../../specs/ond/language/v1/roles.md)、manifestと`--role`は[project role仕様](../../../../specs/ond/build/roles.md)を参照してください。

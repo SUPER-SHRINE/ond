@@ -1,20 +1,55 @@
 # インストール
 
-この章では、Ondのrepositoryから開発中のCLIをbuildし、commandを確認します。\
-公開済みOnd 0.3.0を導入する手順ではありません。
+## Windowsインストーラーで導入する
 
-## 用意するもの
+[GitHub Releases](https://github.com/SUPER-SHRINE/ond/releases)から利用するversionの`ond-<version>-windows-x86_64-setup.exe`を取得します。\
+たとえば0.4.0のinstaller名は`ond-0.4.0-windows-x86_64-setup.exe`です。
+
+install後は新しいPowerShellまたはterminalを開き、`ond --help`でusageが表示されることを確認してください。\
+Windows installerではcompilerとLanguage Serverに加え、Ond unit test runner（`ond-unit`）も導入します。
+
+### アップデート
+新版installerを実行すると既存installを更新できます。\
+前回の配置先とPATH設定が引き継がれますが、更新時に変更できます。\
+更新前にOnd、Ond Language Server、Ond unit test runner、およびそれらを使用するeditorを閉じてください。
+
+### 削除
+Ondを削除するには、Windowsの設定からOndをアンインストールします。\
+installerが追加したPATH項目も削除されます。
+
+## Linux向けバイナリで導入する
+
+Linux x86_64（glibc）向けの配布archiveは[GitHub Releases](https://github.com/SUPER-SHRINE/ond/releases)から取得できます。\
+利用するversionの`ond-<version>-linux-x86_64.tar.gz`を選びます。\
+たとえば0.4.0のarchive名は`ond-0.4.0-linux-x86_64.tar.gz`です。
+
+archive内の`ond`、`ond-lsp`、および`ond-unit`を取り出し、PATHの通った`/usr/local/bin`へ配置します。\
+以下の例ではversionに合わせてarchive名と作業directoryを読み替えてください。
+
+```sh
+mkdir -p ond-0.4.0
+tar -xzf ond-0.4.0-linux-x86_64.tar.gz -C ond-0.4.0
+sudo install -m 755 ond-0.4.0/ond ond-0.4.0/ond-lsp ond-0.4.0/ond-unit /usr/local/bin/
+ond --help
+```
+
+`ond --help`でusageが表示されれば準備完了です。\
+[単体テスト実行ツール](../tools/unit.md)と[Language Server](../tools/language-server.md)の使い方も参照してください。
+
+## Sourceからbuild
+
+### 用意するもの
 
 repositoryが指定するRust toolchainを使います。\
 [`rust-toolchain.toml`](../../../rust-toolchain.toml)にはchannel `1.91.1`と`rustfmt`、`clippy` componentが記載されています。\
 Rustupでそのtoolchainを利用できる状態にしてください。
 
-## CLIをbuildする
+### CLIとツールをbuildする
 
 repository rootで次を実行します。
 
 ```console
-cargo build -p ond-cli --bin ond --locked
+cargo build --workspace --locked
 ```
 
 Windows PowerShellではbuild結果のdirectoryをPATHへ追加します。
@@ -31,9 +66,9 @@ export PATH="$PWD/target/debug:$PATH"
 ond --help
 ```
 
-## 確認結果
+### 確認結果
 
-`ond --help`がusageを表示してexit code `0`で終了すれば準備完了です。\
-build結果はWindowsで`target/debug/ond.exe`、Unix系で`target/debug/ond`です。
+`ond --help`がusageを表示して終了すれば準備完了です。\
+Windowsでは`target/debug/ond.exe`、`ond-lsp.exe`、`ond-unit.exe`が、Unix系では`target/debug/ond`、`ond-lsp`、`ond-unit`が作成されます。
 
 CLIのsubcommandと引数は[CLI仕様](../../../specs/ond/build/commands.md)を参照してください。

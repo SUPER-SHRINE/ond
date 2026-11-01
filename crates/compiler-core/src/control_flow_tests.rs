@@ -1,4 +1,8 @@
 use crate::{compile_project, ir::hir, mir::*};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+static NEXT_TEMP_ROOT: AtomicU64 = AtomicU64::new(0);
 
 // Execute the scalar MIR subset used below, independently of the AST backend.
 fn execute(function: &Function, input: &[u64]) -> Result<Vec<u64>, &'static str> {
@@ -98,12 +102,16 @@ fn execute(function: &Function, input: &[u64]) -> Result<Vec<u64>, &'static str>
 
 #[test]
 fn executes_cfg_scopes_loops_and_short_circuit() {
-    let unique = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!("ond-cfg-{}-{unique}", std::process::id()));
-    std::fs::create_dir_all(&root).unwrap();
+    let root = std::env::temp_dir().join(format!(
+        "ond-cfg-{}-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+        NEXT_TEMP_ROOT.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir(&root).unwrap();
     std::fs::write(root.join("ond.toml"), "[project]\nname = \"test\"\n").unwrap();
     std::fs::write(
         root.join("main.ond"),

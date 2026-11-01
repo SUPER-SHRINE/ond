@@ -1108,12 +1108,28 @@ impl ServerState {
 mod tests {
     use std::collections::BTreeMap;
     use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     use serde_json::Value;
 
     use super::{DocumentState, ServerState};
     use crate::protocol::TextDocumentContentChangeEvent;
     use crate::util::{normalize_path, same_path, uri_from_path};
+
+    static NEXT_TEMP_ROOT: AtomicU64 = AtomicU64::new(0);
+
+    fn next_temp_root_id() -> String {
+        let time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        format!("{time}-{}", NEXT_TEMP_ROOT.fetch_add(1, Ordering::Relaxed))
+    }
+
+    fn reserve_test_root(path: PathBuf) -> PathBuf {
+        std::fs::create_dir(&path).unwrap();
+        path
+    }
 
     pub(super) fn published_diagnostics(output: &[u8], uri: &str) -> Vec<Value> {
         let mut messages = Vec::new();
@@ -1148,12 +1164,9 @@ mod tests {
         let path = std::env::temp_dir().join(format!(
             "ond-lsp-{name}-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
+            next_temp_root_id()
         ));
-        std::fs::create_dir_all(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
         std::fs::canonicalize(path).unwrap()
     }
 
@@ -1161,9 +1174,9 @@ mod tests {
     fn project_diagnostics_include_closed_files_but_exclude_path_dependencies() {
         let base = test_project_root("closed-file-diagnostics");
         let root = base.join("project");
+        std::fs::create_dir_all(&root).unwrap();
         let dependency = base.join("dependency");
         let nested_dependency = root.join(".ond/dependencies/nested");
-        std::fs::create_dir_all(&root).unwrap();
         std::fs::create_dir_all(&dependency).unwrap();
         std::fs::create_dir_all(&nested_dependency).unwrap();
         let dependency_path = dependency.to_string_lossy().replace('\\', "/");
@@ -1323,14 +1336,11 @@ mod tests {
 
     #[test]
     fn manifest_dependencies_are_loaded_for_language_features() {
-        let base = normalize_path(std::env::temp_dir().join(format!(
+        let base = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-manifest-dependency-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         let project = base.join("project");
         let library = base.join("library");
         std::fs::create_dir_all(library.join("json")).unwrap();
@@ -1384,14 +1394,11 @@ mod tests {
 
     #[test]
     fn manifest_path_dependency_keeps_local_hover_and_document_symbols() {
-        let base = normalize_path(std::env::temp_dir().join(format!(
-                "ond-lsp-manifest-dependency-symbols-{}-{}",
-                std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos()
-            )));
+        let base = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
+            "ond-lsp-manifest-dependency-symbols-{}-{}",
+            std::process::id(),
+            next_temp_root_id()
+        ))));
         let project = base.join("project");
         let library = base.join("library");
         std::fs::create_dir_all(library.join("io")).unwrap();
@@ -1438,14 +1445,11 @@ mod tests {
 
     #[test]
     fn same_package_completion_survives_project_root_in_ond_path() {
-        let root = normalize_path(std::env::temp_dir().join(format!(
+        let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-self-library-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         let package = root.join("graphic");
         std::fs::create_dir_all(&package).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"library\"\n").unwrap();
@@ -1476,17 +1480,14 @@ mod tests {
 
     #[test]
     fn package_member_completion_uses_last_good_index_when_library_is_incomplete() {
-        let base = normalize_path(std::env::temp_dir().join(format!(
+        let base = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-incomplete-library-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         let root = base.join("project");
-        let libraries = base.join("libraries");
         std::fs::create_dir_all(&root).unwrap();
+        let libraries = base.join("libraries");
         std::fs::create_dir_all(libraries.join("shared")).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"app\"\n").unwrap();
         let path = root.join("main.ond");
@@ -1525,17 +1526,14 @@ mod tests {
 
     #[test]
     fn package_member_completion_uses_updated_parseable_library_index() {
-        let base = normalize_path(std::env::temp_dir().join(format!(
+        let base = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-updated-library-index-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         let root = base.join("project");
-        let libraries = base.join("libraries");
         std::fs::create_dir_all(&root).unwrap();
+        let libraries = base.join("libraries");
         std::fs::create_dir_all(libraries.join("shared")).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"app\"\n").unwrap();
         let main_path = root.join("main.ond");
@@ -1589,17 +1587,14 @@ mod tests {
 
     #[test]
     fn package_member_completion_uses_cached_index_when_new_file_is_unindexed() {
-        let base = normalize_path(std::env::temp_dir().join(format!(
+        let base = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-unindexed-file-library-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         let root = base.join("project");
-        let libraries = base.join("libraries");
         std::fs::create_dir_all(&root).unwrap();
+        let libraries = base.join("libraries");
         std::fs::create_dir_all(libraries.join("shared")).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"app\"\n").unwrap();
         let main1_path = root.join("main1.ond");
@@ -1657,14 +1652,11 @@ mod tests {
 
     #[test]
     fn member_completion_returns_only_fields_for_struct_values_and_pointers() {
-        let root = normalize_path(std::env::temp_dir().join(format!(
+        let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-struct-members-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"members\"\n").unwrap();
         let path = root.join("main.ond");
@@ -1697,14 +1689,11 @@ mod tests {
 
     #[test]
     fn member_completion_includes_implicitly_convertible_receiver_methods() {
-        let root = normalize_path(std::env::temp_dir().join(format!(
+        let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-method-members-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"methods\"\n").unwrap();
         let path = root.join("main.ond");
@@ -1750,14 +1739,11 @@ mod tests {
                 ("pp.", false, true, false),
                 ("make().", true, false, true),
             ] {
-                let root = normalize_path(std::env::temp_dir().join(format!(
+                let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
                     "ond-lsp-address-of-members-{}-{}-{project_mode}",
                     std::process::id(),
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_nanos()
-                )));
+                    next_temp_root_id()
+                ))));
                 std::fs::create_dir_all(&root).unwrap();
                 if project_mode {
                     std::fs::write(root.join("ond.toml"), "[project]\nname=\"members\"\n").unwrap();
@@ -1804,14 +1790,11 @@ mod tests {
     #[test]
     fn named_pointer_alias_completes_one_level_methods_in_both_modes() {
         for project_mode in [true, false] {
-            let root = normalize_path(std::env::temp_dir().join(format!(
+            let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
                 "ond-lsp-named-pointer-methods-{}-{}-{project_mode}",
                 std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos()
-            )));
+                next_temp_root_id()
+            ))));
             std::fs::create_dir_all(&root).unwrap();
             if project_mode {
                 std::fs::write(root.join("ond.toml"), "[project]\nname=\"members\"\n").unwrap();
@@ -1892,14 +1875,11 @@ mod tests {
 
     #[test]
     fn imported_generic_named_pointer_keeps_type_argument_package() {
-        let root = normalize_path(std::env::temp_dir().join(format!(
+        let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-imported-generic-pointer-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         std::fs::create_dir_all(root.join("runtime")).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"members\"\n").unwrap();
         std::fs::write(
@@ -1953,14 +1933,11 @@ mod tests {
     #[test]
     fn named_pointer_alias_does_not_complete_through_two_pointer_levels() {
         for project_mode in [true, false] {
-            let root = normalize_path(std::env::temp_dir().join(format!(
+            let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
                 "ond-lsp-pointer-alias-members-{}-{}-{project_mode}",
                 std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos()
-            )));
+                next_temp_root_id()
+            ))));
             std::fs::create_dir_all(&root).unwrap();
             if project_mode {
                 std::fs::write(root.join("ond.toml"), "[project]\nname=\"members\"\n").unwrap();
@@ -1991,14 +1968,11 @@ mod tests {
     #[test]
     fn deep_address_of_local_inference_returns_completion_in_both_modes() {
         for project_mode in [true, false] {
-            let root = normalize_path(std::env::temp_dir().join(format!(
+            let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
                 "ond-lsp-deep-address-of-{}-{}-{project_mode}",
                 std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos()
-            )));
+                next_temp_root_id()
+            ))));
             std::fs::create_dir_all(&root).unwrap();
             if project_mode {
                 std::fs::write(root.join("ond.toml"), "[project]\nname=\"deep\"\n").unwrap();
@@ -2036,14 +2010,11 @@ mod tests {
 
     #[test]
     fn generic_struct_completion_uses_applied_type_arguments() {
-        let root = normalize_path(std::env::temp_dir().join(format!(
+        let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-generic-struct-members-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"methods\"\n").unwrap();
         let path = root.join("main.ond");
@@ -2073,14 +2044,11 @@ mod tests {
 
     #[test]
     fn member_completion_includes_private_generic_fields_and_methods_in_same_package() {
-        let root = normalize_path(std::env::temp_dir().join(format!(
+        let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-private-generic-members-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"members\"\n").unwrap();
         let path = root.join("main.ond");
@@ -2142,14 +2110,11 @@ mod tests {
 
     #[test]
     fn member_completion_infers_explicit_generic_function_result() {
-        let root = normalize_path(std::env::temp_dir().join(format!(
+        let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-generic-call-result-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"members\"\n").unwrap();
         let path = root.join("main.ond");
@@ -2187,14 +2152,11 @@ mod tests {
 
     #[test]
     fn single_file_member_completion_infers_explicit_generic_function_result() {
-        let root = normalize_path(std::env::temp_dir().join(format!(
+        let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-single-file-generic-call-result-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("main.ond");
         let source = "package main\ntype List[T] struct { length: u32; first: T }\nfunc (list: *List[T]) push(value: T) {}\nfunc NewList[T](length: u32, capacity: u32) -> *List[T] { return new(List[T]) }\nfunc f() { l := NewList[u32](1, 1); l. }\n";
@@ -2220,14 +2182,11 @@ mod tests {
 
     #[test]
     fn method_receiver_and_operator_rhs_keep_local_and_member_completion() {
-        let root = normalize_path(std::env::temp_dir().join(format!(
+        let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-receiver-completion-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"receiver\"\n").unwrap();
         let path = root.join("main.ond");
@@ -2337,14 +2296,11 @@ mod tests {
 
     #[test]
     fn operator_parameters_support_local_and_member_completion() {
-        let root = normalize_path(std::env::temp_dir().join(format!(
+        let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-operator-parameter-completion-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"operators\"\n").unwrap();
         let path = root.join("main.ond");
@@ -2418,14 +2374,11 @@ mod tests {
 
     #[test]
     fn member_completion_chains_from_generic_function_results() {
-        let root = normalize_path(std::env::temp_dir().join(format!(
+        let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-generic-result-chain-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"chains\"\n").unwrap();
         let path = root.join("main.ond");
@@ -2451,14 +2404,11 @@ mod tests {
 
     #[test]
     fn member_completion_chains_from_implicitly_dereferenced_generic_method_results() {
-        let root = normalize_path(std::env::temp_dir().join(format!(
+        let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-generic-method-result-chain-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"chains\"\n").unwrap();
         let path = root.join("main.ond");
@@ -2484,14 +2434,11 @@ mod tests {
 
     #[test]
     fn member_completion_recovers_while_assignment_target_is_incomplete() {
-        let root = normalize_path(std::env::temp_dir().join(format!(
+        let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-incomplete-assignment-target-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"members\"\n").unwrap();
         let path = root.join("main.ond");
@@ -2541,14 +2488,11 @@ mod tests {
 
     #[test]
     fn member_completion_resolves_external_struct_types_and_results() {
-        let root = normalize_path(std::env::temp_dir().join(format!(
+        let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-external-struct-members-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         std::fs::create_dir_all(root.join("shared")).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"members\"\n").unwrap();
         std::fs::write(
@@ -2603,14 +2547,11 @@ mod tests {
 
     #[test]
     fn member_completion_resolves_methods_from_imported_function_parameter_types() {
-        let root = normalize_path(std::env::temp_dir().join(format!(
+        let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-imported-parameter-methods-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         std::fs::create_dir_all(root.join("shared")).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"members\"\n").unwrap();
         std::fs::write(
@@ -2657,14 +2598,11 @@ mod tests {
 
     #[test]
     fn member_completion_does_not_fall_back_to_unrelated_candidates() {
-        let root = normalize_path(std::env::temp_dir().join(format!(
+        let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-filtered-members-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         std::fs::create_dir_all(root.join("shared")).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"filtered\"\n").unwrap();
         std::fs::write(
@@ -2694,14 +2632,11 @@ mod tests {
 
     #[test]
     fn import_path_completion_includes_project_and_library_packages() {
-        let base = normalize_path(std::env::temp_dir().join(format!(
+        let base = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-import-paths-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         let root = base.join("project");
         let libraries = base.join("libraries");
         std::fs::create_dir_all(root.join("tools/diag")).unwrap();
@@ -2746,14 +2681,11 @@ mod tests {
 
     #[test]
     fn symbol_index_survives_an_incomplete_edit() {
-        let root = normalize_path(std::env::temp_dir().join(format!(
+        let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-symbol-index-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"index\"\n").unwrap();
         let path = root.join("main.ond");
@@ -2798,17 +2730,14 @@ mod tests {
 
     #[test]
     fn project_loader_includes_imported_ond_path_packages() {
-        let base = normalize_path(std::env::temp_dir().join(format!(
+        let base = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-libraries-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         let root = base.join("project");
-        let libraries = base.join("libraries");
         std::fs::create_dir_all(&root).unwrap();
+        let libraries = base.join("libraries");
         std::fs::create_dir_all(libraries.join("shared")).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"lsp\"\n").unwrap();
         std::fs::write(
@@ -2840,17 +2769,14 @@ mod tests {
 
     #[test]
     fn indexed_import_members_include_functions_constants_and_types() {
-        let base = normalize_path(std::env::temp_dir().join(format!(
+        let base = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-indexed-imports-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         let root = base.join("project");
-        let libraries = base.join("libraries");
         std::fs::create_dir_all(&root).unwrap();
+        let libraries = base.join("libraries");
         std::fs::create_dir_all(libraries.join("shared")).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"lsp\"\n").unwrap();
         let path = root.join("main.ond");
@@ -2895,14 +2821,11 @@ mod tests {
 
     #[test]
     fn imports_remain_completable_when_an_unrelated_package_fails_to_parse() {
-        let root = normalize_path(std::env::temp_dir().join(format!(
+        let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-imports-with-parse-error-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         std::fs::create_dir_all(root.join("collection/span")).unwrap();
         std::fs::create_dir_all(root.join("managed/string")).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"standard\"\n").unwrap();
@@ -3268,10 +3191,11 @@ mod tests {
 
     #[test]
     fn validation_does_not_apply_target_frame_limits() {
-        let root = normalize_path(std::env::temp_dir().join(format!(
-            "ond-lsp-core-{}-{}", std::process::id(),
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
-        )));
+        let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
+            "ond-lsp-core-{}-{}",
+            std::process::id(),
+            next_temp_root_id()
+        ))));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"lsp\"\n").unwrap();
         let source = "package main\nfunc main() { var buffer:[536870912]u32 }\n";
@@ -3294,14 +3218,11 @@ mod tests {
 
     #[test]
     fn validation_reports_type_and_return_count_errors() {
-        let root = normalize_path(std::env::temp_dir().join(format!(
+        let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-semantic-errors-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"errors\"\n").unwrap();
         let source = "package main\nfunc broken() { var value: i32 = true; }\nfunc main() {}\n";
@@ -3341,14 +3262,11 @@ mod tests {
 
     #[test]
     fn project_root_in_library_roots_does_not_disable_diagnostics() {
-        let root = normalize_path(std::env::temp_dir().join(format!(
+        let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-self-root-diagnostics-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("ond.toml"), "[project]\nname=\"errors\"\n").unwrap();
         let source = "package main\nfunc main() { var value: i32 = true; }\n";
@@ -3668,14 +3586,11 @@ mod tests {
 
     #[test]
     fn rename_uses_open_buffers_and_edits_all_project_files() {
-        let root = normalize_path(std::env::temp_dir().join(format!(
+        let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-rename-project-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(
             root.join("ond.toml"),
@@ -3711,17 +3626,14 @@ mod tests {
 
     #[test]
     fn project_loading_errors_are_published_as_diagnostics() {
-        let base = normalize_path(std::env::temp_dir().join(format!(
+        let base = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-load-error-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         let root = base.join("project");
-        let dependency = base.join("dependency");
         std::fs::create_dir_all(&root).unwrap();
+        let dependency = base.join("dependency");
         std::fs::create_dir_all(&dependency).unwrap();
         std::fs::write(
             root.join("ond.toml"),
@@ -3844,14 +3756,11 @@ mod tests {
 
     #[test]
     fn library_only_project_reports_return_errors_in_subpackages() {
-        let root = normalize_path(std::env::temp_dir().join(format!(
+        let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-library-return-errors-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         let package = root.join("deflate");
         let broken_package = root.join("zlib");
         std::fs::create_dir_all(&package).unwrap();
@@ -3879,14 +3788,11 @@ mod tests {
 
     #[test]
     fn library_only_project_reports_defined_type_comparison_mismatch() {
-        let root = normalize_path(std::env::temp_dir().join(format!(
+        let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
             "ond-lsp-library-defined-type-comparison-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )));
+            next_temp_root_id()
+        ))));
         let package = root.join("deflate");
         let imported_package = root.join("blob");
         std::fs::create_dir_all(&package).unwrap();

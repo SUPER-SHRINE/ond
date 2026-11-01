@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - main
-      - develop
-      - feature/zensical
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -14,6 +11,7 @@ permissions:
 
 jobs:
   build:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -36,17 +34,12 @@ jobs:
           pwsh -NoProfile -File tools/build-docs.ps1
           if ($LASTEXITCODE -ne 0) { throw "Docs site build failed." }
       - name: Upload Pages artifact
-        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v4
         with:
           path: target/website/public
 
   deploy:
-    if: >-
-      github.event_name != 'pull_request' &&
-      (github.ref == 'refs/heads/main' ||
-       github.ref == 'refs/heads/develop' ||
-       github.ref == 'refs/heads/feature/zensical')
+    if: github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 10

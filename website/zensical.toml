@@ -10,6 +10,7 @@ strict = true
 nav = [
   { "Home" = "index.md" },
   { "Release" = [
+    "docs/releases/0.4.0-notes.md",
     "docs/releases/0.3.0-notes.md",
     "docs/releases/0.2.0-notes.md",
     "docs/releases/0.1.3-notes.md",
@@ -146,14 +147,12 @@ nav = [
       ] },
       { "低水準" = [ { "asm（Kagura v1）" = "docs/manual/language-tour/low-level/asm.md" } ] },
     ] },
-    { "実用チュートリアル" = [
-      "docs/manual/tutorials/projects-and-packages.md",
-      "docs/manual/tutorials/libraries-and-dependencies.md",
-      "docs/manual/tutorials/roles.md",
-      "docs/manual/tutorials/diagnostics.md",
-    ] },
     { "リファレンス" = [
       "docs/manual/reference/manifest.md",
+    ] },
+    { "ツール" = [
+      "docs/manual/tools/unit.md",
+      "docs/manual/tools/language-server.md",
     ] },
   ] },
   { "Specs" = [
@@ -176,6 +175,10 @@ nav = [
       "specs/ond/build/roles.md",
       "specs/ond/build/commands.md",
       "specs/ond/build/cache.md",
+    ] },
+    { "Tools" = [
+      "specs/ond/tools/unit.md",
+      "specs/ond/tools/language-server.md",
     ] },
     { "Kagura v1 target" = [
       "specs/ond/targets/kagura-v1/README.md",
