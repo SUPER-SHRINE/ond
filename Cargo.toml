@@ -6,6 +6,7 @@ members = [
     "crates/compiler-core",
     "crates/compiler",
     "crates/language-server",
+    "crates/unit",
 ]
 resolver = "3"
 
