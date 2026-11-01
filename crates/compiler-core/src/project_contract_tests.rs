@@ -89,6 +89,54 @@ fn every_manifest_needs_a_valid_ond_project_name() {
 }
 
 #[test]
+fn direct_project_loading_uses_manifest_source_ignores() {
+    let fixture = Fixture::new("game");
+    fixture.write("target/generated.ond", "package generated\n");
+    fixture.write(".git/generated.ond", "package generated\n");
+    fixture.write(".ond/generated.ond", "invalid source");
+    fixture.write(".idea/notes.ond", "package notes\n");
+
+    fixture.write(
+        "ond.toml",
+        "[project]\nname = \"game\"\n[resolve]\nignore = []\n",
+    );
+    let included = load_project(fixture.root()).unwrap();
+    assert_eq!(
+        included
+            .packages
+            .iter()
+            .map(|package| package.logical_path.as_str())
+            .collect::<Vec<_>>(),
+        ["game/.git", "game/.idea", "game/target"]
+    );
+
+    fixture.write("ond.toml", "[project]\nname = \"game\"\n");
+    let default = load_project(fixture.root()).unwrap();
+    assert_eq!(
+        default
+            .packages
+            .iter()
+            .map(|package| package.logical_path.as_str())
+            .collect::<Vec<_>>(),
+        ["game/.idea"]
+    );
+
+    fixture.write(
+        "ond.toml",
+        "[project]\nname = \"game\"\n[resolve]\nignore = [\"target\"]\n",
+    );
+    let explicitly_ignored = load_project(fixture.root()).unwrap();
+    assert_eq!(
+        explicitly_ignored
+            .packages
+            .iter()
+            .map(|package| package.logical_path.as_str())
+            .collect::<Vec<_>>(),
+        ["game/.git", "game/.idea"]
+    );
+}
+
+#[test]
 fn named_library_without_main_can_be_validated_for_editing() {
     let fixture = Fixture::new("shared");
     fixture.write(

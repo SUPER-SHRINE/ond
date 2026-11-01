@@ -814,6 +814,112 @@ fn relative_project_requests_keep_ignore_paths_canonical() {
 }
 
 #[test]
+fn source_discovery_uses_manifest_ignore_for_root_sources() {
+    let f = Fixture::new();
+    f.put(
+        "target/generated.ond",
+        "package target\nfunc Value() -> i32 { return 42 }\n",
+    );
+    f.put(".ond/generated.ond", "invalid source");
+    f.put("nested/ond.toml", "[project]\nname = \"nested\"\n");
+    f.put("nested/ignored.ond", "invalid source");
+
+    f.put(
+        "ond.toml",
+        "[project]\nname = \"test\"\n[resolve]\nignore = []\n",
+    );
+    f.put(
+        "main.ond",
+        "package main\nimport \"test/target\"\nfunc main() { var _ = target.Value() }\n",
+    );
+    let included = compile(f.request(), "test-compiler").unwrap();
+    assert!(
+        included
+            .manifest
+            .packages
+            .iter()
+            .any(|package| package.package == "test/target")
+    );
+    assert!(
+        !included
+            .manifest
+            .packages
+            .iter()
+            .any(|package| package.package.contains(".ond"))
+    );
+    assert!(
+        !included
+            .manifest
+            .packages
+            .iter()
+            .any(|package| package.package.contains("nested"))
+    );
+
+    f.put("ond.toml", "[project]\nname = \"test\"\n");
+    f.put("main.ond", "package main\nfunc main() {}\n");
+    let default = compile(f.request(), "test-compiler").unwrap();
+    assert!(
+        !default
+            .manifest
+            .packages
+            .iter()
+            .any(|package| package.package == "test/target")
+    );
+
+    f.put(
+        "ond.toml",
+        "[project]\nname = \"test\"\n[resolve]\nignore = [\"target\"]\n",
+    );
+    let ignored = compile(f.request(), "test-compiler").unwrap();
+    assert!(
+        !ignored
+            .manifest
+            .packages
+            .iter()
+            .any(|package| package.package == "test/target")
+    );
+}
+
+#[test]
+fn dependency_source_discovery_uses_its_own_manifest_ignore() {
+    let f = Fixture::new();
+    f.put(
+        "ond.toml",
+        "[project]\nname = \"test\"\n[dependencies]\nlib = { path = \"library\" }\n",
+    );
+    f.put(
+        "main.ond",
+        "package main\nimport \"shared/target\"\nfunc main() { var _ = target.Value() }\n",
+    );
+    f.put(
+        "library/ond.toml",
+        "[project]\nname = \"shared\"\n[resolve]\nignore = []\n",
+    );
+    f.put(
+        "library/target/target.ond",
+        "package target\nfunc Value() -> i32 { return 42 }\n",
+    );
+
+    let built = compile(f.request(), "test-compiler").unwrap();
+    assert!(
+        built
+            .manifest
+            .packages
+            .iter()
+            .any(|package| package.package == "shared/target")
+    );
+
+    f.put(
+        "library/ond.toml",
+        "[project]\nname = \"shared\"\n[resolve]\nignore = [\"target\"]\n",
+    );
+    assert!(compile(f.request(), "test-compiler").is_err());
+
+    f.put("library/ond.toml", "[project]\nname = \"shared\"\n");
+    assert!(compile(f.request(), "test-compiler").is_err());
+}
+
+#[test]
 fn inline_asm_generic_artifacts_link_and_cache_body_changes() {
     let f = Fixture::new();
     f.put("main.ond", "package main\nimport \"test/shared\"\nfunc main(){var value=shared.Increment[u32](1);_=value}\n");
