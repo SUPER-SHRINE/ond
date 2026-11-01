@@ -33,8 +33,8 @@ japanese.AddToPath=OndをシステムのPATHに追加する
 english.AddToPath=Add Ond to the system PATH
 japanese.PathInvalid=PATHに追加する配置先にはセミコロン、二重引用符、パーセント記号を使用できません。
 english.PathInvalid=An installation path added to PATH cannot contain semicolons, double quotes, or percent signs.
-japanese.ClosePreviousApps=実行中のOnd、Ond Language Server、およびそれらを使用するエディターを閉じてから再実行してください。既存のインストールは変更していません。
-english.ClosePreviousApps=Close Ond, Ond Language Server, and any editors using them, then retry. The existing installation has not been changed.
+japanese.ClosePreviousApps=実行中のOnd、Ond Language Server、Ond unit test runner、およびそれらを使用するエディターを閉じてから再実行してください。既存のインストールは変更していません。
+english.ClosePreviousApps=Close Ond, Ond Language Server, Ond unit test runner, and any editors using them, then retry. The existing installation has not been changed.
 
 [Tasks]
 Name: "systempath"; Description: "{cm:AddToPath}"
@@ -113,7 +113,7 @@ end;
 
 function HasInstallationFiles(Directory: String): Boolean;
 begin
-  Result := FileExists(Directory + '\ond.exe') or FileExists(Directory + '\ond-lsp.exe') or
+  Result := FileExists(Directory + '\ond.exe') or FileExists(Directory + '\ond-lsp.exe') or FileExists(Directory + '\ond-unit.exe') or
     FileExists(Directory + '\unins000.exe');
 end;
 
@@ -171,7 +171,7 @@ begin
     Result := 'Invalid registered uninstaller path.'; exit;
   end;
   { PrepareToInstall runs before Inno Setup checks for applications using files. }
-  if not CanReplaceBinary(Location + '\ond.exe') or not CanReplaceBinary(Location + '\ond-lsp.exe') then begin
+  if not CanReplaceBinary(Location + '\ond.exe') or not CanReplaceBinary(Location + '\ond-lsp.exe') or not CanReplaceBinary(Location + '\ond-unit.exe') then begin
     Result := CustomMessage('ClosePreviousApps'); exit;
   end;
   PreviousUninstallError := 'The existing uninstaller did not finish cleanly. Resolve removal or restart before retrying.';
