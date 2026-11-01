@@ -58,6 +58,7 @@ sample/ond-unit.toml:
 
 ```toml
 version = 1
+# work_dir = ".ond/target/ond-unit"
 
 [project]
 path = "."
@@ -91,6 +92,8 @@ ond-unit
 
 ケースごとの状態と集計が表示されます。\
 全対象ケースが PASS なら終了コードは `0`、FAIL または STEP_LIMIT があれば `1`、ERROR があれば `2` です。
+
+作業ディレクトリの保存先は[作業ディレクトリを指定する](#作業ディレクトリを指定する)で変更できます。
 
 ## RAM の初期値と期待値
 
@@ -454,7 +457,7 @@ child file の先頭に書いた package は、そのファイル内の全 case 
 実行順は root cases の後に case_files の指定順、その中では各配列の順です。\
 case 名はすべての file を通じて一意にしてください。\
 CLI で選択しても登録順と case index は変わりません。\
-相対 project.path と case_files path は root 設定 file のある directory を基準に解決します。\
+相対 project.path、work_dir、case_files path は root 設定 file のある directory を基準に解決します。\
 case_files は literal path の列で、glob pattern は展開されません。\
 この設定は sample directory で ond-unit を実行すると使えます。
 
@@ -526,11 +529,51 @@ ond-unit ond-unit.toml --fail-fast
 終了コード `0` は全対象 case が PASS、`1` は ERROR がなく FAIL または STEP_LIMIT がある場合、`2` は ERROR がある場合です。\
 終了コードを使って CI や shell script から結果を判定できます。
 
+## 作業ディレクトリを指定する
+
+`ond-unit` は root 設定の `work_dir` に runner 用 project を生成し、通常の Ond compile cache を使います。\
+省略値は `.ond/target/ond-unit` で、相対 path と省略値の基準は root 設定 file のある directory です。\
+`project.path` の対象 project を別の directory に置いても、この基準は変わりません。\
+絶対 path も指定できます。\
+Windows では `C:/work/unit` のようにドライブの root を含めて指定してください。\
+`C:work/unit` のようなドライブ相対 path は設定 ERROR になります。
+
+たとえば `sample/ond-unit.toml` と対象 project の `sample/checks/ond.toml` を分ける場合は、対象 project の manifest を次のように指定します。
+
+```toml
+[project]
+name = "checks"
+```
+
+前掲の `Check` 関数を `sample/checks/cases/check.ond` に保存し、root 設定を次のように指定します。
+
+```toml
+version = 1
+work_dir = "build/unit"
+
+[project]
+path = "checks"
+
+[vm]
+ram_size = 65536
+stack_size = 4096
+
+[[cases]]
+name = "check"
+package = "checks/cases"
+function = "Check"
+ram_initial = [{ address = 0x8000, bytes = [42, 0, 0, 0] }]
+```
+
+この設定では `sample/build/unit/` に runner を保存します。\
+対象 project の source と `sample/checks/ond.toml` はそのまま使われます。\
+作業用 directory には、既存 project や source の入力と重ならない場所を指定してください。\
+設定の詳細は[実行設定の schema](../../../specs/ond/tools/unit.md#111-root-と共通環境)を参照できます。
+
 ## 生成物
 
-`ond-unit` は対象 project の `.ond/target/ond-unit/` に runner 用 project を生成し、通常の Ond compile cache を使います。\
 ビルドの出力先は、生成 project 自身の `ond.toml` にある通常の compile / link 設定で決まります。\
-入力ファイルとビルド成果物は、次のように分かれます。
+省略値での入力ファイルとビルド成果物は、root 設定 file のある directory から見ると次の配置です。
 
 ```text
 .ond/target/ond-unit/

@@ -69,7 +69,7 @@ fn normal_compiler_cli_contract() {
     let ram = case("ram", "Ram")
         + "ram_initial=[{address=0x8000,bytes=[0x78,0x56,0x34,0x12]}]\nram_expected=[{address=0x8000,bytes=[0xef,0xcd,0xab,0x90]}]\n";
     f.config(&(first.clone() + &fault + &stub + &mock + &ram));
-    let generated = f.root.join("checks/.ond/target/ond-unit");
+    let generated = f.root.join(".ond/target/ond-unit");
     let assert_generated = || {
         for name in ["ond.toml", "main.ond", "ond.lock"] {
             assert!(generated.join(name).is_file(), "missing generated {name}");
@@ -191,7 +191,7 @@ fn role_selection_and_final_target_contract() {
     let target_source = f.root.join("checks/cases/api.ond");
     fs::write(&target_manifest, manifest).unwrap();
     fs::write(&target_source, &source).unwrap();
-    let generated = f.root.join("checks/.ond/target/ond-unit");
+    let generated = f.root.join(".ond/target/ond-unit");
     // 同じ生成project/cacheで名前付きroleと未指定構成を切り替える。
     for (role, value) in [
         (Some("'Test'"), 2),
@@ -316,7 +316,7 @@ fn locked_git_dependency_namespace_collisions_use_generated_cache() {
         "{:x}",
         Sha256::digest(serde_json::to_vec(&(url, "HEAD", &commit)).unwrap())
     );
-    let generated = f.root.join("checks/.ond/target/ond-unit");
+    let generated = f.root.join(".ond/target/ond-unit");
     let cache = generated.join(".ond/dependencies");
     fs::create_dir_all(&cache).unwrap();
     fs::rename(&seed, cache.join(format!("git-{}", &key[..12]))).unwrap();
@@ -357,7 +357,8 @@ fn generated_project_back_edge_returns_compiler_error() {
     let f = Fixture::new();
     f.config(&case("back-edge", "Pass"));
     assert!(f.run(&[], 0).contains("back-edge: PASS"));
-    let manifest = "[project]\nname='checks'\n[dependencies]\nback={path='.ond/target/ond-unit'}\n";
+    let manifest =
+        "[project]\nname='checks'\n[dependencies]\nback={path='../.ond/target/ond-unit'}\n";
     fs::write(f.root.join("checks/ond.toml"), manifest).unwrap();
     let text = f.run(&[], 2);
     assert!(text.contains("ondビルド失敗"), "{text}");
@@ -366,10 +367,9 @@ fn generated_project_back_edge_returns_compiler_error() {
         fs::read_to_string(f.root.join("checks/ond.toml")).unwrap(),
         manifest
     );
-    let generated: toml::Value = toml::from_str(
-        &fs::read_to_string(f.root.join("checks/.ond/target/ond-unit/ond.toml")).unwrap(),
-    )
-    .unwrap();
+    let generated: toml::Value =
+        toml::from_str(&fs::read_to_string(f.root.join(".ond/target/ond-unit/ond.toml")).unwrap())
+            .unwrap();
     assert_eq!(
         generated["project"]["name"].as_str(),
         Some("ond_unit_generated")
@@ -414,7 +414,7 @@ fn case_files_share_environment_and_keep_filtered_indices() {
     assert!(text.find("inline: PASS").unwrap() < text.find("second: PASS").unwrap());
     assert!(text.find("second: PASS").unwrap() < text.find("fault: PASS").unwrap());
     assert!(f.run(&["--case", "second"], 0).contains("second: PASS"));
-    let generated = f.root.join("checks/.ond/target/ond-unit/main.ond");
+    let generated = f.root.join(".ond/target/ond-unit/main.ond");
     let before = fs::read(&generated).unwrap();
     for child in [
         observations.clone() + "\n[[cases]]\nname='invalid'\nfunction='Pass'\nmax_steps=0\n",
@@ -431,4 +431,251 @@ fn case_files_share_environment_and_keep_filtered_indices() {
     }
     fs::remove_file(f.root.join("parts/observations.toml")).unwrap();
     assert!(!f.run(&["--case", "second"], 2).contains("steps="));
+}
+
+#[test]
+#[ignore = "通常のond executableをPATHへ配置して実行する"]
+fn work_dir_uses_root_config_directory_from_another_current_directory() {
+    let f = Fixture::new();
+    let cases = case("pass", "Pass")
+        + &case("fault", "Fault")
+        + "expect_fault={ond_kind='ExplicitTrap',function='checks/cases.Fault'}\n";
+    let absolute = fs::canonicalize(&f.root).unwrap().join("absolute-runner");
+    let ordinary_absolute = std::path::absolute(f.root.join("ordinary-absolute-runner")).unwrap();
+    #[cfg(windows)]
+    assert!(!ordinary_absolute.to_str().unwrap().starts_with(r"\\?\"));
+    let parent_relative = format!(
+        "../{}-runner",
+        f.root.file_name().unwrap().to_str().unwrap()
+    );
+    for work_dir in [
+        None,
+        Some(".ond/target/ond-unit"),
+        Some("custom/runner"),
+        Some(parent_relative.as_str()),
+        Some(ordinary_absolute.to_str().unwrap()),
+        Some(absolute.to_str().unwrap()),
+    ] {
+        f.config(&cases);
+        let config_path = f.root.join("ond-unit.toml");
+        if let Some(work_dir) = work_dir {
+            let text = fs::read_to_string(&config_path).unwrap().replace(
+                "version=1",
+                &format!(
+                    "version=1\nwork_dir={} ",
+                    toml::Value::String(work_dir.into())
+                ),
+            );
+            fs::write(&config_path, text).unwrap();
+        }
+        let generated = f.root.join(work_dir.unwrap_or(".ond/target/ond-unit"));
+        for _ in 0..2 {
+            let output = Command::new(env!("CARGO_BIN_EXE_ond-unit"))
+                .current_dir(f.root.join("checks/cases"))
+                .arg(&config_path)
+                .output()
+                .unwrap();
+            let text = format!(
+                "{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(output.status.success(), "{work_dir:?}: {text}");
+            assert!(
+                text.contains("PASS=2 FAIL=0 STEP_LIMIT=0 ERROR=0"),
+                "{text}"
+            );
+            for file in [
+                "ond.toml",
+                "main.ond",
+                "ond.lock",
+                ".ond/target/build.ondbuild",
+                ".ond/target/a.bin",
+                ".ond/target/a.onddebug",
+            ] {
+                assert!(
+                    generated.join(file).is_file(),
+                    "missing {}",
+                    generated.join(file).display()
+                );
+            }
+            assert!(generated.join(".ond/target/ond-cache").is_dir());
+            assert!(!f.root.join("checks/.ond/target/ond-unit").exists());
+        }
+    }
+    // 同じ作業領域を別の対象projectへ切り替えても、生成物を再利用できる。
+    fs::create_dir_all(f.root.join("other-checks/cases")).unwrap();
+    fs::copy(
+        f.root.join("checks/ond.toml"),
+        f.root.join("other-checks/ond.toml"),
+    )
+    .unwrap();
+    fs::copy(
+        f.root.join("checks/cases/api.ond"),
+        f.root.join("other-checks/cases/api.ond"),
+    )
+    .unwrap();
+    let config_path = f.root.join("ond-unit.toml");
+    let text = fs::read_to_string(&config_path)
+        .unwrap()
+        .replace("path='checks'", "path='other-checks'");
+    fs::write(&config_path, text).unwrap();
+    assert!(f.run(&[], 0).contains("PASS=2"));
+    let manifest: toml::Value =
+        toml::from_str(&fs::read_to_string(absolute.join("ond.toml")).unwrap()).unwrap();
+    assert_eq!(
+        manifest["dependencies"]["subject"]["path"].as_str(),
+        fs::canonicalize(f.root.join("other-checks"))
+            .unwrap()
+            .to_str()
+    );
+    assert_eq!(
+        fs::read_to_string(f.root.join("checks/ond.toml")).unwrap(),
+        include_str!("fixtures/checks/ond.toml")
+    );
+    assert_eq!(
+        fs::read_to_string(f.root.join("checks/cases/api.ond")).unwrap(),
+        include_str!("fixtures/checks/cases/api.ond")
+    );
+}
+
+#[test]
+#[ignore = "通常のond executableをPATHへ配置して実行する"]
+fn work_dir_input_collisions_leave_existing_inputs_unchanged() {
+    let f = Fixture::new();
+    fs::create_dir(f.root.join("other")).unwrap();
+    fs::write(
+        f.root.join("other/ond.toml"),
+        "[project]\nname='other'\nfinal=true\n",
+    )
+    .unwrap();
+    fs::write(
+        f.root.join("other/main.ond"),
+        "package other\nfunc main() {}\n",
+    )
+    .unwrap();
+    let inputs = [
+        "checks/ond.toml",
+        "checks/cases/api.ond",
+        "other/ond.toml",
+        "other/main.ond",
+    ];
+    let before: Vec<_> = inputs
+        .iter()
+        .map(|path| fs::read(f.root.join(path)).unwrap())
+        .collect();
+    for work_dir in ["checks", "checks/cases", "other"] {
+        f.config(&case("pass", "Pass"));
+        let config_path = f.root.join("ond-unit.toml");
+        let text = fs::read_to_string(&config_path)
+            .unwrap()
+            .replace("version=1", &format!("version=1\nwork_dir='{work_dir}'"));
+        fs::write(&config_path, &text).unwrap();
+        let result = f.run(&[], 2);
+        assert!(result.contains("入力と重なっています"), "{result}");
+        assert!(!result.contains("steps="), "{result}");
+        assert_eq!(fs::read_to_string(&config_path).unwrap(), text);
+        for (path, bytes) in inputs.iter().zip(&before) {
+            assert_eq!(&fs::read(f.root.join(path)).unwrap(), bytes);
+        }
+        assert!(!f.root.join(work_dir).join(".ond").exists());
+    }
+    assert!(!f.root.join("checks/cases/ond.toml").exists());
+}
+
+#[cfg(windows)]
+#[test]
+#[ignore = "通常のond executableをPATHへ配置して実行する"]
+fn work_dir_preserves_windows_case_aliases_of_existing_inputs() {
+    for (name, bytes) in [
+        ("OND.TOML", b"[project]\nname='original'\n".as_slice()),
+        ("MAIN.OND", b"package original\nfunc main() {}\n".as_slice()),
+        ("OND.LOCK", b"version=2\npackage=[]\n".as_slice()),
+    ] {
+        let f = Fixture::new();
+        let directory = f.root.join("foreign");
+        fs::create_dir(&directory).unwrap();
+        fs::write(directory.join(name), bytes).unwrap();
+        let manifest = fs::read(f.root.join("checks/ond.toml")).unwrap();
+        let source = fs::read(f.root.join("checks/cases/api.ond")).unwrap();
+        f.config(&case("pass", "Pass"));
+        let config_path = f.root.join("ond-unit.toml");
+        let config = fs::read_to_string(&config_path)
+            .unwrap()
+            .replace("version=1", "version=1\nwork_dir='foreign'");
+        fs::write(&config_path, &config).unwrap();
+        let result = f.run(&[], 2);
+        assert!(result.contains("入力と重なっています"), "{name}: {result}");
+        assert!(!result.contains("steps="), "{result}");
+        assert_eq!(fs::read(directory.join(name)).unwrap(), bytes);
+        let entries: Vec<_> = fs::read_dir(&directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(entries, [std::ffi::OsString::from(name)]);
+        assert_eq!(fs::read_to_string(&config_path).unwrap(), config);
+        assert_eq!(fs::read(f.root.join("checks/ond.toml")).unwrap(), manifest);
+        assert_eq!(
+            fs::read(f.root.join("checks/cases/api.ond")).unwrap(),
+            source
+        );
+        assert!(!f.root.join(".ond").exists());
+        assert!(!f.root.join("checks/.ond").exists());
+    }
+}
+
+#[cfg(windows)]
+#[test]
+#[ignore = "通常のond executableをPATHへ配置して実行する"]
+fn work_dir_rejects_drive_relative_paths_before_creating_files() {
+    let f = Fixture::new();
+    let root = fs::canonicalize(&f.root).unwrap();
+    let drive = match root.components().next().unwrap() {
+        std::path::Component::Prefix(prefix) => match prefix.kind() {
+            std::path::Prefix::Disk(drive) | std::path::Prefix::VerbatimDisk(drive) => {
+                char::from(drive)
+            }
+            _ => panic!("test fixture requires a drive path"),
+        },
+        _ => panic!("test fixture requires a drive path"),
+    };
+    let manifest = fs::read(f.root.join("checks/ond.toml")).unwrap();
+    let source = fs::read(f.root.join("checks/cases/api.ond")).unwrap();
+    for name in ["cwd-one", "cwd-two"] {
+        fs::create_dir(f.root.join(name)).unwrap();
+    }
+    for work_dir in [format!("{drive}:runner"), format!("{drive}:")] {
+        f.config(&case("pass", "Pass"));
+        let config_path = f.root.join("ond-unit.toml");
+        let config = fs::read_to_string(&config_path)
+            .unwrap()
+            .replace("version=1", &format!("version=1\nwork_dir='{work_dir}'"));
+        fs::write(&config_path, &config).unwrap();
+        for name in ["cwd-one", "cwd-two"] {
+            let cwd = f.root.join(name);
+            let output = Command::new(env!("CARGO_BIN_EXE_ond-unit"))
+                .current_dir(&cwd)
+                .arg(&config_path)
+                .output()
+                .unwrap();
+            let result = format!(
+                "{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(output.status.code(), Some(2), "{work_dir}: {result}");
+            assert!(result.contains("work_dirのWindowsドライブ指定"), "{result}");
+            assert!(!result.contains("steps="), "{result}");
+            assert!(fs::read_dir(&cwd).unwrap().next().is_none());
+            assert_eq!(fs::read_to_string(&config_path).unwrap(), config);
+            assert_eq!(fs::read(f.root.join("checks/ond.toml")).unwrap(), manifest);
+            assert_eq!(
+                fs::read(f.root.join("checks/cases/api.ond")).unwrap(),
+                source
+            );
+            assert!(!f.root.join("runner").exists());
+            assert!(!f.root.join(".ond").exists());
+            assert!(!f.root.join("checks/.ond").exists());
+        }
+    }
 }
