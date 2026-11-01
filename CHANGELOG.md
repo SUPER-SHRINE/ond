@@ -11,12 +11,13 @@
 - Kagura向けinline assemblyの`asm`と`asm noreturn`を追加
 - Windows x64 installerを追加
 - Zensicalによるユーザーガイドと仕様サイトを追加
+- `ond-unit`を追加し、Kagura環境でRAM、MMIO、fault、実行上限を判定。releaseとWindows installerに同梱
 
 ### Changed
 
 - `ond link`の実行fileをJSONからONDX binaryへ変更し、startup、ROM/RAM、stack設定に対応
 - compile、link、package cacheの既定出力先を`.ond/target`以下へ変更
-- テスト専用buildを廃止し、テストsourceを通常のOnd sourceとして外部toolから実行する方式へ移行
+- テスト専用buildを廃止し、通常sourceを`ond-unit`などの実行toolが扱う方式へ移行
 
 ### Removed
 

@@ -30,13 +30,9 @@ class Case:
 
 CASES = [
     Case("getting-started/first-program.md"),
-    Case("tutorials/projects-and-packages.md"),
-    Case("tutorials/libraries-and-dependencies.md", "app"),
-    Case("tutorials/roles.md", role="common"),
-    Case("tutorials/roles.md", role="Debug"),
-    Case("tutorials/roles.md", role="Development"),
-    Case("tutorials/diagnostics.md", "broken", failure=True),
-    Case("tutorials/diagnostics.md", "fixed", trap_reason="count must be nonzero"),
+    Case("language-tour/packages/import.md", "app"),
+    Case("language-tour/declarations/variables.md", "broken", failure=True),
+    Case("language-tour/declarations/variables.md", "fixed"),
 ]
 
 
@@ -193,7 +189,15 @@ def main() -> int:
         if generated.exists():
             shutil.rmtree(generated)
         generated.mkdir(parents=True)
-        tour = [Case(path.relative_to(MANUAL).as_posix()) for path in sorted((MANUAL / "language-tour").rglob("*.md"))]
+        tour = [
+            Case(
+                path.relative_to(MANUAL).as_posix(),
+                trap_reason="count must be nonzero"
+                if path.relative_to(MANUAL).as_posix() == "language-tour/control-flow/trap.md"
+                else None,
+            )
+            for path in sorted((MANUAL / "language-tour").rglob("*.md"))
+        ]
         role_article = "language-tour/configuration/roles.md"
         role_cases = [Case(role_article, role="Debug"), Case(role_article, role="Development")]
         cases = [*CASES, *tour, *role_cases]

@@ -25,16 +25,22 @@ pub fn build(config: &Config, config_path: &Path) -> Result<PathBuf, String> {
         return Err("project.pathの対象はfinal=falseのprojectである必要があります".into());
     }
     let directory = prepare_directory(&project)?;
-    for name in [
-        "ond.toml",
-        "main.ond",
-        "ond.lock",
-        "program.ondbuild",
-        "program.bin",
-        "program.onddebug",
-    ] {
+    for name in ["ond.toml", "main.ond", "ond.lock"] {
         let path = directory.join(name);
         check_contained(&path, &directory)?;
+    }
+    let output_directory = prepare_subdirectory(&directory, &[".ond", "target"])?;
+    let compile_output = ".ond/target/build.ondbuild";
+    let link_output = ".ond/target/a.bin";
+    let manifest_path = directory.join(compile_output);
+    let output = directory.join(link_output);
+    for path in [
+        manifest_path.clone(),
+        output.clone(),
+        output.with_extension("onddebug"),
+        output_directory.join("ond-cache"),
+    ] {
+        check_contained(&path, &output_directory)?;
     }
     sync_lock(&project, &directory)?;
     let mut generated = toml::Table::new();
@@ -64,33 +70,31 @@ pub fn build(config: &Config, config_path: &Path) -> Result<PathBuf, String> {
             toml::Value::Table(dependency),
         )])),
     );
+    generated.insert(
+        "compile".into(),
+        toml::Value::Table(toml::Table::from_iter([(
+            "output".into(),
+            toml::Value::String(compile_output.into()),
+        )])),
+    );
     let link = format!(
-        "\n[link]\nstartup = 'external'\nstack-size = {}\n[link.ram]\nbase = 0\nsize = {}\n[link.exit]\nmode = 'jump'\naddress = {}\n",
+        "\n[link]\noutput = '{link_output}'\nstartup = 'external'\nstack-size = {}\n[link.ram]\nbase = 0\nsize = {}\n[link.exit]\nmode = 'jump'\naddress = {}\n",
         config.vm.stack_size,
         config.vm.ram_size - 8,
         config.exit_address()?
     );
     write_changed(&directory.join("main.ond"), source(config).as_bytes())?;
-    let manifest_path = directory.join("program.ondbuild");
-    let output = directory.join("program.bin");
     compile_with_names(&project, &directory, config, |name| {
         generated["project"]["name"] = toml::Value::String(name.to_owned());
         let text = toml::to_string(&generated).map_err(|e| e.to_string())? + &link;
         write_changed(&directory.join("ond.toml"), text.as_bytes())?;
-        run(Command::new("ond")
-            .arg("compile")
-            .arg(&directory)
-            .arg("-o")
-            .arg(&manifest_path))
+        run(Command::new("ond").arg("compile").arg(&directory))
     })?;
     validate_registered_functions(config, &manifest_path)?;
     run(Command::new("ond")
         .arg("link")
-        .arg(&manifest_path)
         .arg("--project")
-        .arg(&directory)
-        .arg("-o")
-        .arg(&output))?;
+        .arg(&directory))?;
     Ok(output)
 }
 fn validate_registered_functions(config: &Config, manifest_path: &Path) -> Result<(), String> {
@@ -231,10 +235,14 @@ fn check_contained(path: &Path, root: &Path) -> Result<Option<PathBuf>, String> 
     }
 }
 fn prepare_directory(project: &Path) -> Result<PathBuf, String> {
-    let target = project.join("target");
-    let directory = target.join("ond-unit");
-    let resolved_target = check_contained(&target, project)?.unwrap_or(target);
-    check_contained(&directory, &resolved_target)?;
+    prepare_subdirectory(project, &[".ond", "target", "ond-unit"])
+}
+fn prepare_subdirectory(root: &Path, components: &[&str]) -> Result<PathBuf, String> {
+    let mut directory = root.to_path_buf();
+    for component in components {
+        let next = directory.join(component);
+        directory = check_contained(&next, &directory)?.unwrap_or(next);
+    }
     fs::create_dir_all(&directory).map_err(|e| format!("生成project作成: {e}"))?;
     fs::canonicalize(&directory).map_err(|e| format!("生成project: {e}"))
 }
@@ -417,7 +425,7 @@ mod tests {
         let config:Config=Config::parse("version=1\n[project]\npath='.'\n[vm]\nram_size=1024\nstack_size=128\n[[cases]]\nname='case'\npackage='ond_unit_generated__/cases'\nfunction='Run'\n", Path::new("ond-unit.toml")).unwrap();
         assert_eq!(
             generated_name(
-                &namespace_names(&root, &root.join("target/ond-unit"), &config).unwrap()
+                &namespace_names(&root, &root.join(".ond/target/ond-unit"), &config).unwrap()
             ),
             "ond_unit_generated___"
         );
@@ -487,7 +495,11 @@ mod tests {
     }
     #[test]
     fn generated_project_back_edges_do_not_retry_compiler_errors() {
-        for back_edge in ["target/ond-unit", "target/ond-unit/../ond-unit", "cached"] {
+        for back_edge in [
+            ".ond/target/ond-unit",
+            ".ond/target/ond-unit/../ond-unit",
+            "cached",
+        ] {
             let project = root("back-edge");
             let directory = prepare_directory(&project).unwrap();
             let dependencies = if back_edge == "cached" {
@@ -531,44 +543,74 @@ mod tests {
     }
     #[cfg(unix)]
     #[test]
-    fn dangling_generated_links_cannot_create_external_sources() {
+    fn generated_links_cannot_create_or_overwrite_external_files() {
         use std::os::unix::fs::symlink;
         let project = root("dangling");
         let outside = root("outside");
         fs::write(project.join("ond.toml"), "[project]\nname='checks'\n").unwrap();
         let directory = prepare_directory(&project).unwrap();
         let config: Config = Config::parse("version=1\n[project]\npath='.'\n[vm]\nram_size=1024\nstack_size=128\n[[cases]]\nname='case'\npackage='checks/cases'\nfunction='Run'\n", Path::new("ond-unit.toml")).unwrap();
+        fs::create_dir_all(directory.join(".ond/target")).unwrap();
         for name in [
             "ond.toml",
             "main.ond",
             "ond.lock",
-            "program.ondbuild",
-            "program.bin",
-            "program.onddebug",
+            ".ond/target/build.ondbuild",
+            ".ond/target/a.bin",
+            ".ond/target/a.onddebug",
         ] {
-            let destination = outside.join(name);
-            let link = directory.join(name);
-            symlink(&destination, &link).unwrap();
-            assert!(build(&config, &project.join("ond-unit.toml")).is_err());
-            assert!(!destination.exists());
-            fs::remove_file(link).unwrap();
+            let destination = outside.join(Path::new(name).file_name().unwrap());
+            for existing in [false, true] {
+                if existing {
+                    fs::write(&destination, b"unchanged").unwrap();
+                }
+                let link = directory.join(name);
+                symlink(&destination, &link).unwrap();
+                assert!(build(&config, &project.join("ond-unit.toml")).is_err());
+                if existing {
+                    assert_eq!(fs::read(&destination).unwrap(), b"unchanged");
+                    fs::remove_file(&destination).unwrap();
+                } else {
+                    assert!(!destination.exists());
+                }
+                fs::remove_file(link).unwrap();
+            }
         }
-        fs::remove_dir(&directory).unwrap();
-        symlink(outside.join("missing-directory"), &directory).unwrap();
-        assert!(prepare_directory(&project).is_err());
-        assert!(!outside.join("missing-directory").exists());
-        fs::remove_file(&directory).unwrap();
-        fs::remove_dir(project.join("target")).unwrap();
-        symlink(outside.join("missing-target"), project.join("target")).unwrap();
-        assert!(prepare_directory(&project).is_err());
-        assert!(!outside.join("missing-target").exists());
+        for boundary in [
+            ".ond",
+            ".ond/target",
+            ".ond/target/ond-unit",
+            ".ond/target/ond-unit/.ond",
+            ".ond/target/ond-unit/.ond/target",
+            ".ond/target/ond-unit/.ond/target/ond-cache",
+        ] {
+            for destination in [outside.clone(), outside.join("missing-directory")] {
+                let project = root("linked-directory");
+                fs::write(project.join("ond.toml"), "[project]\nname='checks'\n").unwrap();
+                let link = project.join(boundary);
+                fs::create_dir_all(link.parent().unwrap()).unwrap();
+                symlink(&destination, &link).unwrap();
+                assert!(build(&config, &project.join("ond-unit.toml")).is_err());
+                assert!(fs::read_dir(&outside).unwrap().next().is_none());
+                fs::remove_file(link).unwrap();
+            }
+        }
     }
     #[cfg(windows)]
     #[test]
     fn generated_directory_junctions_cannot_escape_project() {
-        for boundary in ["target", "target/ond-unit"] {
+        let config: Config = Config::parse("version=1\n[project]\npath='.'\n[vm]\nram_size=1024\nstack_size=128\n[[cases]]\nname='case'\npackage='checks/cases'\nfunction='Run'\n", Path::new("ond-unit.toml")).unwrap();
+        for boundary in [
+            ".ond",
+            ".ond/target",
+            ".ond/target/ond-unit",
+            ".ond/target/ond-unit/.ond",
+            ".ond/target/ond-unit/.ond/target",
+            ".ond/target/ond-unit/.ond/target/ond-cache",
+        ] {
             let outside = root("junction-outside");
             let project = root("junction");
+            fs::write(project.join("ond.toml"), "[project]\nname='checks'\n").unwrap();
             let link = project.join(boundary);
             fs::create_dir_all(link.parent().unwrap()).unwrap();
             let output = Command::new("powershell")
@@ -586,10 +628,10 @@ mod tests {
                 "{}",
                 String::from_utf8_lossy(&output.stderr)
             );
-            assert!(prepare_directory(&project).is_err());
-            assert!(!outside.join("ond-unit").exists());
+            assert!(build(&config, &project.join("ond-unit.toml")).is_err());
+            assert!(fs::read_dir(&outside).unwrap().next().is_none());
             fs::remove_dir(&outside).unwrap();
-            assert!(prepare_directory(&project).is_err());
+            assert!(build(&config, &project.join("ond-unit.toml")).is_err());
             assert!(!outside.exists());
             fs::remove_dir(&link).unwrap();
         }
