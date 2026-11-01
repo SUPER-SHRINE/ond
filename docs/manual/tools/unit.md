@@ -529,6 +529,22 @@ ond-unit ond-unit.toml --fail-fast
 ## 生成物
 
 `ond-unit` は対象 project の `.ond/target/ond-unit/` に runner 用 project を生成し、通常の Ond compile cache を使います。\
+ビルドの出力先は、生成 project 自身の `ond.toml` にある通常の compile / link 設定で決まります。\
+入力ファイルとビルド成果物は、次のように分かれます。
+
+```text
+.ond/target/ond-unit/
+├── ond.toml
+├── main.ond
+├── ond.lock
+└── .ond/target/
+    ├── build.ondbuild
+    ├── a.bin
+    ├── a.onddebug
+    └── ond-cache/
+```
+
+出力設定と相対 path の基準は [compile と link 設定](../../../specs/ond/build/packages.md#compileとlink設定) を参照してください。\
 設定や case の登録に合わせて生成 project は更新されます。\
 利用者の source と `ond.toml` は書き換えられません。\
 通常、生成 project のファイルを直接編集せず、case 設定と Ond source を更新します。

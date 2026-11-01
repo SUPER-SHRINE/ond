@@ -53,6 +53,8 @@ source の選択と可視性は [Ond role 構文と可視性](../language/v1/rol
 生成 `main()` は生成専用プロジェクトの通常 role 文脈に置き、選択された対象の公開 API を通常の project 間参照として利用する。
 
 各実行時に現在の設定と登録先に合わせて生成専用プロジェクトを更新し、保存する。\
+生成専用プロジェクトの compile 成果物と実行可能バイナリは、そのプロジェクト自身の `[compile].output` と `[link].output` に従い、生成専用プロジェクト内の `.ond/target/` 配下へ保存する。\
+出力設定と相対 path の解決は [compile と link 設定](../build/packages.md#compileとlink設定) に従う。\
 通常の compile cache は、入力が一致する場合に利用できる。
 
 ## 4. コンパイル成果物と外部規範

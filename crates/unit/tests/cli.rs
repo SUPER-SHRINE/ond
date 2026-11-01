@@ -71,8 +71,22 @@ fn normal_compiler_cli_contract() {
     f.config(&(first.clone() + &fault + &stub + &mock + &ram));
     let generated = f.root.join("checks/.ond/target/ond-unit");
     let assert_generated = || {
-        for name in ["ond.toml", "main.ond", "program.bin"] {
+        for name in ["ond.toml", "main.ond", "ond.lock"] {
             assert!(generated.join(name).is_file(), "missing generated {name}");
+        }
+        let manifest: toml::Value =
+            toml::from_str(&fs::read_to_string(generated.join("ond.toml")).unwrap()).unwrap();
+        for (table, expected) in [
+            ("compile", ".ond/target/build.ondbuild"),
+            ("link", ".ond/target/a.bin"),
+        ] {
+            assert_eq!(manifest[table]["output"].as_str(), Some(expected));
+            assert!(generated.join(expected).is_file());
+        }
+        assert!(generated.join(".ond/target/a.onddebug").is_file());
+        assert!(generated.join(".ond/target/ond-cache").is_dir());
+        for name in ["program.ondbuild", "program.bin", "program.onddebug"] {
+            assert!(!generated.join(name).exists());
         }
         assert!(!f.root.join("checks/target").exists());
     };
@@ -224,7 +238,7 @@ fn role_selection_and_final_target_contract() {
     f.config_role(&case("missing-roles", "Pass"), Some("'Test'"));
     assert!(!f.run(&[], 2).contains("steps="));
     // final対象は子packageのケースでも生成file更新前に拒否する。
-    let generated_files = ["ond.toml", "main.ond", "program.bin"]
+    let generated_files = ["ond.toml", "main.ond", ".ond/target/a.bin"]
         .map(|name| (name, fs::read(generated.join(name)).unwrap()));
     let final_manifest = manifest.replace("final=false", "final=true");
     fs::write(&target_manifest, &final_manifest).unwrap();
