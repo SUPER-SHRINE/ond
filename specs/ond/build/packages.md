@@ -121,7 +121,10 @@ lockがある場合は必要な全Git edgeについてowner/name、git、revの�
 
 source集合は、project境界とignore設定に従って探索した全`.ond` fileとする。\
 `[resolve].ignore`はmanifest directoryからの相対directory列であり、既定値は`[".git", ".ond", "target"]`である。\
-absolute path、`..`、globを含むignore入力はerrorとなる。\
+各entryはdirectory名をliteralに表すpathとして解釈し、解決先directoryとその配下をsource探索から除く。\
+`*`、`?`、`[`、`]`などの文字もdirectory名の一部であり、globや正規表現として展開しない。\
+たとえば`"*"`は名前が`*`のdirectory、`"*data[old]"`は名前が`*data[old]`のdirectoryだけを指定し、解決先が存在しないentryはsource集合に影響しない。\
+absolute path、`..` componentを含むignore入力はerrorとなる。\
 `.ond/`は常にsource探索から除き、子directoryの別のond.tomlで探索を区切る。\
 依存先は自身のignore設定に従う。
 
