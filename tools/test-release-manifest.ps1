@@ -64,6 +64,8 @@ try {
         $legacyPaths = @("ond$suffix", "ond-lsp$suffix", 'README.md', 'CHANGELOG.md', 'LICENSE.md')
         $legacyNoticePaths = $legacyPaths + @($noticePath, $copyrightPath)
         $paths = @(Get-ReleaseArchivePaths $target $version)
+        if ([version]$version -ge [version]'0.4.0' -and "ond-unit$suffix" -cnotin $paths) { throw '0.4.0 archives must include ond-unit.' }
+        if ("ond-unit$suffix" -cin @(Get-ReleaseArchivePaths $target '0.3.0')) { throw 'Pre-0.4.0 archives must not require ond-unit.' }
         if ('CHANGELOG.md' -cin $paths) { throw 'New release archives must exclude CHANGELOG.' }
         foreach ($name in $paths + @('CHANGELOG.md', 'unexpected.md', 'machine-roadmap.md', 'docs/design/extra.md', 'docs/design/README.md')) {
             $file = Join-Path $staging $name
@@ -79,10 +81,18 @@ try {
         if ($legacyHash -cne (Get-FileHash (Join-Path $staging "ond-lsp$suffix") -Algorithm SHA256).Hash.ToLowerInvariant()) { throw 'Legacy LSP hash mismatch.' }
         $script:testCount++
         Assert-Rejected "$target new release without third-party notices" { Get-ArchiveBinaryHash $badArchive $target "ond-lsp$suffix" $version }
+        $currentNotice = [IO.File]::ReadAllBytes((Join-Path $staging $noticePath))
+        $legacyNoticePath = Join-Path $staging $noticePath
+        $legacyNotice = [Text.Encoding]::UTF8.GetString($currentNotice)
+        $legacyNotice = $legacyNotice.Replace('Kagura git packages are pinned to commit 457a48502f6726a8ac617561579bdd43670d0387; `kagura` is included in the `ond-unit` binary and the Kagura runtime support crates are used by compiler development tests.', 'The Kagura git packages in Cargo.lock are used only by compiler development tests and are not included in the distributable binaries.')
+        $legacyNotice = [regex]::Replace($legacyNotice, '(?s)PACKAGE: kagura 0\.1\.0.*?SOFTWARE\.\r?\n(?=PACKAGE: autocfg 1\.5\.1)', '')
+        [IO.File]::WriteAllBytes($legacyNoticePath, [Text.UTF8Encoding]::new($false).GetBytes($legacyNotice))
+        if ((Get-FileHash -LiteralPath $legacyNoticePath -Algorithm SHA256).Hash.ToLowerInvariant() -cne 'e73e809e1592c0fd90e83319943686c2df75dd24ea5bc2bf5d91756e10a67cc4') { throw 'Pre-0.4.0 notice fixture does not match its pinned SHA-256.' }
         New-FixtureArchive $badArchive $target $legacyNoticePaths
         $legacyNoticeHash = Get-ArchiveBinaryHash $badArchive $target "ond-lsp$suffix" '0.1.3'
         if ($legacyNoticeHash -cne $legacyHash) { throw 'Legacy archive with notices has a different LSP hash.' }
         $script:testCount++
+        [IO.File]::WriteAllBytes($legacyNoticePath, $currentNotice)
         New-FixtureArchive $badArchive $target ($legacyNoticePaths | Where-Object { $_ -cne 'CHANGELOG.md' })
         Assert-Rejected "$target legacy release missing CHANGELOG" { Get-ArchiveBinaryHash $badArchive $target "ond-lsp$suffix" '0.1.3' }
         New-FixtureArchive $badArchive $target ($paths | Where-Object { $_ -cne 'README.md' })
