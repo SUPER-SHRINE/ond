@@ -231,10 +231,11 @@ fn check_contained(path: &Path, root: &Path) -> Result<Option<PathBuf>, String> 
     }
 }
 fn prepare_directory(project: &Path) -> Result<PathBuf, String> {
-    let target = project.join("target");
-    let directory = target.join("ond-unit");
-    let resolved_target = check_contained(&target, project)?.unwrap_or(target);
-    check_contained(&directory, &resolved_target)?;
+    let mut directory = project.to_path_buf();
+    for component in [".ond", "target", "ond-unit"] {
+        let next = directory.join(component);
+        directory = check_contained(&next, &directory)?.unwrap_or(next);
+    }
     fs::create_dir_all(&directory).map_err(|e| format!("生成project作成: {e}"))?;
     fs::canonicalize(&directory).map_err(|e| format!("生成project: {e}"))
 }
@@ -417,7 +418,7 @@ mod tests {
         let config:Config=Config::parse("version=1\n[project]\npath='.'\n[vm]\nram_size=1024\nstack_size=128\n[[cases]]\nname='case'\npackage='ond_unit_generated__/cases'\nfunction='Run'\n", Path::new("ond-unit.toml")).unwrap();
         assert_eq!(
             generated_name(
-                &namespace_names(&root, &root.join("target/ond-unit"), &config).unwrap()
+                &namespace_names(&root, &root.join(".ond/target/ond-unit"), &config).unwrap()
             ),
             "ond_unit_generated___"
         );
@@ -487,7 +488,11 @@ mod tests {
     }
     #[test]
     fn generated_project_back_edges_do_not_retry_compiler_errors() {
-        for back_edge in ["target/ond-unit", "target/ond-unit/../ond-unit", "cached"] {
+        for back_edge in [
+            ".ond/target/ond-unit",
+            ".ond/target/ond-unit/../ond-unit",
+            "cached",
+        ] {
             let project = root("back-edge");
             let directory = prepare_directory(&project).unwrap();
             let dependencies = if back_edge == "cached" {
@@ -553,20 +558,22 @@ mod tests {
             assert!(!destination.exists());
             fs::remove_file(link).unwrap();
         }
-        fs::remove_dir(&directory).unwrap();
-        symlink(outside.join("missing-directory"), &directory).unwrap();
-        assert!(prepare_directory(&project).is_err());
-        assert!(!outside.join("missing-directory").exists());
-        fs::remove_file(&directory).unwrap();
-        fs::remove_dir(project.join("target")).unwrap();
-        symlink(outside.join("missing-target"), project.join("target")).unwrap();
-        assert!(prepare_directory(&project).is_err());
-        assert!(!outside.join("missing-target").exists());
+        for boundary in [".ond", ".ond/target", ".ond/target/ond-unit"] {
+            for destination in [outside.clone(), outside.join("missing-directory")] {
+                let project = root("linked-directory");
+                let link = project.join(boundary);
+                fs::create_dir_all(link.parent().unwrap()).unwrap();
+                symlink(&destination, &link).unwrap();
+                assert!(prepare_directory(&project).is_err());
+                assert!(fs::read_dir(&outside).unwrap().next().is_none());
+                fs::remove_file(link).unwrap();
+            }
+        }
     }
     #[cfg(windows)]
     #[test]
     fn generated_directory_junctions_cannot_escape_project() {
-        for boundary in ["target", "target/ond-unit"] {
+        for boundary in [".ond", ".ond/target", ".ond/target/ond-unit"] {
             let outside = root("junction-outside");
             let project = root("junction");
             let link = project.join(boundary);
@@ -587,7 +594,7 @@ mod tests {
                 String::from_utf8_lossy(&output.stderr)
             );
             assert!(prepare_directory(&project).is_err());
-            assert!(!outside.join("ond-unit").exists());
+            assert!(fs::read_dir(&outside).unwrap().next().is_none());
             fs::remove_dir(&outside).unwrap();
             assert!(prepare_directory(&project).is_err());
             assert!(!outside.exists());

@@ -69,13 +69,22 @@ fn normal_compiler_cli_contract() {
     let ram = case("ram", "Ram")
         + "ram_initial=[{address=0x8000,bytes=[0x78,0x56,0x34,0x12]}]\nram_expected=[{address=0x8000,bytes=[0xef,0xcd,0xab,0x90]}]\n";
     f.config(&(first.clone() + &fault + &stub + &mock + &ram));
+    let generated = f.root.join("checks/.ond/target/ond-unit");
+    let assert_generated = || {
+        for name in ["ond.toml", "main.ond", "program.bin"] {
+            assert!(generated.join(name).is_file(), "missing generated {name}");
+        }
+        assert!(!f.root.join("checks/target").exists());
+    };
     let text = f.run(&[], 0);
+    assert_generated();
     assert!(
         text.contains("PASS=5 FAIL=0 STEP_LIMIT=0 ERROR=0"),
         "{text}"
     );
     // 生成project/cacheを保持した二回目も同じ入力で通る。
     assert!(f.run(&[], 0).contains("PASS=5"));
+    assert_generated();
     let before = fs::read(f.root.join("checks/cases/api.ond")).unwrap();
     assert_eq!(
         before,
@@ -168,7 +177,7 @@ fn role_selection_and_final_target_contract() {
     let target_source = f.root.join("checks/cases/api.ond");
     fs::write(&target_manifest, manifest).unwrap();
     fs::write(&target_source, &source).unwrap();
-    let generated = f.root.join("checks/target/ond-unit");
+    let generated = f.root.join("checks/.ond/target/ond-unit");
     // 同じ生成project/cacheで名前付きroleと未指定構成を切り替える。
     for (role, value) in [
         (Some("'Test'"), 2),
@@ -293,7 +302,7 @@ fn locked_git_dependency_namespace_collisions_use_generated_cache() {
         "{:x}",
         Sha256::digest(serde_json::to_vec(&(url, "HEAD", &commit)).unwrap())
     );
-    let generated = f.root.join("checks/target/ond-unit");
+    let generated = f.root.join("checks/.ond/target/ond-unit");
     let cache = generated.join(".ond/dependencies");
     fs::create_dir_all(&cache).unwrap();
     fs::rename(&seed, cache.join(format!("git-{}", &key[..12]))).unwrap();
@@ -334,7 +343,7 @@ fn generated_project_back_edge_returns_compiler_error() {
     let f = Fixture::new();
     f.config(&case("back-edge", "Pass"));
     assert!(f.run(&[], 0).contains("back-edge: PASS"));
-    let manifest = "[project]\nname='checks'\n[dependencies]\nback={path='target/ond-unit'}\n";
+    let manifest = "[project]\nname='checks'\n[dependencies]\nback={path='.ond/target/ond-unit'}\n";
     fs::write(f.root.join("checks/ond.toml"), manifest).unwrap();
     let text = f.run(&[], 2);
     assert!(text.contains("ondビルド失敗"), "{text}");
@@ -344,7 +353,7 @@ fn generated_project_back_edge_returns_compiler_error() {
         manifest
     );
     let generated: toml::Value = toml::from_str(
-        &fs::read_to_string(f.root.join("checks/target/ond-unit/ond.toml")).unwrap(),
+        &fs::read_to_string(f.root.join("checks/.ond/target/ond-unit/ond.toml")).unwrap(),
     )
     .unwrap();
     assert_eq!(
@@ -391,7 +400,7 @@ fn case_files_share_environment_and_keep_filtered_indices() {
     assert!(text.find("inline: PASS").unwrap() < text.find("second: PASS").unwrap());
     assert!(text.find("second: PASS").unwrap() < text.find("fault: PASS").unwrap());
     assert!(f.run(&["--case", "second"], 0).contains("second: PASS"));
-    let generated = f.root.join("checks/target/ond-unit/main.ond");
+    let generated = f.root.join("checks/.ond/target/ond-unit/main.ond");
     let before = fs::read(&generated).unwrap();
     for child in [
         observations.clone() + "\n[[cases]]\nname='invalid'\nfunction='Pass'\nmax_steps=0\n",

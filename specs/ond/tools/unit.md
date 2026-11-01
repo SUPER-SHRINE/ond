@@ -44,7 +44,7 @@ final の型と省略値、および依存 graph の成立条件は [Ond project
 ond-unit は登録順と登録配置情報から、ケースの import 宣言、関数ポインタ配列、`main()`、および起動引数読出しを含む生成ソースを作る。\
 ホストと生成ソースは同一のケース一覧および配置情報を使用する。
 
-生成ソースは利用者ソースを編集せず、`project.path` の project 内の `target/ond-unit/` に生成専用プロジェクトとして置く。\
+生成ソースは利用者ソースを編集せず、`project.path` の project 内の `.ond/target/ond-unit/` に生成専用プロジェクトとして置く。\
 生成専用プロジェクトは `[project].final = true` とし、対象 project を直接の path 依存として登録する。\
 `project.role` を指定した場合はその依存 edge の `role` に同じ値を設定し、省略時は edge の `role` も省略して対象の role 未指定構成を選択する。\
 この選択を実行設定の全ケースと対象 project の全 package に適用する。\

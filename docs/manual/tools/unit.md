@@ -528,7 +528,7 @@ ond-unit ond-unit.toml --fail-fast
 
 ## 生成物
 
-`ond-unit` は対象 project の `target/ond-unit/` に runner 用 project を生成し、通常の Ond compile cache を使います。\
+`ond-unit` は対象 project の `.ond/target/ond-unit/` に runner 用 project を生成し、通常の Ond compile cache を使います。\
 設定や case の登録に合わせて生成 project は更新されます。\
 利用者の source と `ond.toml` は書き換えられません。\
 通常、生成 project のファイルを直接編集せず、case 設定と Ond source を更新します。
