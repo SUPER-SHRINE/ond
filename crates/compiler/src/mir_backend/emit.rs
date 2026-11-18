@@ -79,6 +79,9 @@ impl Emitter {
     pub fn store(&mut self, reg: u8, offset: u32) {
         self.stack_access(11, reg, offset);
     }
+    pub fn store_scalar(&mut self, reg: u8, offset: u32, ty: layout::ScalarLayout) {
+        self.stack_access(memory::store_opcode(ty), reg, offset);
+    }
     /// Large accesses reserve r13 (r12 when the data register is r13).
     /// In particular, storing an incoming stack argument in r12 must preserve it.
     fn stack_access(&mut self, op: u32, reg: u8, offset: u32) {
