@@ -144,7 +144,7 @@ debug metadataは次の意味分類を加え、CPU fault codeを変更しない�
 | runtime整数の除数zero | INVALID_INSTRUCTION | DivisionByZero |
 | runtime signed minInt/-1 | INVALID_INSTRUCTION | SignedDivisionOverflow |
 | runtime f32→整数の不正変換 | INVALID_INSTRUCTION | InvalidConversion |
-| stack確保時の容量不足/underflow | INVALID_INSTRUCTION | StackOverflow |
+| [stack確保時の容量不足/underflow](./abi.md#7-stack-overflow) | INVALID_INSTRUCTION | StackOverflow |
 | explicit trap | INVALID_INSTRUCTION | ExplicitTrap |
 | raw load/storeのalignment違反 | UNALIGNED_ACCESS | MemoryRead/MemoryWrite |
 | fetch/indirect jumpのPC alignment違反 | UNALIGNED_PC | 対応rangeがあればそのoperation |
