@@ -112,9 +112,13 @@ pub(super) fn lower(
         unwind: &mut unwind,
         ranges: &mut ranges,
     };
+    let proven_bounds = super::bounds::proven_checks(&p.types, f);
     for b in &f.blocks {
         cx.e.bind(cx.labels[b.id.0 as usize]);
         for i in &b.instructions {
+            if proven_bounds.contains(&i.id) {
+                continue;
+            }
             let start = cx.e.offset(i.span)?;
             cx.instruction(i)?;
             let end = cx.e.offset(i.span)?;

@@ -1,0 +1,36 @@
+package main
+
+func select(i: u32) -> u32 {
+    var values = [4]u32{3, 5, 7, 11}
+    if i < 4 {
+        return values[i]
+    }
+    return 99
+}
+
+func scan(start: u32) -> u32 {
+    var values = [4]u32{3, 5, 7, 11}
+    var i = start
+    var total: u32
+    for i < 4 {
+        total += values[i]
+        i += 1
+    }
+    return total
+}
+
+func changed(i: u32) -> u32 {
+    var values = [4]u32{3, 5, 7, 11}
+    if i < 4 {
+        i += 1
+        return values[i]
+    }
+    return 99
+}
+
+func main() {
+    var index = *(536870912 as *u32)
+    *(536871168 as *u32) = select(index)
+    *(536871172 as *u32) = scan(index)
+    *(536871176 as *u32) = changed(index)
+}
