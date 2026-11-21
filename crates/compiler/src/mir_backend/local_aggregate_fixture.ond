@@ -1,0 +1,28 @@
+package main
+
+type Pair struct { x: u32; y: u32; }
+type Nested struct { a: Pair; b: Pair; }
+
+func structs(n: u32) -> u32 {
+    var a = Nested{a: Pair{x: n, y: 2}, b: Pair{x: 5, y: 7}}
+    var b = a
+    b = b
+    b.a, b.b = b.b, b.a
+    b.b = a.b
+    return b.a.x + b.a.y + b.b.x + b.b.y
+}
+
+func arrays(n: u32) -> u32 {
+    var a = [4]u32{n, 2, 3, 4}
+    var b = a
+    b = b
+    b[0], b[2] = b[2], b[0]
+    b[3] = b[2]
+    return b[0] + b[1] + b[2] + b[3]
+}
+
+func main() {
+    var n = *(536870912 as *u32)
+    *(536871168 as *u32) = structs(n)
+    *(536871172 as *u32) = arrays(n)
+}

@@ -60,6 +60,8 @@ package `.ondpkg`の保存先はcompile.cache-dirとする。\
 相対引数pathは呼出時current directory基準、設定の相対pathはond.tomlの親directory基準である。\
 source入力はprojectのfile集合、成果物schemaは[artifact契約](../artifacts.md#packageartifactとcompilationmanifest)に従う。
 
+Kagura v1の通常のcompileには、[非公開ローカル集約値のRAM access省略](../targets/kagura-v1/machine.md#34-非公開ローカル集約値)を適用できる。
+
 ### ond link
 <!-- ond-spec-id: build/link-command -->
 

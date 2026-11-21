@@ -18,6 +18,9 @@ mod globals;
 mod heap_tests;
 mod inline_asm;
 pub mod layout;
+mod local_aggregate;
+#[cfg(test)]
+mod local_aggregate_tests;
 mod memory;
 #[cfg(test)]
 mod memory_tests;
