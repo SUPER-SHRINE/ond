@@ -60,6 +60,7 @@
 | CAST-01 | 型不一致の暗黙変換拒否 | [CAST-01の定義元](../language/v1/types.md#型同一性) | [boundaries-conversions](./cases/boundaries-conversions.md) |
 | CAST-02 | 定数整数変換・実行時wrap変換 | [CAST-02の定義元](../language/v1/types.md#型同一性) | [numeric-casts](./cases/numeric-casts.md) |
 | CAST-03 | int↔f32、ties-even/trunc、NaN/Inf/範囲外 | [CAST-03の定義元](../language/v1/types.md#型同一性) | [numeric-casts](./cases/numeric-casts.md) |
+| CAST-04 | `ond compile`での狭い整数とf32の実行時往復変換 | [CAST-04の定義元](../language/v1/types.md#狭い整数とf32の実行時往復変換)、[stack観測](../targets/kagura-v1/abi.md#7-stack-overflow) | [kagura-castsの実行時往復変換](./cases/kagura-casts.md#実行時往復変換) |
 | NIL-01 | pointer/function型nil、既定型なし、0とは別 | [NIL-01の定義元](../language/v1/types.md#nilとpointer) | [boundaries-conversions](./cases/boundaries-conversions.md)、[static-seed](./cases/static-seed.md) |
 | NIL-02 | nil function pointer call | [NIL-02の定義元](../language/v1/declarations.md#関数) | [faults_do_not_execute_following_effects_or_overwrite_destinationの入力・期待](./implementation-index.md#既存回帰と要件) |
 

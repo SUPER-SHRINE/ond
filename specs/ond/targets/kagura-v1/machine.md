@@ -65,7 +65,27 @@ allocationの結果は[heap契約](#31-heap-allocator)に従う。
 aggregateのaccess対象はstructのfieldとarrayのelementであり、struct宣言順、array index昇順に再帰してscalar accessを行う。\
 aggregate copyはsource snapshotの読取完了後にdestinationへ書く。\
 途中accessがfaultした場合は完了済みwriteとMMIO副作用を保持し、その場で実行を停止する。\
-アクセス順序そのものを観測可能な契約として保持する。
+アクセス順序そのものを観測可能な契約として保持する。\
+[非公開ローカル集約値](#34-非公開ローカル集約値)に限り、その節の条件でRAM accessを省略できる。
+
+### 3.4 非公開ローカル集約値
+<!-- ond-spec-id: targets/kagura-v1/private-local-aggregate -->
+
+Kagura v1で、実行制御が途中から進入も分岐もしない単一の基本blockに扱いが収まり、次の条件を満たすstructまたは固定長配列のローカル変数とその一時値に適用する。
+
+- 集約を再帰的に展開したscalar要素は1個以上4個以下で、配置sizeは16 byte以下とする
+- block内のmemory accessはアドレスを取得しないローカルstorageと一時値に閉じ、対象の集約内の投影は宣言済みfieldまたは範囲内の定数indexで決まる
+- block内の処理は呼出しを必要としない値演算、検査、ローカルの読書きとコピーで構成し、関数呼出境界ではscalarの引数と直接返却の範囲に収まる戻り値を扱う
+- 対象の各要素は[配置契約](../../artifacts.md#配置容量と出力範囲)に従い、frame確保に成功したinvocationのRAM上で[型のalignment](#5-data-layout)を満たす
+- 対象領域は型の幅で行う読書きが成功するRAMであり、そのaccessの副作用はRAMのバイト列の更新に限る
+
+先行するblock内の書込みと入力値から要素の値を確定できる場合、その値を要素の読出しの結果として使える。\
+書込先の要素と書込値が同一のバイト列を持つと確定できる場合、その書込みを省略できる。\
+省略を含む実行でも、source snapshotの値はdestination更新前に確定し、各要素のzero value、`f32`のビット列と型同一性を保持する。\
+比較元は、同じ操作、入力値、リンクで解決したアドレス値、frameと初期RAMを用いてaccessを省略せずに実行した結果とする。\
+各操作の完了時とfault停止時には、その操作が使用したローカルstorage、値の一時領域とsnapshotの一時領域のバイト列、および完了済みの副作用が比較元と一致する。\
+比較元で書き込まないpaddingのバイト列は保持する。\
+frame内の配置、frame size、[stack overflow検査](./abi.md#7-stack-overflow)とその失敗時点も比較元と一致する。
 
 ## 4. Startup
 <!-- ond-spec-id: targets/kagura-v1/startup -->
@@ -120,6 +140,7 @@ mainから戻った際の制御経路は[link.exit](../../build/packages.md#comp
   - destinationへのcopy開始はsource snapshot読取りの完了後である
 - pointerによるbus accessの回数、幅、実行順を保持する
 - 有効な RAM または MMIO address は、stack、heap、startup segment と重なっていてもその実体を参照する
+  - 非公開ローカル集約値のaccessを一部省略するときのstack上のstorageは[非公開ローカル集約値](#34-非公開ローカル集約値)に従う
 - alignment違反および機種bus上で許可されないaccessはfaultとする
   - nilの値は0だが、address 0の物理的なmappingは実行環境が定義する
 - `.text`と`.rodata`への直接書込みは型検査errorとなる
@@ -144,7 +165,7 @@ debug metadataは次の意味分類を加え、CPU fault codeを変更しない�
 | runtime整数の除数zero | INVALID_INSTRUCTION | DivisionByZero |
 | runtime signed minInt/-1 | INVALID_INSTRUCTION | SignedDivisionOverflow |
 | runtime f32→整数の不正変換 | INVALID_INSTRUCTION | InvalidConversion |
-| stack確保時の容量不足/underflow | INVALID_INSTRUCTION | StackOverflow |
+| [stack確保時の容量不足/underflow](./abi.md#7-stack-overflow) | INVALID_INSTRUCTION | StackOverflow |
 | explicit trap | INVALID_INSTRUCTION | ExplicitTrap |
 | raw load/storeのalignment違反 | UNALIGNED_ACCESS | MemoryRead/MemoryWrite |
 | fetch/indirect jumpのPC alignment違反 | UNALIGNED_PC | 対応rangeがあればそのoperation |

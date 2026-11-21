@@ -1,7 +1,7 @@
 # Kagura上の数値変換vector
 <!-- ond-spec-id: conformance/cases/kagura-casts -->
 
-本書の各行はCAST-03の入力と固定期待bitsを定める。\
+数値変換vectorの表は、各行でCAST-03の入力と固定期待bitsを定める。\
 共通manifestとINPUT/OUTPUT/SENTINELは[整数実行vector](./kagura-integers.md)と同じとする。\
 sourceはmain.ondで、INPUTのwordをsource型として読み、`value as 変換先型`をOUTPUTへ格納する。\
 f32はbit再解釈helperでwordとの間を運び、整数→f32は結果の32bit全体を、f32→整数は変換先型幅で書く。\
@@ -125,3 +125,28 @@ func main(){var address:u32=536870912;var input=address as *u32;var a=frombits(*
 | <code>CAST-03.f32.i32.7fc00000</code> | <code>f32</code> | <code>i32</code> | <code>0x7fc00000</code> | <code>0xdeadbeef</code> | <code>InvalidInstruction</code> |
 | <code>CAST-03.f32.i32.7f800000</code> | <code>f32</code> | <code>i32</code> | <code>0x7f800000</code> | <code>0xdeadbeef</code> | <code>InvalidInstruction</code> |
 | <code>CAST-03.f32.i32.ff800000</code> | <code>f32</code> | <code>i32</code> | <code>0xff800000</code> | <code>0xdeadbeef</code> | <code>InvalidInstruction</code> |
+
+## 実行時往復変換
+<!-- ond-spec-id: conformance/cases/kagura-narrow-f32-roundtrip -->
+
+[CAST-04](../../language/v1/types.md#狭い整数とf32の実行時往復変換)の適合caseでは、`ond compile`の規則で以下の`main.ond`をcompileする。\
+linkと実行は[整数実行vector](./kagura-integers.md)の論理image、map、register初期状態、終了通知および比較方法を使う。\
+このcaseのmemory sizeは65,536 byte、stack sizeは8,192 byteとする。\
+RAMは`[0x1000,0x11000)`をmapし、初期SPは`0x11000`とする。
+
+```ond
+package main
+func roundtrip(x:TYPE)->TYPE{return (x as f32) as TYPE}
+func main(){var x=(*(536870912 as u32 as *u32)) as TYPE;*(536871168 as u32 as *u32)=roundtrip(x) as u32}
+```
+
+表の`TYPE`で3箇所の型名と`main`の変換先型を置換する。\
+各行の整数範囲に含まれる値について、INPUTの先頭wordにその値の下位32 bitを置き、初期状態から1回ずつ実行する。\
+すべての値で2,000,000命令以内に正常終了し、OUTPUTの先頭wordはINPUTと一致する。
+
+| Case ID | TYPE | 入力値の範囲 | 個数 |
+| --- | --- | ---: | ---: |
+| `CAST-04.u8.all-values` | `u8` | 0〜255 | 256 |
+| `CAST-04.i8.all-values` | `i8` | −128〜127 | 256 |
+| `CAST-04.u16.all-values` | `u16` | 0〜65535 | 65536 |
+| `CAST-04.i16.all-values` | `i16` | −32768〜32767 | 65536 |

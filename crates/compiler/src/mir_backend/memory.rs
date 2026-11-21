@@ -22,17 +22,14 @@ pub(super) fn read(e: &mut Emitter, reg: u8, base: u8, offset: u32, ty: layout::
 pub(super) fn write(e: &mut Emitter, reg: u8, base: u8, offset: u32, ty: layout::ScalarLayout) {
     e.immediate(3, offset);
     e.emit(0, 3, base, 3, 0);
-    e.emit(
-        match ty.size {
-            1 => 8,
-            2 => 9,
-            _ => 11,
-        },
-        reg,
-        3,
-        0,
-        0,
-    );
+    e.emit(store_opcode(ty), reg, 3, 0, 0);
+}
+pub(super) fn store_opcode(ty: layout::ScalarLayout) -> u32 {
+    match ty.size {
+        1 => 8,
+        2 => 9,
+        _ => 11,
+    }
 }
 /// Source/destination must be disjoint or identical. Arbitrary alias uses a snapshot first.
 pub(super) fn copy(

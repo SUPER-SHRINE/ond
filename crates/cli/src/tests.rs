@@ -61,6 +61,96 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn narrow_f32_roundtrip_is_applied_by_normal_compile_and_reflected_in_debug_info() {
+    use ond_protocol::{debug::DebugOperation, object::RelocationKind};
+
+    let f = Fixture::new();
+    f.put(
+        "main.ond",
+        "package main
+        func roundtrip(x:i16)->i16{return (x as f32) as i16}
+        func to_float(x:i16)->f32{return x as f32}
+        func to_int(x:f32)->i16{return x as i16}
+        func main(){_ = roundtrip(-7);_ = to_int(to_float(-5))}",
+    );
+    let compiler = compiler_identity().unwrap();
+    let built = compile(f.request(), &compiler).unwrap();
+    let root = built
+        .manifest
+        .packages
+        .iter()
+        .find(|p| p.package == "test")
+        .unwrap();
+    let artifact = cache::read_artifact(root).unwrap();
+    for (name, calls, invalid) in [
+        ("main.roundtrip", 0, false),
+        ("main.to_float", 1, false),
+        ("main.to_int", 1, true),
+    ] {
+        let function = artifact
+            .debug
+            .functions
+            .iter()
+            .find(|f| f.symbol == name)
+            .unwrap();
+        assert_eq!(
+            artifact
+                .object
+                .relocations
+                .iter()
+                .filter(|r| {
+                    r.kind == RelocationKind::CallSlot
+                        && (function.offset..function.offset + function.size).contains(&r.offset)
+                })
+                .count(),
+            calls,
+            "{name}"
+        );
+        assert_eq!(
+            artifact.debug.ranges.iter().any(|r| {
+                r.function == name && r.operation == DebugOperation::InvalidConversion
+            }),
+            invalid,
+            "{name}"
+        );
+    }
+    let linked = link_with_debug(request_link(built.manifest)).unwrap();
+    let function = linked
+        .debug
+        .functions
+        .iter()
+        .find(|f| f.symbol == "main.roundtrip")
+        .unwrap();
+    assert!(function.frame_size > 0);
+    assert!(
+        function
+            .unwind
+            .iter()
+            .any(|row| row.cfa_sp_offset == function.frame_size)
+    );
+    assert!(linked.debug.ranges.iter().any(|r| {
+        r.function == function.symbol && r.operation == DebugOperation::StackOverflow
+    }));
+    assert!(!linked.debug.ranges.iter().any(|r| {
+        r.function == function.symbol
+            && matches!(
+                r.operation,
+                DebugOperation::Call | DebugOperation::InvalidConversion
+            )
+    }));
+
+    f.put(
+        "main.ond",
+        "package main\nconst Value = ((65536 as u16) as f32) as u16\nfunc main(){}",
+    );
+    let errors = compile(f.request(), &compiler).unwrap_err();
+    assert!(
+        errors.iter().any(|error| error.contains("out of range")),
+        "{errors:?}"
+    );
+}
+
+#[test]
 fn diamond_cache_rebuilds_reverse_dependents_even_for_body_only_change() {
     let f = Fixture::new();
     let cold = compile(f.request(), "test-compiler").unwrap();

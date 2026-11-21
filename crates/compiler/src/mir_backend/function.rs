@@ -1,4 +1,4 @@
-//! Stack-resident O0 lowering. r7..r11 are never touched.
+//! Stack-resident lowering. r7..r11 are never touched.
 use super::{emit::Emitter, frame::Frame, memory, *};
 use ond_protocol::debug::{DebugOperation, ReturnAddressLocation};
 
@@ -113,6 +113,7 @@ pub(super) fn lower(
         ranges: &mut ranges,
     };
     let proven_bounds = super::bounds::proven_checks(&p.types, f);
+    let mut aggregates = super::local_aggregate::LocalAggregates::new(&p.types, f, &cx.abi);
     for b in &f.blocks {
         cx.e.bind(cx.labels[b.id.0 as usize]);
         for i in &b.instructions {
@@ -120,7 +121,9 @@ pub(super) fn lower(
                 continue;
             }
             let start = cx.e.offset(i.span)?;
-            cx.instruction(i)?;
+            if !aggregates.as_mut().is_some_and(|a| a.emit(&mut cx, i)) {
+                cx.instruction(i)?;
+            }
             let end = cx.e.offset(i.span)?;
             let operation = instruction_operation(i, cx.e.has_call_since(start));
             if !matches!(i.kind, mir::InstructionKind::InlineAssembly { .. }) {

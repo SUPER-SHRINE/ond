@@ -7,14 +7,19 @@ use crate::{
     mir,
     source::Span,
 };
+use std::collections::BTreeSet;
 
-pub(crate) fn lower_to_mir(hir: &hir::Project) -> Result<mir::Project, FrontendError> {
+pub(crate) fn lower_to_mir(
+    hir: &hir::Project,
+    elide_narrow_roundtrips: bool,
+) -> Result<mir::Project, FrontendError> {
+    let lower_function = |function| lower_function(&hir.types, function, elide_narrow_roundtrips);
     let mut packages = Vec::new();
     for package in &hir.packages {
         let mut functions = Vec::new();
         for item in &package.items {
             if let hir::Item::Func(function) = item {
-                functions.push(lower_function(&hir.types, function)?);
+                functions.push(lower_function(function)?);
             }
         }
         packages.push(mir::Package {
@@ -60,7 +65,7 @@ pub(crate) fn lower_to_mir(hir: &hir::Project) -> Result<mir::Project, FrontendE
             initializer: package
                 .initializer
                 .as_ref()
-                .map(|function| lower_function(&hir.types, function))
+                .map(lower_function)
                 .transpose()?,
         });
     }
@@ -114,6 +119,7 @@ fn lower_static_value(
 fn lower_function(
     types: &crate::semantic::TypeTable,
     function: &hir::FuncItem,
+    elide_narrow_roundtrips: bool,
 ) -> Result<mir::Function, FrontendError> {
     let (locals, parameters) = match &function.body {
         hir::Body::Typed(body) => {
@@ -158,6 +164,7 @@ fn lower_function(
         defer_flags: Vec::new(),
         return_block: None,
         return_values: Vec::new(),
+        direct_float_casts: elide_narrow_roundtrips.then(BTreeSet::new),
     };
     let entry = builder.new_block(function.span);
     builder.current = Some(entry);
@@ -232,7 +239,7 @@ fn lower_function(
             function.span,
         );
     }
-    Ok(mir::Function {
+    let mut lowered = mir::Function {
         name: function.canonical_name.clone(),
         parameters,
         returns: function.signature.returns.clone(),
@@ -241,7 +248,11 @@ fn lower_function(
         span: function.span,
         entry: mir::BlockId(0),
         blocks: builder.blocks,
-    })
+    };
+    if let Some(direct_float_casts) = builder.direct_float_casts {
+        mir::elide_narrow_f32_roundtrips(&mut lowered, &direct_float_casts);
+    }
+    Ok(lowered)
 }
 
 struct FunctionBuilder<'a> {
@@ -255,6 +266,7 @@ struct FunctionBuilder<'a> {
     defer_flags: Vec<mir::LocalId>,
     return_block: Option<mir::BlockId>,
     return_values: Vec<mir::ValueId>,
+    direct_float_casts: Option<BTreeSet<mir::ValueId>>,
 }
 
 impl FunctionBuilder<'_> {
@@ -776,6 +788,9 @@ impl FunctionBuilder<'_> {
                 }
             }
             hir::ExprKind::Cast { value } => {
+                // Unary plus may lower to its operand. Record directness before lowering.
+                let direct_float_cast = value.ty == mir::TypeId::F32
+                    && matches!(value.kind, hir::ExprKind::Cast { .. });
                 let value = self.lower_expr(value)?;
                 let behavior = if matches!(
                     self.types.underlying_kind(lhs_type(self, value)?),
@@ -786,11 +801,22 @@ impl FunctionBuilder<'_> {
                 } else {
                     mir::CastBehavior::Infallible
                 };
-                mir::InstructionKind::Cast {
-                    value,
-                    to: expr.ty,
-                    behavior,
+                let result = self.emit_value(
+                    expr.ty,
+                    mir::InstructionKind::Cast {
+                        value,
+                        to: expr.ty,
+                        behavior,
+                    },
+                    expr.span,
+                );
+                if direct_float_cast
+                    && behavior == mir::CastBehavior::Checked
+                    && let Some(casts) = &mut self.direct_float_casts
+                {
+                    casts.insert(result);
                 }
+                return Some(result);
             }
         };
         Some(self.emit_value(expr.ty, kind, expr.span))
