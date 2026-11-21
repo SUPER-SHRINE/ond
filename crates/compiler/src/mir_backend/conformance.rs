@@ -2,5 +2,6 @@
 mod combinations;
 mod evaluation;
 mod inline_asm;
+mod narrow_f32_roundtrip;
 mod numeric;
 mod runner;

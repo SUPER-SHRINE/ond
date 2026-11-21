@@ -134,6 +134,10 @@ frame を確保する関数は、減算の underflow または `new_sp < STACK_B
 debug sidecarの対応rangeには`StackOverflow`を記録する。\
 この経路は停止時点のstack容量でtrapを完了して実行を終了する。
 
+[狭い整数とf32の実行時往復変換](../../language/v1/types.md#狭い整数とf32の実行時往復変換)を省く場合、除去する変換処理とその値の保持に必要だったstack容量の分だけ、実行時のstack需要を減らせる。\
+その需要に由来する`StackOverflow`は、同じ入力とstack設定でも通常の処理継続に変わり、後続の処理や副作用が実行され得る。\
+残るframeには本節の容量検査を適用し、実行される入力生成処理、明示trap、その他の演算とアクセスには[既定のfault規則](./machine.md#faultと観測結果)を適用する。
+
 ## 8. Bounds Error
 <!-- ond-spec-id: targets/kagura-v1/abi-bounds-error -->
 
