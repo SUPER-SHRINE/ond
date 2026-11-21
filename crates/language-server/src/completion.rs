@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use compiler::ir::ast;
+#[path = "completion_expression.rs"]
+mod expression;
 use compiler::source::Span;
 use serde_json::{Value, json};
 
@@ -858,6 +860,22 @@ pub(crate) fn project_completion_expr_is_addressable(
     function: Option<CompletionScope<'_>>,
     expr: &ast::Expr,
 ) -> bool {
+    project_completion_expr_is_addressable_with(
+        project,
+        package,
+        file,
+        ProjectExprLookup::Scope(function),
+        expr,
+    )
+}
+
+fn project_completion_expr_is_addressable_with(
+    project: &ast::Project,
+    package: &ast::Package,
+    file: &ast::File,
+    lookup: ProjectExprLookup<'_, '_>,
+    expr: &ast::Expr,
+) -> bool {
     match expr {
         ast::Expr::Name(_)
         | ast::Expr::Unary {
@@ -865,7 +883,7 @@ pub(crate) fn project_completion_expr_is_addressable(
             ..
         } => true,
         ast::Expr::Selector { base, .. } | ast::Expr::Index { base, .. } => {
-            resolve_project_completion_expr_type(project, package, file, function, base)
+            resolve_project_completion_expr_type_with(project, package, file, lookup, base)
                 .is_some_and(|resolved| {
                     matches!(resolved.ty, ast::Type::Pointer(_, _))
                         || project_completion_implicit_dereference_type(
@@ -875,7 +893,7 @@ pub(crate) fn project_completion_expr_is_addressable(
                         )
                         .is_some()
                 })
-                || project_completion_expr_is_addressable(project, package, file, function, base)
+                || project_completion_expr_is_addressable_with(project, package, file, lookup, base)
         }
         _ => false,
     }
@@ -902,6 +920,45 @@ struct ProjectCompletionType<'a> {
     package: &'a ast::Package,
     file: &'a ast::File,
     external: bool,
+}
+
+type ProjectLocalTypes<'a> = BTreeMap<String, ProjectLocalBinding<'a>>;
+
+struct ProjectLocalBinding<'a> {
+    scope_start: usize,
+    ty: Option<ProjectCompletionType<'a>>,
+}
+
+#[derive(Clone, Copy)]
+enum ProjectExprLookup<'a, 'b> {
+    Scope(Option<CompletionScope<'b>>),
+    Initializer(&'b ProjectLocalTypes<'a>),
+}
+
+impl<'a> ProjectExprLookup<'a, '_> {
+    fn value(
+        self,
+        project: &'a ast::Project,
+        package: &'a ast::Package,
+        file: &'a ast::File,
+        name: &ast::Ident,
+    ) -> Option<Option<ProjectCompletionType<'a>>> {
+        match self {
+            Self::Scope(function) => project_completion_value_lookup(
+                project,
+                package,
+                file,
+                function,
+                &name.name,
+                name.span.start,
+            ),
+            Self::Initializer(types) => match types.get(&name.name) {
+                Some(binding) => Some(binding.ty.clone()),
+                None => project_completion_package_value_type(project, package, &name.name, false)
+                    .map(Some),
+            },
+        }
+    }
 }
 
 fn project_completion_method_receiver<'a>(
@@ -1190,17 +1247,83 @@ fn resolve_project_completion_expr_type<'a>(
     function: Option<CompletionScope<'_>>,
     expr: &ast::Expr,
 ) -> Option<ProjectCompletionType<'a>> {
+    resolve_project_completion_expr_type_with(
+        project,
+        package,
+        file,
+        ProjectExprLookup::Scope(function),
+        expr,
+    )
+}
+
+fn resolve_project_completion_expr_type_with<'a>(
+    project: &'a ast::Project,
+    package: &'a ast::Package,
+    file: &'a ast::File,
+    lookup: ProjectExprLookup<'a, '_>,
+    expr: &ast::Expr,
+) -> Option<ProjectCompletionType<'a>> {
+    let typed = |ty| ProjectCompletionType {
+        ty,
+        package,
+        file,
+        external: false,
+    };
     match expr {
+        ast::Expr::Literal(ast::Literal::Int(_, span)) => Some(typed(primitive_type("i32", *span))),
+        ast::Expr::Literal(ast::Literal::Float(_, span)) => {
+            Some(typed(primitive_type("f32", *span)))
+        }
+        ast::Expr::Literal(ast::Literal::Bool(_, span)) => {
+            Some(typed(primitive_type("bool", *span)))
+        }
+        ast::Expr::LayoutQuery { span, .. } => Some(typed(primitive_type("u32", *span))),
         ast::Expr::Name(path) if !path.segments.is_empty() => {
-            let mut resolved = project_completion_type_for_name(
-                project,
-                package,
-                file,
-                function,
-                &path.segments[0].name,
-                expr.span().start,
-            )?;
-            for segment in &path.segments[1..] {
+            if let [name] = path.segments.as_slice() {
+                if let Some(ty) = lookup.value(project, package, file, name) {
+                    return ty;
+                }
+                let (function, declaring_file) = project_completion_function(package, &name.name)?;
+                if !function.type_params.is_empty() {
+                    return None;
+                }
+                let signature = &function.signature;
+                return Some(ProjectCompletionType {
+                    ty: ast::Type::Func {
+                        signature: ast::TypeSignature {
+                            params: signature
+                                .params
+                                .iter()
+                                .map(|param| ast::TypeParameter {
+                                    name: Some(param.name.clone()),
+                                    ty: param.ty.clone(),
+                                    span: param.span,
+                                })
+                                .collect(),
+                            results: signature.results.clone(),
+                            span: signature.span,
+                        },
+                        span: signature.span,
+                    },
+                    file: declaring_file,
+                    package,
+                    external: false,
+                });
+            }
+            let (mut resolved, fields) =
+                match lookup.value(project, package, file, &path.segments[0]) {
+                    Some(ty) => (ty?, &path.segments[1..]),
+                    None => {
+                        let [alias, name, rest @ ..] = path.segments.as_slice() else {
+                            return None;
+                        };
+                        (
+                            project_completion_imported_value(project, file, alias, name)?,
+                            rest,
+                        )
+                    }
+                };
+            for segment in fields {
                 let (fields, field_package, field_file, external) =
                     resolve_project_completion_struct_type(project, resolved, 0, 0)?;
                 let field = fields
@@ -1216,8 +1339,15 @@ fn resolve_project_completion_expr_type<'a>(
             Some(resolved)
         }
         ast::Expr::Selector { base, field, .. } => {
+            if let ast::Expr::Name(path) = base.as_ref()
+                && let [alias] = path.segments.as_slice()
+                && lookup.value(project, package, file, alias).is_none()
+                && let Some(value) = project_completion_imported_value(project, file, alias, field)
+            {
+                return Some(value);
+            }
             let base =
-                resolve_project_completion_expr_type(project, package, file, function, base)?;
+                resolve_project_completion_expr_type_with(project, package, file, lookup, base)?;
             let (fields, field_package, field_file, external) =
                 resolve_project_completion_struct_type(project, base, 0, 0)?;
             let field = fields
@@ -1230,35 +1360,18 @@ fn resolve_project_completion_expr_type<'a>(
                 external,
             })
         }
-        ast::Expr::Cast { ty, .. } | ast::Expr::Composite { ty, .. } => {
-            Some(ProjectCompletionType {
-                ty: ty.clone(),
-                package,
-                file,
-                external: false,
-            })
+        ast::Expr::Cast { ty, .. } | ast::Expr::Composite { ty, .. } => Some(typed(ty.clone())),
+        ast::Expr::New { ty, span } => Some(typed(ast::Type::Pointer(Box::new(ty.clone()), *span))),
+        ast::Expr::Call { callee, .. } => {
+            project_completion_call_result(project, package, file, lookup, callee)
         }
-        ast::Expr::New { ty, span } => Some(ProjectCompletionType {
-            ty: ast::Type::Pointer(Box::new(ty.clone()), *span),
-            package,
-            file,
-            external: false,
-        }),
-        ast::Expr::Call { callee, .. } => project_completion_call_result(
-            project,
-            package,
-            file,
-            function,
-            callee,
-            expr.span().start,
-        ),
         ast::Expr::Unary {
             op: ast::UnaryOp::Deref,
             expr,
             ..
         } => {
             let mut resolved =
-                resolve_project_completion_expr_type(project, package, file, function, expr)?;
+                resolve_project_completion_expr_type_with(project, package, file, lookup, expr)?;
             let ast::Type::Pointer(inner, _) = resolved.ty else {
                 return None;
             };
@@ -1271,13 +1384,29 @@ fn resolve_project_completion_expr_type<'a>(
             span,
         } => {
             let mut resolved =
-                resolve_project_completion_expr_type(project, package, file, function, expr)?;
+                resolve_project_completion_expr_type_with(project, package, file, lookup, expr)?;
+            if completion_pointer_depth(&resolved.ty) >= MAX_COMPLETION_INFERRED_POINTER_DEPTH {
+                return None;
+            }
             resolved.ty = ast::Type::Pointer(Box::new(resolved.ty), *span);
             Some(resolved)
         }
-        ast::Expr::Index { base, .. } => {
+        ast::Expr::Unary { .. } | ast::Expr::Binary { .. } => {
+            expression::operator_type(expr, |operand| {
+                resolve_project_completion_expr_type_with(project, package, file, lookup, operand)
+                    .map(|resolved| resolved.ty)
+            })
+            .map(typed)
+        }
+        ast::Expr::Index { base, .. } | ast::Expr::TypeApply { base, .. } => {
+            // The parser can represent a named index as a single type argument.
+            if let ast::Expr::TypeApply { arguments, .. } = expr
+                && !matches!(arguments.as_slice(), [ast::Type::Named(_)])
+            {
+                return None;
+            }
             let mut resolved =
-                resolve_project_completion_expr_type(project, package, file, function, base)?;
+                resolve_project_completion_expr_type_with(project, package, file, lookup, base)?;
             resolved.ty = match resolved.ty {
                 ast::Type::Array { element, .. } | ast::Type::Pointer(element, _) => *element,
                 _ => return None,
@@ -1296,27 +1425,45 @@ fn project_completion_type_for_name<'a>(
     name: &str,
     limit: usize,
 ) -> Option<ProjectCompletionType<'a>> {
+    project_completion_value_lookup(project, package, file, function, name, limit).flatten()
+}
+
+fn project_completion_value_lookup<'a>(
+    project: &'a ast::Project,
+    package: &'a ast::Package,
+    file: &'a ast::File,
+    function: Option<CompletionScope<'_>>,
+    name: &str,
+    limit: usize,
+) -> Option<Option<ProjectCompletionType<'a>>> {
     if let Some(function) = function {
         let mut locals = BTreeMap::new();
+        let scope_start = function.body().span.start;
         if let Some(receiver) = function.receiver() {
             locals.insert(
                 receiver.name.name.clone(),
-                ProjectCompletionType {
-                    ty: receiver.ty.clone(),
-                    package,
-                    file,
-                    external: false,
+                ProjectLocalBinding {
+                    scope_start,
+                    ty: Some(ProjectCompletionType {
+                        ty: receiver.ty.clone(),
+                        package,
+                        file,
+                        external: false,
+                    }),
                 },
             );
         }
         for param in function.params() {
             locals.insert(
                 param.name.name.clone(),
-                ProjectCompletionType {
-                    ty: param.ty.clone(),
-                    package,
-                    file,
-                    external: false,
+                ProjectLocalBinding {
+                    scope_start,
+                    ty: Some(ProjectCompletionType {
+                        ty: param.ty.clone(),
+                        package,
+                        file,
+                        external: false,
+                    }),
                 },
             );
         }
@@ -1325,46 +1472,74 @@ fn project_completion_type_for_name<'a>(
             package,
             file,
             &function.body().statements,
+            scope_start,
             limit,
             &mut locals,
         );
-        if let Some(ty) = locals.get(name) {
-            return Some(ty.clone());
+        if let Some(binding) = locals.get(name) {
+            return Some(binding.ty.clone());
         }
     }
 
+    project_completion_package_value_type(project, package, name, true).map(Some)
+}
+
+fn project_completion_package_value_type<'a>(
+    project: &'a ast::Project,
+    package: &'a ast::Package,
+    name: &str,
+    infer: bool,
+) -> Option<ProjectCompletionType<'a>> {
     package.files.iter().find_map(|candidate_file| {
-        candidate_file.decls.iter().find_map(|decl| {
-            let ast::TopLevelDecl::Var(decl) = decl else {
-                return None;
-            };
-            decl.specs.iter().find_map(|spec| {
-                spec.names
-                    .iter()
-                    .position(|candidate| candidate.name == name)
-                    .and_then(|index| {
-                        spec.ty
-                            .as_ref()
-                            .map(|ty| ProjectCompletionType {
-                                ty: ty.clone(),
-                                package,
-                                file: candidate_file,
-                                external: false,
-                            })
-                            .or_else(|| {
-                                spec.values.get(index).and_then(|value| {
-                                    project_completion_type_from_known_expr(
-                                        project,
-                                        package,
-                                        candidate_file,
-                                        value,
-                                        &BTreeMap::new(),
-                                    )
-                                })
-                            })
-                    })
-            })
+        let resolve = |names: &[ast::Ident], ty: Option<&ast::Type>, values: &[ast::Expr]| {
+            let index = names.iter().position(|candidate| candidate.name == name)?;
+            if let Some(ty) = ty {
+                Some(ProjectCompletionType {
+                    ty: ty.clone(),
+                    package,
+                    file: candidate_file,
+                    external: false,
+                })
+            } else if infer {
+                project_completion_type_from_known_expr(
+                    project,
+                    package,
+                    candidate_file,
+                    values.get(index)?,
+                    &BTreeMap::new(),
+                )
+            } else {
+                None
+            }
+        };
+        candidate_file.decls.iter().find_map(|decl| match decl {
+            ast::TopLevelDecl::Var(decl) => decl
+                .specs
+                .iter()
+                .find_map(|spec| resolve(&spec.names, spec.ty.as_ref(), &spec.values)),
+            ast::TopLevelDecl::Const(decl) => decl
+                .specs
+                .iter()
+                .find_map(|spec| resolve(&spec.names, spec.ty.as_ref(), &spec.values)),
+            _ => None,
         })
+    })
+}
+
+fn project_completion_imported_value<'a>(
+    project: &'a ast::Project,
+    file: &'a ast::File,
+    alias: &ast::Ident,
+    name: &ast::Ident,
+) -> Option<ProjectCompletionType<'a>> {
+    if !completion_name_is_exported(&name.name) {
+        return None;
+    }
+    let package = completion_imported_package(project, file, &alias.name)?;
+    let value = project_completion_package_value_type(project, package, &name.name, false)?;
+    Some(ProjectCompletionType {
+        external: true,
+        ..value
     })
 }
 
@@ -1373,8 +1548,9 @@ fn collect_project_completion_local_types<'a>(
     package: &'a ast::Package,
     file: &'a ast::File,
     statements: &[ast::Stmt],
+    scope_start: usize,
     limit: usize,
-    types: &mut BTreeMap<String, ProjectCompletionType<'a>>,
+    types: &mut ProjectLocalTypes<'a>,
 ) {
     for stmt in statements {
         if stmt_span(stmt).start > limit {
@@ -1383,116 +1559,114 @@ fn collect_project_completion_local_types<'a>(
         match stmt {
             ast::Stmt::Var(decl) => {
                 for spec in &decl.specs {
-                    if spec.span.start > limit {
-                        continue;
-                    }
-                    for (index, name) in spec.names.iter().enumerate() {
-                        let ty = spec
-                            .ty
-                            .as_ref()
-                            .map(|ty| ProjectCompletionType {
-                                ty: ty.clone(),
-                                package,
-                                file,
-                                external: false,
-                            })
-                            .or_else(|| {
-                                spec.values.get(index).and_then(|value| {
-                                    project_completion_type_from_known_expr(
-                                        project, package, file, value, types,
-                                    )
-                                })
-                            });
-                        if let Some(ty) = ty {
-                            types.insert(name.name.clone(), ty);
-                        }
+                    if declaration_visible_at(spec.span, &spec.values, limit) {
+                        collect_project_completion_bindings(
+                            project,
+                            package,
+                            file,
+                            scope_start,
+                            ProjectBindingDeclaration {
+                                names: &spec.names,
+                                ty: spec.ty.as_ref(),
+                                values: &spec.values,
+                                reuse_existing: false,
+                            },
+                            types,
+                        );
                     }
                 }
             }
             ast::Stmt::Const(decl) => {
                 for spec in &decl.specs {
-                    if spec.span.start > limit {
-                        continue;
-                    }
-                    for (index, name) in spec.names.iter().enumerate() {
-                        let ty = spec
-                            .ty
-                            .as_ref()
-                            .map(|ty| ProjectCompletionType {
-                                ty: ty.clone(),
-                                package,
-                                file,
-                                external: false,
-                            })
-                            .or_else(|| {
-                                spec.values.get(index).and_then(|value| {
-                                    project_completion_type_from_known_expr(
-                                        project, package, file, value, types,
-                                    )
-                                })
-                            });
-                        if let Some(ty) = ty {
-                            types.insert(name.name.clone(), ty);
-                        }
+                    if declaration_visible_at(spec.span, &spec.values, limit) {
+                        collect_project_completion_bindings(
+                            project,
+                            package,
+                            file,
+                            scope_start,
+                            ProjectBindingDeclaration {
+                                names: &spec.names,
+                                ty: spec.ty.as_ref(),
+                                values: &spec.values,
+                                reuse_existing: false,
+                            },
+                            types,
+                        );
                     }
                 }
             }
-            ast::Stmt::ShortVar(decl) if decl.span.start <= limit => {
-                for (name, value) in decl.names.iter().zip(&decl.values) {
-                    if let Some(ty) = project_completion_type_from_known_expr(
-                        project, package, file, value, types,
-                    ) {
-                        types.insert(name.name.clone(), ty);
-                    }
-                }
+            ast::Stmt::ShortVar(decl) if declaration_visible_at(decl.span, &decl.values, limit) => {
+                collect_project_completion_bindings(
+                    project,
+                    package,
+                    file,
+                    scope_start,
+                    ProjectBindingDeclaration {
+                        names: &decl.names,
+                        ty: None,
+                        values: &decl.values,
+                        reuse_existing: true,
+                    },
+                    types,
+                );
             }
-            ast::Stmt::Block(block) => collect_project_completion_local_types(
-                project,
-                package,
-                file,
-                &block.statements,
-                limit,
-                types,
-            ),
-            ast::Stmt::Defer(stmt) => collect_project_completion_local_types(
-                project,
-                package,
-                file,
-                &stmt.block.statements,
-                limit,
-                types,
-            ),
-            ast::Stmt::If(stmt) => {
+            ast::Stmt::Block(block) if limit <= block.span.end => {
+                collect_project_completion_local_types(
+                    project,
+                    package,
+                    file,
+                    &block.statements,
+                    block.span.start,
+                    limit,
+                    types,
+                )
+            }
+            ast::Stmt::Defer(stmt) if limit <= stmt.block.span.end => {
+                collect_project_completion_local_types(
+                    project,
+                    package,
+                    file,
+                    &stmt.block.statements,
+                    stmt.block.span.start,
+                    limit,
+                    types,
+                )
+            }
+            ast::Stmt::If(stmt) if limit <= stmt.span.end => {
                 if let Some(init) = &stmt.init {
                     collect_project_completion_local_types(
                         project,
                         package,
                         file,
                         std::slice::from_ref(init),
+                        stmt.span.start,
                         limit,
                         types,
                     );
                 }
-                collect_project_completion_local_types(
-                    project,
-                    package,
-                    file,
-                    &stmt.then_block.statements,
-                    limit,
-                    types,
-                );
-                if let Some(other) = &stmt.else_branch {
+                if limit <= stmt.then_block.span.end {
+                    collect_project_completion_local_types(
+                        project,
+                        package,
+                        file,
+                        &stmt.then_block.statements,
+                        stmt.then_block.span.start,
+                        limit,
+                        types,
+                    );
+                } else if let Some(other) = &stmt.else_branch {
                     collect_project_completion_local_types(
                         project,
                         package,
                         file,
                         std::slice::from_ref(other),
+                        stmt_span(other).start,
                         limit,
                         types,
                     );
                 }
             }
-            ast::Stmt::For(stmt) => {
+            ast::Stmt::For(stmt) if limit <= stmt.span.end => {
                 if let ast::ForKind::ThreeClause {
                     init: Some(init), ..
                 } = &stmt.kind
@@ -1502,6 +1676,7 @@ fn collect_project_completion_local_types<'a>(
                         package,
                         file,
                         std::slice::from_ref(init),
+                        stmt.span.start,
                         limit,
                         types,
                     );
@@ -1511,6 +1686,7 @@ fn collect_project_completion_local_types<'a>(
                     package,
                     file,
                     &stmt.body.statements,
+                    stmt.body.span.start,
                     limit,
                     types,
                 );
@@ -1520,69 +1696,79 @@ fn collect_project_completion_local_types<'a>(
     }
 }
 
+fn declaration_visible_at(span: Span, values: &[ast::Expr], offset: usize) -> bool {
+    span.start <= offset
+        && (span.end <= offset
+            || values
+                .first()
+                .is_none_or(|value| offset < value.span().start))
+}
+
+struct ProjectBindingDeclaration<'a> {
+    names: &'a [ast::Ident],
+    ty: Option<&'a ast::Type>,
+    values: &'a [ast::Expr],
+    reuse_existing: bool,
+}
+
+fn collect_project_completion_bindings<'a>(
+    project: &'a ast::Project,
+    package: &'a ast::Package,
+    file: &'a ast::File,
+    scope_start: usize,
+    declaration: ProjectBindingDeclaration<'_>,
+    types: &mut ProjectLocalTypes<'a>,
+) {
+    let bindings = declaration
+        .names
+        .iter()
+        .enumerate()
+        .filter(|(_, name)| {
+            name.name != "_"
+                && !(declaration.reuse_existing
+                    && types
+                        .get(&name.name)
+                        .is_some_and(|binding| binding.scope_start == scope_start))
+        })
+        .map(|(index, name)| {
+            let ty = declaration
+                .ty
+                .map(|ty| ProjectCompletionType {
+                    ty: ty.clone(),
+                    package,
+                    file,
+                    external: false,
+                })
+                .or_else(|| {
+                    project_completion_type_from_known_expr(
+                        project,
+                        package,
+                        file,
+                        declaration.values.get(index)?,
+                        types,
+                    )
+                });
+            (name.name.clone(), ProjectLocalBinding { scope_start, ty })
+        })
+        .collect::<Vec<_>>();
+    types.extend(bindings);
+}
+
 fn project_completion_type_from_known_expr<'a>(
     project: &'a ast::Project,
     package: &'a ast::Package,
     file: &'a ast::File,
     expr: &ast::Expr,
-    types: &BTreeMap<String, ProjectCompletionType<'a>>,
+    types: &ProjectLocalTypes<'a>,
 ) -> Option<ProjectCompletionType<'a>> {
-    match expr {
-        ast::Expr::Literal(ast::Literal::Int(_, span)) => Some(ProjectCompletionType {
-            ty: primitive_type("i32", *span),
-            package,
-            file,
-            external: false,
-        }),
-        ast::Expr::Literal(ast::Literal::Float(_, span)) => Some(ProjectCompletionType {
-            ty: primitive_type("f32", *span),
-            package,
-            file,
-            external: false,
-        }),
-        ast::Expr::Literal(ast::Literal::Bool(_, span)) => Some(ProjectCompletionType {
-            ty: primitive_type("bool", *span),
-            package,
-            file,
-            external: false,
-        }),
-        ast::Expr::Cast { ty, .. } | ast::Expr::Composite { ty, .. } => {
-            Some(ProjectCompletionType {
-                ty: ty.clone(),
-                package,
-                file,
-                external: false,
-            })
-        }
-        ast::Expr::New { ty, span } => Some(ProjectCompletionType {
-            ty: ast::Type::Pointer(Box::new(ty.clone()), *span),
-            package,
-            file,
-            external: false,
-        }),
-        ast::Expr::Name(path) if path.segments.len() == 1 => {
-            types.get(&path.segments[0].name).cloned()
-        }
-        ast::Expr::Call { callee, .. } => {
-            project_completion_call_result(project, package, file, None, callee, expr.span().start)
-        }
-        ast::Expr::Unary {
-            op: ast::UnaryOp::AddrOf,
-            expr,
-            span,
-        } => {
-            let mut resolved =
-                project_completion_type_from_known_expr(project, package, file, expr, types)?;
-            if completion_pointer_depth(&resolved.ty) >= MAX_COMPLETION_INFERRED_POINTER_DEPTH {
-                return None;
-            }
-            resolved.ty = ast::Type::Pointer(Box::new(resolved.ty), *span);
-            Some(resolved)
-        }
-        _ => None,
-    }
+    resolve_project_completion_expr_type_with(
+        project,
+        package,
+        file,
+        ProjectExprLookup::Initializer(types),
+        expr,
+    )
 }
-
 fn primitive_type(name: &str, span: Span) -> ast::Type {
     ast::Type::Named(ast::Path {
         segments: vec![ast::Ident {
@@ -1597,27 +1783,39 @@ fn project_completion_call_result<'a>(
     project: &'a ast::Project,
     package: &'a ast::Package,
     file: &'a ast::File,
-    function: Option<CompletionScope<'_>>,
+    lookup: ProjectExprLookup<'a, '_>,
     callee: &ast::Expr,
-    limit: usize,
 ) -> Option<ProjectCompletionType<'a>> {
-    if let ast::Expr::Selector { base, field, .. } = callee {
-        return project_completion_method_result(
-            project, package, file, function, base, field, limit,
-        );
+    let method_result = match callee {
+        ast::Expr::Selector { base, field, .. } => {
+            project_completion_method_result(project, package, file, lookup, base, field)
+        }
+        ast::Expr::Name(path)
+            if path.segments.len() >= 2
+                && lookup
+                    .value(project, package, file, &path.segments[0])
+                    .is_some() =>
+        {
+            let (method, receiver) = path.segments.split_last()?;
+            let base = ast::Expr::Name(ast::Path {
+                segments: receiver.to_vec(),
+                span: path.span,
+            });
+            project_completion_method_result(project, package, file, lookup, &base, method)
+        }
+        _ => None,
+    };
+    if method_result.is_some() {
+        return method_result;
     }
-    if let ast::Expr::Name(path) = callee
-        && let [base, method] = path.segments.as_slice()
-        && project_completion_type_for_name(project, package, file, function, &base.name, limit)
-            .is_some()
+    if let Some(mut target) =
+        resolve_project_completion_expr_type_with(project, package, file, lookup, callee)
     {
-        let base = ast::Expr::Name(ast::Path {
-            segments: vec![base.clone()],
-            span: base.span,
-        });
-        return project_completion_method_result(
-            project, package, file, function, &base, method, limit,
-        );
+        let ast::Type::Func { signature, .. } = &target.ty else {
+            return None;
+        };
+        target.ty = signature.results.first()?.clone();
+        return Some(target);
     }
     let (path, type_arguments) = match callee {
         ast::Expr::Name(path) => (path, None),
@@ -1632,58 +1830,59 @@ fn project_completion_call_result<'a>(
         _ => return None,
     };
     match path.segments.as_slice() {
-        [name] => package.files.iter().find_map(|candidate_file| {
-            candidate_file.decls.iter().find_map(|decl| {
-                let ast::TopLevelDecl::Func(decl) = decl else {
-                    return None;
-                };
-                if decl.receiver.is_some() || decl.name.name != name.name {
-                    return None;
-                }
-                Some(ProjectCompletionType {
-                    ty: completion_function_result_type(decl, type_arguments)?,
-                    package,
-                    file: candidate_file,
-                    external: false,
-                })
+        [name] if lookup.value(project, package, file, name).is_none() => {
+            let (function, declaring_file) = project_completion_function(package, &name.name)?;
+            Some(ProjectCompletionType {
+                ty: completion_function_result_type(function, type_arguments)?,
+                package,
+                file: declaring_file,
+                external: false,
             })
-        }),
-        [alias, name] if completion_name_is_exported(&name.name) => {
+        }
+        [alias, name]
+            if completion_name_is_exported(&name.name)
+                && lookup.value(project, package, file, alias).is_none() =>
+        {
             let imported = completion_imported_package(project, file, &alias.name)?;
-            imported.files.iter().find_map(|candidate_file| {
-                candidate_file.decls.iter().find_map(|decl| {
-                    let ast::TopLevelDecl::Func(decl) = decl else {
-                        return None;
-                    };
-                    if decl.receiver.is_some() || decl.name.name != name.name {
-                        return None;
-                    }
-                    Some(ProjectCompletionType {
-                        ty: completion_function_result_type(decl, type_arguments)?,
-                        package: imported,
-                        file: candidate_file,
-                        external: true,
-                    })
-                })
+            let (function, declaring_file) = project_completion_function(imported, &name.name)?;
+            Some(ProjectCompletionType {
+                ty: completion_function_result_type(function, type_arguments)?,
+                package: imported,
+                file: declaring_file,
+                external: true,
             })
         }
         _ => None,
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+fn project_completion_function<'a>(
+    package: &'a ast::Package,
+    name: &str,
+) -> Option<(&'a ast::FuncDecl, &'a ast::File)> {
+    package.files.iter().find_map(|file| {
+        file.decls.iter().find_map(|decl| match decl {
+            ast::TopLevelDecl::Func(function)
+                if function.receiver.is_none() && function.name.name == name =>
+            {
+                Some((function, file))
+            }
+            _ => None,
+        })
+    })
+}
+
 fn project_completion_method_result<'a>(
     project: &'a ast::Project,
     package: &'a ast::Package,
     file: &'a ast::File,
-    function: Option<CompletionScope<'_>>,
+    lookup: ProjectExprLookup<'a, '_>,
     base: &ast::Expr,
     method_name: &ast::Ident,
-    _limit: usize,
 ) -> Option<ProjectCompletionType<'a>> {
-    let receiver = resolve_project_completion_expr_type(project, package, file, function, base)?;
+    let receiver = resolve_project_completion_expr_type_with(project, package, file, lookup, base)?;
     let addressable =
-        project_completion_expr_is_addressable(project, package, file, function, base);
+        project_completion_expr_is_addressable_with(project, package, file, lookup, base);
     project_completion_method_result_for_receiver(
         project,
         receiver.clone(),

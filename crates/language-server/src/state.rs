@@ -3922,6 +3922,353 @@ mod tests {
     }
 
     #[test]
+    fn hover_shows_expression_initializer_types_in_standalone_and_project_files() {
+        let root = test_project_root("hover-expression-initializer");
+        let path = root.join("main.ond");
+        let uri = uri_from_path(&path).unwrap();
+        let source = "package main
+func next() -> u16 { return 2 }
+func narrowResult() -> u8 { return 2 }
+var packageBase: u16
+const packageConstant: u16 = 2
+type Box struct { Value: u8 }
+type CallBox struct { Next: func() -> u8 }
+type Wrapper struct { Inner: Box; Callbacks: [1]func() -> u8 }
+func (box: Box) Get() -> u8 { return box.Value }
+func getCallback() -> func() -> u8 { return narrowResult }
+func computedCallee(box: CallBox, callbacks: [1]func() -> u8, wrapper: Wrapper, index: u32) {
+    fieldCall := box.Next() + 1
+    _ = fieldCall
+    indexedCall := callbacks[0]() + 1
+    _ = indexedCall
+    returnedCall := getCallback()() + 1
+    _ = returnedCall
+    nestedMethod := wrapper.Inner.Get() + 1
+    _ = nestedMethod
+    dynamicIndexCall := callbacks[index]() + 1
+    _ = dynamicIndexCall
+    dynamicFieldCall := wrapper.Callbacks[index]() + 1
+    _ = dynamicFieldCall
+}
+func pair() -> (u8, u16) { return 1, 2 }
+func reusedDemo(value: u16, other: u16) {
+    value, fresh := 2, 0
+    _ = fresh
+    reusedParameter := value + 1
+    _ = reusedParameter
+    local := 2 as u16
+    local, freshLocal := 3, 0
+    _ = freshLocal
+    reusedLocal := local + 1
+    _ = reusedLocal
+    freshPair, other := pair()
+    _ = freshPair
+    reusedPair := other + 1
+    _ = reusedPair
+}
+func callbackDemo(next: func() -> u8) {
+    parameterCall := next() + 1
+    _ = parameterCall
+}
+func demo(argument: i32, narrow: u16, count: u32, fraction: f64, fixed: q16, box: Box, p: *u8, buf: [1]u8) {
+    shortBinary := argument + 1
+    _ = shortBinary
+    narrowLeft := narrow + 1
+    _ = narrowLeft
+    narrowRight := 1 + narrow
+    _ = narrowRight
+    constantRight := narrow + (1 + 2)
+    _ = constantRight
+    constantLeft := (1 + 2) + narrow
+    _ = constantLeft
+    nestedCall := (next() + 1) * narrow
+    _ = nestedCall
+    comparison := narrow > 0 && argument != 0
+    _ = comparison
+    negated := -argument
+    _ = negated
+    bits := (narrow & 0xff) << count
+    _ = bits
+    floating := 1.25 + fraction
+    _ = floating
+    quantized := fixed % 1.5
+    _ = quantized
+    var inferred = argument + 1
+    _ = inferred
+    {
+        shortBinary := narrow + 1
+        _ = shortBinary
+    }
+    _ = shortBinary
+    {
+        narrow, shortSibling := 0 as u8, narrow + 1
+        _ = shortSibling
+        _ = narrow
+    }
+    {
+        var narrow, varSibling = 0 as u8, narrow + 1
+        _ = varSibling
+        _ = narrow
+    }
+    const outerConstant: u16 = 2
+    {
+        const outerConstant, constSibling = 0 as u8, outerConstant + 1
+        _ = constSibling
+        _ = outerConstant
+    }
+    next := narrowResult
+    shadowedCall := next() + 1
+    _ = shadowedCall
+    {
+        var narrow = box.Value
+        shadowedField := narrow + 1
+        _ = shadowedField
+    }
+    packageVarExpr := packageBase + 1
+    _ = packageVarExpr
+    packageConstExpr := packageConstant + 1
+    _ = packageConstExpr
+    fieldExpr := box.Value + 1
+    _ = fieldExpr
+    methodExpr := box.Get() + 1
+    _ = methodExpr
+    pointerExpr := *p + 1
+    _ = pointerExpr
+    indexExpr := buf[0] + 1
+    _ = indexExpr
+    layoutExpr := sizeof(u16) + 1
+    _ = layoutExpr
+    deadOperand := false && (box.Value > 300)
+    _ = deadOperand
+    outer := narrow + 1
+    _ = outer
+    {
+        outer := (outer as u8) + 1
+        _ = outer
+    }
+}
+func main() {}
+";
+        std::fs::write(&path, source).unwrap();
+
+        let mut failures = Vec::new();
+        for mode in ["standalone", "project"] {
+            if mode == "project" {
+                std::fs::write(root.join("ond.toml"), "[project]\nname = \"app\"\n").unwrap();
+            }
+            let mut state = ServerState::default();
+            let mut output = Vec::new();
+            state
+                .open_document(uri.clone(), source.to_string(), &mut output)
+                .unwrap();
+            let diagnostics = published_diagnostics(&output, &uri);
+            assert_eq!(diagnostics.last(), Some(&serde_json::json!([])), "{mode}");
+            for (name, ty) in [
+                ("shortBinary", "i32"),
+                ("narrowLeft", "u16"),
+                ("narrowRight", "u16"),
+                ("constantRight", "u16"),
+                ("constantLeft", "u16"),
+                ("nestedCall", "u16"),
+                ("comparison", "bool"),
+                ("negated", "i32"),
+                ("bits", "u16"),
+                ("floating", "f64"),
+                ("quantized", "q16"),
+                ("inferred", "i32"),
+                ("shortSibling", "u16"),
+                ("varSibling", "u16"),
+                ("constSibling", "u16"),
+                ("shadowedCall", "u8"),
+                ("parameterCall", "u8"),
+                ("shadowedField", "u8"),
+                ("packageVarExpr", "u16"),
+                ("packageConstExpr", "u16"),
+                ("fieldExpr", "u8"),
+                ("methodExpr", "u8"),
+                ("pointerExpr", "u8"),
+                ("indexExpr", "u8"),
+                ("layoutExpr", "u32"),
+                ("deadOperand", "bool"),
+                ("reusedParameter", "u16"),
+                ("reusedLocal", "u16"),
+                ("reusedPair", "u16"),
+                ("fieldCall", "u8"),
+                ("indexedCall", "u8"),
+                ("returnedCall", "u8"),
+                ("nestedMethod", "u8"),
+                ("dynamicIndexCall", "u8"),
+                ("dynamicFieldCall", "u8"),
+            ] {
+                for (line, text) in source.lines().enumerate() {
+                    if let Some(column) = text.find(name) {
+                        let ty = if name == "shortBinary" && text.starts_with("        ") {
+                            "u16"
+                        } else {
+                            ty
+                        };
+                        let expected = format!("{name}: {ty}");
+                        let hover = state.hover(&uri, line as u32, column as u32).unwrap();
+                        if !hover["contents"]["value"]
+                            .as_str()
+                            .is_some_and(|value| value.contains(&expected))
+                        {
+                            failures.push(format!(
+                                "{mode}, line {}: expected {expected}, got {hover}",
+                                line + 1
+                            ));
+                        }
+                    }
+                }
+            }
+            let (line, text) = source
+                .lines()
+                .enumerate()
+                .find(|(_, text)| text.contains("outer as u8"))
+                .unwrap();
+            let column = text.find("outer as u8").unwrap();
+            let hover = state.hover(&uri, line as u32, column as u32).unwrap();
+            if !hover["contents"]["value"]
+                .as_str()
+                .is_some_and(|value| value.contains("outer: u16"))
+            {
+                failures.push(format!(
+                    "{mode}: expected initializer outer: u16, got {hover}"
+                ));
+            }
+        }
+
+        std::fs::remove_dir_all(root).unwrap();
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    #[test]
+    fn member_completion_respects_short_declaration_reuse_and_shadowing() {
+        let root = test_project_root("completion-short-binding");
+        let path = root.join("main.ond");
+        let uri = uri_from_path(&path).unwrap();
+        let source = "package main
+type Alpha struct { AlphaField: u8 }
+type Beta struct { BetaField: u8 }
+func make() -> Alpha { return Alpha{} }
+func other() -> Beta { return Beta{} }
+func callbackPair() -> (u8, func() -> Beta) { return 0, other }
+func structPair() -> (u8, Beta) { return 0, Beta{} }
+func demo(reused: Beta) {
+    _, make := callbackPair()
+    _ = make().BetaField
+    fresh, reused := structPair()
+    _ = fresh
+    _ = reused.BetaField
+}
+func main() {}
+";
+        std::fs::write(root.join("ond.toml"), "[project]\nname = \"app\"\n").unwrap();
+        std::fs::write(&path, source).unwrap();
+        let mut state = ServerState::default();
+        let mut output = Vec::new();
+        state
+            .open_document(uri.clone(), source.to_string(), &mut output)
+            .unwrap();
+        assert_eq!(
+            published_diagnostics(&output, &uri).last(),
+            Some(&serde_json::json!([]))
+        );
+
+        let completions_at = |state: &mut ServerState, needle| {
+            let (line, text) = source
+                .lines()
+                .enumerate()
+                .find(|(_, text)| text.contains(needle))
+                .unwrap();
+            state
+                .completions(&uri, line as u32, (text.find('.').unwrap() + 1) as u32)
+                .unwrap()
+        };
+        let shadowed = completions_at(&mut state, "make().BetaField");
+        let reused = completions_at(&mut state, "reused.BetaField");
+        std::fs::remove_dir_all(root).unwrap();
+        assert!(
+            shadowed.iter().all(|item| item["label"] != "AlphaField"),
+            "{shadowed:?}"
+        );
+        assert!(
+            reused.iter().any(|item| item["label"] == "BetaField"),
+            "{reused:?}"
+        );
+    }
+
+    #[test]
+    fn hover_shows_expression_types_for_imported_package_values() {
+        let root = test_project_root("hover-imported-expression");
+        let path = root.join("main.ond");
+        let uri = uri_from_path(&path).unwrap();
+        let source = "package main
+import numbers \"app/dep\"
+func local(numbers: numbers.P) {
+    localMethodCall := numbers.Call() + 1
+    var _: u16 = localMethodCall
+}
+func main() {
+    importedVar := numbers.Base + 1
+    importedConst := numbers.Offset + 1
+    importedFieldCall := numbers.Global.Call() + 1
+    var _: u8 = importedFieldCall
+    _ = importedVar
+    _ = importedConst
+}
+";
+        std::fs::write(root.join("ond.toml"), "[project]\nname = \"app\"\n").unwrap();
+        std::fs::write(&path, source).unwrap();
+        std::fs::create_dir(root.join("dep")).unwrap();
+        std::fs::write(
+            root.join("dep").join("values.ond"),
+            "package dep
+var Base: u16
+const Offset: u16 = 2
+type S struct { Call: func() -> u8 }
+type P *S
+func (p: P) Call() -> u16 { _ = p; return 2 }
+var Global: P
+",
+        )
+        .unwrap();
+
+        let mut state = ServerState::default();
+        let mut output = Vec::new();
+        state
+            .open_document(uri.clone(), source.to_string(), &mut output)
+            .unwrap();
+        assert_eq!(
+            published_diagnostics(&output, &uri).last(),
+            Some(&serde_json::json!([]))
+        );
+        let mut hovers = Vec::new();
+        for (line, text) in source.lines().enumerate() {
+            for (name, ty) in [
+                ("importedVar", "u16"),
+                ("importedConst", "u16"),
+                ("importedFieldCall", "u8"),
+                ("localMethodCall", "u16"),
+            ] {
+                if let Some(column) = text.find(name) {
+                    let hover = state.hover(&uri, line as u32, column as u32).unwrap();
+                    hovers.push((name, ty, hover));
+                }
+            }
+        }
+        std::fs::remove_dir_all(root).unwrap();
+        for (name, ty, hover) in hovers {
+            assert!(
+                hover["contents"]["value"]
+                    .as_str()
+                    .is_some_and(|value| { value.contains(&format!("{name}: {ty}")) }),
+                "{name}: {hover}"
+            );
+        }
+    }
+
+    #[test]
     fn hover_returns_null_for_an_incomplete_document() {
         let path = normalize_path(
             std::env::current_dir()
