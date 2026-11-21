@@ -81,13 +81,22 @@ impl Context<'_> {
     }
     /// Resolve the complete symbolic place into r4 without accessing its final value.
     pub(super) fn place(&mut self, p: &mir::Place, span: Span) -> Result<(), Diagnostic> {
+        // The induction proof accepts only raw places whose first projection
+        // is the selected offset. Field projections still use normal lowering.
+        let carried = self.induction
+            && matches!(p.base, mir::PlaceBase::Pointer(_))
+            && matches!(p.projections.first(), Some(mir::Projection::Offset { .. }));
         let mut ty = match p.base {
             mir::PlaceBase::Local(id) => {
                 address(self.e, 4, self.frame.local(id));
                 self.f.locals[id.0 as usize].ty
             }
             mir::PlaceBase::Pointer(v) => {
-                self.load(v, 4);
+                if carried {
+                    self.e.load(4, self.frame.scratch);
+                } else {
+                    self.load(v, 4);
+                }
                 match self.p.types.underlying_kind(self.ty(v)) {
                     Some(mir::TypeKind::Pointer(t)) => *t,
                     _ => unreachable!("validated pointer"),
@@ -98,7 +107,7 @@ impl Context<'_> {
                 ty
             }
         };
-        for projection in &p.projections {
+        for projection in &p.projections[usize::from(carried)..] {
             match projection {
                 mir::Projection::Dereference => {
                     self.e.emit(7, 4, 4, 0, 0);

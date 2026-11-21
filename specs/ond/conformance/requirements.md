@@ -105,7 +105,7 @@
 | MEM-01 | new zero/alignment、alloc failure/0、free nil等 | [MEM-01の定義元](../language/v1/execution.md#メモリ管理) | [failed_allocation_and_overflow_preserve_existing_memoryの入力・期待](./implementation-index.md#既存回帰と要件) |
 | MEM-02 | stack/startup配置、escapeしても暗黙heap化なし | [MEM-02の定義元](../language/v1/execution.md#メモリ管理) | [memory-placement](./cases/memory-placement.md) |
 | MEM-03 | bounds check失敗のnon-return/fault契約 | [MEM-03の定義元](../language/v1/execution.md#メモリ管理) | [bounds_fault_precedes_destination_writeの入力・期待](./implementation-index.md#既存回帰と要件) |
-| MEM-04 | raw pointerの有効領域・寿命・free入力を利用側が管理 | [MEM-04の定義元](../language/v1/execution.md#メモリ管理) | [arrays_including_string_literals_are_bounds_checked_but_raw_pointers_are_notの入力・期待](./implementation-index.md#既存回帰と要件) |
+| MEM-04 | raw pointerの有効領域・寿命・free入力を利用側が管理 | [MEM-04の定義元](../language/v1/execution.md#メモリ管理) | [arrays_including_string_literals_are_bounds_checked_but_raw_pointers_are_notの入力・期待](./implementation-index.md#既存回帰と要件)、[グローバル配列のraw pointer走査](./cases/kagura-regression-observations.md#グローバル配列のraw-pointer走査) |
 
 ## 制御フロー・関数・起動
 <!-- ond-spec-id: conformance/requirements-flow-entry -->

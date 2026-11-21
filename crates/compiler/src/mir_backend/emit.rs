@@ -127,9 +127,32 @@ impl Emitter {
         self.emit(12, 0, reg, 0, 1);
         self.trap();
     }
-    pub fn finish(mut self) -> Result<(Vec<u8>, Vec<Relocation>), Diagnostic> {
+    pub fn can_append(&self, resolved: &Self) -> bool {
+        self.words
+            .len()
+            .checked_add(resolved.words.len())
+            .is_some_and(|len| len <= (u32::MAX / 4) as usize)
+    }
+
+    // Relative fixups have already been applied to this function. Relocations
+    // still use section offsets and must be rebased when concatenating.
+    pub fn append_resolved(&mut self, mut resolved: Self, span: Span) -> Result<(), Diagnostic> {
+        debug_assert!(resolved.branches.is_empty());
+        let start = self.offset(span)?;
+        if !self.can_append(&resolved) {
+            return Err(error(span, "text exceeds 32-bit size"));
+        }
+        for relocation in &mut resolved.relocations {
+            relocation.offset += start;
+        }
+        self.words.append(&mut resolved.words);
+        self.relocations.append(&mut resolved.relocations);
+        Ok(())
+    }
+
+    pub fn resolve(mut self) -> Result<Self, Diagnostic> {
         self.offset(Span::synthetic())?;
-        for (at, target, span, near) in self.branches {
+        for (at, target, span, near) in self.branches.drain(..) {
             let target = self.labels[target].ok_or_else(|| error(span, "unbound block label"))?;
             let delta = target as i64 - at as i64 - 1;
             let imm = if let Ok(imm) = i16::try_from(delta) {
@@ -146,9 +169,18 @@ impl Emitter {
             };
             self.words[at] = (self.words[at] & 0xffff0000) | imm as u16 as u32;
         }
+        Ok(self)
+    }
+
+    pub fn finish(self) -> Result<(Vec<u8>, Vec<Relocation>), Diagnostic> {
+        let resolved = self.resolve()?;
         Ok((
-            self.words.into_iter().flat_map(u32::to_le_bytes).collect(),
-            self.relocations,
+            resolved
+                .words
+                .into_iter()
+                .flat_map(u32::to_le_bytes)
+                .collect(),
+            resolved.relocations,
         ))
     }
 }
