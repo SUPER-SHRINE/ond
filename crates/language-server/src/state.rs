@@ -12,13 +12,13 @@ use crate::completion::{
     append_builtin_type_completion_items, append_import_completion_items,
     append_indexed_symbol_completion_items, append_local_completion_items,
     append_top_level_completion_items, append_top_level_variable_completion_items,
-    completion_qualifier, completion_text_with_placeholder, completion_text_with_value_placeholder,
-    dedupe_completion_items, find_completion_selector, import_path_completion_context,
-    import_path_completion_items, keyword_completion_items, package_member_completion_items,
-    package_member_completion_items_for_alias, project_completion_base_has_known_type,
-    resolve_completion_methods, resolve_completion_struct_fields,
-    resolve_project_completion_methods, resolve_project_completion_struct_fields,
-    struct_field_completion_items,
+    completion_qualifier, completion_text_with_identifier_call, completion_text_with_placeholder,
+    completion_text_with_value_placeholder, dedupe_completion_items, find_completion_selector,
+    import_path_completion_context, import_path_completion_items, keyword_completion_items,
+    package_member_completion_items, package_member_completion_items_for_alias,
+    project_completion_base_has_known_type, resolve_completion_methods,
+    resolve_completion_struct_fields, resolve_project_completion_methods,
+    resolve_project_completion_struct_fields, struct_field_completion_items,
 };
 use crate::hover::{hover_for_file, hover_for_project};
 use crate::navigation::{definition_for_file, definition_for_project};
@@ -432,7 +432,15 @@ impl ServerState {
         });
         let value_placeholder = if completion_marker.is_none() {
             self.documents.get(path).and_then(|document| {
-                completion_text_with_value_placeholder(&document.text, line, character)
+                completion_text_with_value_placeholder(&document.text, line, character).or_else(
+                    || {
+                        if cached_index.file_failed_to_parse(path) {
+                            completion_text_with_identifier_call(&document.text, line, character)
+                        } else {
+                            None
+                        }
+                    },
+                )
             })
         } else {
             None
@@ -726,7 +734,18 @@ impl ServerState {
         append_builtin_type_completion_items(&mut items);
         let mut sources = SourceDb::default();
         let file_id = sources.add_file(path.to_path_buf(), text.to_string());
-        let Ok(file) = compiler::parse_source_file(file_id, text) else {
+        let file = compiler::parse_source_file(file_id, text).or_else(|error| {
+            if marker.is_none()
+                && value_completion.is_none()
+                && let Some(repaired) =
+                    completion_text_with_identifier_call(&document.text, line, character)
+            {
+                compiler::parse_source_file(file_id, &repaired)
+            } else {
+                Err(error)
+            }
+        });
+        let Ok(file) = file else {
             if marker.is_some() {
                 return Ok(Vec::new());
             }
@@ -758,9 +777,12 @@ impl ServerState {
 
         append_import_completion_items(&mut items, &file);
         append_top_level_completion_items(&mut items, &file);
-        let source = sources.file(file_id);
-        let offset = source.offset_at_line_col(line as usize + 1, character as usize + 1);
-        append_local_completion_items(&mut items, &file, offset);
+        if let Ok(offset) = lsp_offset(
+            &document.text,
+            &crate::protocol::Position { line, character },
+        ) {
+            append_local_completion_items(&mut items, &file, offset);
+        }
         append_builtin_function_completion_items(&mut items);
         dedupe_completion_items(items)
     }
@@ -1961,6 +1983,92 @@ mod tests {
                 .collect::<Vec<_>>();
             assert!(!labels.contains(&"A"), "{completions:?}");
             assert!(!labels.contains(&"Method"), "{completions:?}");
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn incomplete_identifier_statement_keeps_local_completion() {
+        for (project_mode, cached) in [(false, false), (true, false), (true, true)] {
+            let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
+                "ond-lsp-identifier-statement-{}-{}",
+                std::process::id(),
+                next_temp_root_id()
+            ))));
+            std::fs::create_dir_all(&root).unwrap();
+            if project_mode {
+                std::fs::write(root.join("ond.toml"), "[project]\nname=\"completion\"\n").unwrap();
+            }
+            let path = root.join("main.ond");
+            let uri = uri_from_path(&path).unwrap();
+            let mut state = ServerState::default();
+            let mut output = Vec::new();
+            let prefix = "package main\nfunc demo(argument: i32) {\n    var localValue = argument\n    { var hiddenLocal = argument }\n";
+            let valid =
+                format!("{prefix}    \n    var laterLocal = argument\n}}\nfunc main() {{}}\n");
+            if cached {
+                std::fs::write(&path, &valid).unwrap();
+                state
+                    .open_document(uri.clone(), valid.clone(), &mut output)
+                    .unwrap();
+                state.completions(&uri, 4, 4).unwrap();
+            }
+
+            for (statement, cursor_prefix) in [
+                ("    lo", "    lo"),
+                ("    argument", "    ar"),
+                ("    /* note */ lo", "    /* note */ lo"),
+                ("    /* 𐐀𐐀𐐀 .x */ lo", "    /* 𐐀𐐀𐐀 .x */ lo"),
+                ("    lo /* note */", "    lo"),
+                (
+                    "    /* note\n       still a comment */ lo /* another\n       comment */",
+                    "    /* note\n       still a comment */ lo",
+                ),
+                (
+                    "    { var 字𐐀 = argument; 字𐐀 }",
+                    "    { var 字𐐀 = argument; 字𐐀",
+                ),
+            ] {
+                let source = valid.replacen("    \n", &format!("{statement}\n"), 1);
+                if state.documents.contains_key(&path) {
+                    state
+                        .change_document(
+                            uri.clone(),
+                            vec![TextDocumentContentChangeEvent {
+                                text: source,
+                                range: None,
+                            }],
+                            &mut output,
+                        )
+                        .unwrap();
+                } else {
+                    std::fs::write(&path, &source).unwrap();
+                    state
+                        .open_document(uri.clone(), source, &mut output)
+                        .unwrap();
+                }
+                let line = 4 + cursor_prefix.matches('\n').count() as u32;
+                let character = cursor_prefix
+                    .rsplit('\n')
+                    .next()
+                    .unwrap()
+                    .encode_utf16()
+                    .count() as u32;
+                let items = state.completions(&uri, line, character).unwrap();
+                let labels: Vec<_> = items
+                    .iter()
+                    .filter_map(|item| item["label"].as_str())
+                    .collect();
+                for expected in ["localValue", "argument"] {
+                    assert!(
+                        labels.contains(&expected),
+                        "project={project_mode}, cached={cached}, statement={statement}: missing {expected}"
+                    );
+                }
+                assert_eq!(labels.contains(&"字𐐀"), statement.contains("字𐐀"));
+                assert!(!labels.contains(&"hiddenLocal"));
+                assert!(!labels.contains(&"laterLocal"));
+            }
             std::fs::remove_dir_all(root).unwrap();
         }
     }

@@ -181,6 +181,32 @@ pub fn cursor_is_in_comment(text: &str, line: u32, character: u32) -> bool {
     let Ok(offset) = lsp_offset(text, &position) else {
         return false;
     };
+    matches!(
+        scan_comments(text, offset, |_, _| {}),
+        CommentScanState::Line | CommentScanState::Block(_)
+    )
+}
+
+pub(crate) fn mask_block_comments(text: &str) -> Option<String> {
+    if !text.contains("/*") {
+        return None;
+    }
+    let mut masked = text.as_bytes().to_vec();
+    scan_comments(text, text.len(), |start, end| {
+        for byte in &mut masked[start..end] {
+            if *byte != b'\n' {
+                *byte = b' ';
+            }
+        }
+    });
+    String::from_utf8(masked).ok()
+}
+
+fn scan_comments(
+    text: &str,
+    offset: usize,
+    mut on_block_comment: impl FnMut(usize, usize),
+) -> CommentScanState {
     let mut state = CommentScanState::Code;
     let bytes = text.as_bytes();
     let mut index = 0usize;
@@ -193,7 +219,7 @@ pub fn cursor_is_in_comment(text: &str, line: u32, character: u32) -> bool {
                     index += 2;
                 }
                 b'/' if index + 1 < offset && bytes.get(index + 1) == Some(&b'*') => {
-                    state = CommentScanState::Block;
+                    state = CommentScanState::Block(index);
                     index += 2;
                 }
                 b'"' => {
@@ -212,11 +238,12 @@ pub fn cursor_is_in_comment(text: &str, line: u32, character: u32) -> bool {
                 }
                 index += 1;
             }
-            CommentScanState::Block => {
+            CommentScanState::Block(start) => {
                 if index + 1 < offset && bytes[index] == b'*' && bytes.get(index + 1) == Some(&b'/')
                 {
                     state = CommentScanState::Code;
                     index += 2;
+                    on_block_comment(start, index);
                 } else {
                     index += 1;
                 }
@@ -240,14 +267,14 @@ pub fn cursor_is_in_comment(text: &str, line: u32, character: u32) -> bool {
         }
     }
 
-    matches!(state, CommentScanState::Line | CommentScanState::Block)
+    state
 }
 
 #[derive(Debug, Clone, Copy)]
 enum CommentScanState {
     Code,
     Line,
-    Block,
+    Block(usize),
     String,
     RawString,
 }
