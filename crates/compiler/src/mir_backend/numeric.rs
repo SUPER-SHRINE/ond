@@ -1,6 +1,22 @@
 //! Numeric helper selection and checks; arguments in r1/r2, result in r1.
 use super::{function::Context, runtime::Helper, *};
 impl Context<'_> {
+    pub(super) fn remainder_from_quotient(
+        &mut self,
+        lhs: mir::ValueId,
+        rhs: mir::ValueId,
+        quotient: mir::ValueId,
+    ) {
+        // The low bits of a - q*b agree at the operand width. The common
+        // result path normalizes narrow values before storing them.
+        self.load(quotient, 1);
+        self.load(rhs, 2);
+        self.e.emit(3, 1, 1, 2, 0);
+        self.load(lhs, 3);
+        self.e.emit(1, 1, 1, 1, 0);
+        self.e.emit(0, 1, 3, 1, 1);
+    }
+
     pub(super) fn float(&self, ty: mir::TypeId) -> bool {
         matches!(self.p.types.underlying_kind(ty), Some(mir::TypeKind::F32))
     }

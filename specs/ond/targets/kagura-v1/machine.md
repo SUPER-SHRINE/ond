@@ -163,6 +163,20 @@ Kagura v1向けのコンパイルは、同じ基点と添字を使うループ�
 置換後に関数が使用するframe容量は置換前以下とする。\
 使用するframeに対して[stack容量検査](./abi.md#7-stack-overflow)を行う。
 
+## 整数剰余計算での商の再利用
+<!-- ond-spec-id: targets/kagura-v1/integer-remainder-quotient-reuse -->
+
+Kagura v1では、`u8`、`i8`、`u16`、`i16`、`u32`、`i32`のbuiltin剰余`a % b`に対し、同じ関数の評価経路で先に正常完了したbuiltin除算の商`q`を再利用できる。\
+剰余に到達する各経路で、除算と剰余の対応するoperandがそれぞれ同じ型と同じ値を持つと証明できる場合、剰余の算術処理を`a - q * b`で置き換えられる。\
+積と差は[整数演算](../../language/v1/expressions.md#integer-arithmetic)に従って剰余の型の幅で折り返す。
+
+置換の前後で対応するsource評価は、operandの型と値、その評価が入力として使うstorageの内容、同じaccessに対するbusの応答条件が等しいときに比較する。\
+置換は元のoperand評価と、sourceの評価に伴う観測可能な読取り・書込みおよび検査の回数と順序を保持する。\
+どちらの実行でも到達する処理は、演算結果、faultの成立条件・種別・順序、faultに対応する元のsource位置とdebug上の意味分類、停止前に完了した書込みとMMIO副作用を保持する。\
+算術処理の置換自体が到達する処理を変え得るのは、剰余の補助処理のframeを省いたことで[stack容量検査](./abi.md#7-stack-overflow)の成否が変わる場合に限る。
+
+sectionとheap_baseの配置は[配置契約](../../artifacts.md#配置容量と出力範囲)に従い、heapが割り当てに使う範囲は[heap allocator](#31-heap-allocator)の規則で定まる。
+
 ## 7. Project Configuration
 <!-- ond-spec-id: targets/kagura-v1/project-configuration -->
 

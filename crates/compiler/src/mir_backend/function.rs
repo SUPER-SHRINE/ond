@@ -48,7 +48,27 @@ pub(super) fn lower_body(
     f: &mir::Function,
     e: &mut Emitter,
     induction: Option<&raw_induction::Plan>,
+    emitted: Option<&mut EmittedLayout>,
+) -> Result<PendingFunctionDebug, Diagnostic> {
+    lower_body_using(p, f, e, induction, emitted, &quotient_reuse::plan(f))
+}
+
+#[cfg(test)]
+pub(super) fn lower_without_quotient_reuse(
+    p: &mir::Project,
+    f: &mir::Function,
+    e: &mut Emitter,
+) -> Result<PendingFunctionDebug, Diagnostic> {
+    lower_body_using(p, f, e, None, None, &quotient_reuse::Plan::new())
+}
+
+fn lower_body_using(
+    p: &mir::Project,
+    f: &mir::Function,
+    e: &mut Emitter,
+    induction: Option<&raw_induction::Plan>,
     mut emitted: Option<&mut EmittedLayout>,
+    quotients: &quotient_reuse::Plan,
 ) -> Result<PendingFunctionDebug, Diagnostic> {
     let signature = mir::FunctionType {
         parameters: f
@@ -181,7 +201,7 @@ pub(super) fn lower_body(
             cx.previous = cx.retained.take();
             let start = cx.e.offset(i.span)?;
             if !aggregates.as_mut().is_some_and(|a| a.emit(&mut cx, i)) {
-                cx.instruction(i)?;
+                cx.instruction(i, quotients.get(&i.id).copied())?;
             }
             let end = cx.e.offset(i.span)?;
             let operation = instruction_operation(i, cx.e.has_call_since(start));
@@ -278,7 +298,11 @@ impl Context<'_> {
     pub(super) fn ty(&self, id: mir::ValueId) -> mir::TypeId {
         self.f.values[id.0 as usize].ty
     }
-    fn instruction(&mut self, i: &mir::Instruction) -> Result<(), Diagnostic> {
+    fn instruction(
+        &mut self,
+        i: &mir::Instruction,
+        quotient: Option<mir::ValueId>,
+    ) -> Result<(), Diagnostic> {
         use mir::InstructionKind as I;
         match &i.kind {
             I::Constant(c) => {
@@ -406,7 +430,11 @@ impl Context<'_> {
                 rhs,
                 overflow,
             } => {
-                self.numeric_binary(*op, *lhs, *rhs, *overflow, i.span)?;
+                if let Some(quotient) = quotient {
+                    self.remainder_from_quotient(*lhs, *rhs, quotient);
+                } else {
+                    self.numeric_binary(*op, *lhs, *rhs, *overflow, i.span)?;
+                }
             }
             I::Cast {
                 value,
