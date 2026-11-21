@@ -147,6 +147,22 @@ mainから戻った際の制御経路は[link.exit](../../build/packages.md#comp
 - `.text`と`.rodata`への直接書込みは型検査errorとなる
   - raw pointer accessはbus mappingの物理的な読み書き規則に従う
 
+### ループ内のraw pointer address計算
+<!-- ond-spec-id: targets/kagura-v1/raw-pointer-loop-address -->
+
+Kagura v1向けのコンパイルは、同じ基点と添字を使うループ内の複数のraw pointer accessについて、要素addressを反復間で更新する形に置き換えられる。\
+この適用範囲は、基点が宣言済みの固定長グローバル配列の要素を指し、すべての到達可能な対象accessが同じ配列内に収まる場合とする。\
+各backedgeと`continue`を通る経路で基点が不変であり、同じ`u32`の歩幅で添字が更新され、対象の読取り・書込みと他の評価が基点・添字・frame上の補助値を別名経由で変更しないことを要する。\
+ループ条件によって終了するまで、正常に進む本体の全経路が共通の添字更新を通る。
+
+置換はraw pointer indexの32-bit折り返し、元の添字値とその用途、配列のbounds check、アクセスの回数・幅・実行順を保持する。\
+対象accessがfaultしたときはfaultの種別と元のsource位置に対応するdebug operationを保持し、停止前に完了した書込みとMMIO副作用を保持する。\
+ゼロ反復では対象要素の読取り・書込みを行わない。
+
+同じ関数の入力と設定で置換前後が正常に復帰する対応経路では、置換後に関数内の実行命令数が減ることを要する。\
+置換後に関数が使用するframe容量は置換前以下とする。\
+使用するframeに対して[stack容量検査](./abi.md#7-stack-overflow)を行う。
+
 ## 7. Project Configuration
 <!-- ond-spec-id: targets/kagura-v1/project-configuration -->
 

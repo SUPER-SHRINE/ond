@@ -23,10 +23,32 @@ pub(super) struct PendingDebugRange {
     pub span: Span,
 }
 
+#[derive(Default)]
+pub(super) struct EmittedLayout {
+    pub prologue_end: usize,
+    pub blocks: Vec<EmittedBlock>,
+}
+
+pub(super) struct EmittedBlock {
+    pub start: usize,
+    pub terminator: usize,
+    pub end: usize,
+}
+
 pub(super) fn lower(
     p: &mir::Project,
     f: &mir::Function,
     e: &mut Emitter,
+) -> Result<PendingFunctionDebug, Diagnostic> {
+    lower_body(p, f, e, None, None)
+}
+
+pub(super) fn lower_body(
+    p: &mir::Project,
+    f: &mir::Function,
+    e: &mut Emitter,
+    induction: Option<&raw_induction::Plan>,
+    mut emitted: Option<&mut EmittedLayout>,
 ) -> Result<PendingFunctionDebug, Diagnostic> {
     let signature = mir::FunctionType {
         parameters: f
@@ -38,6 +60,9 @@ pub(super) fn lower(
     };
     let abi = layout::abi(&p.types, &signature, f.span)?;
     let frame = Frame::new(f, &p.types, &abi)?;
+    if induction.is_some() && !raw_induction::Plan::storage_available(&frame) {
+        return Err(error(f.span, "no private word for raw address induction"));
+    }
     let function_start = e.offset(f.span)?;
     let mut unwind = vec![PendingUnwindRow {
         offset: 0,
@@ -125,6 +150,9 @@ pub(super) fn lower(
     }
     let labels: Vec<_> = f.blocks.iter().map(|_| e.label()).collect();
     e.branch(0, labels[f.entry.0 as usize], f.span);
+    if let Some(code) = &mut emitted {
+        code.prologue_end = e.words.len();
+    }
     let mut cx = Context {
         p,
         f,
@@ -137,14 +165,17 @@ pub(super) fn lower(
         ranges: &mut ranges,
         retained: None,
         previous: None,
+        induction: induction.is_some(),
     };
     let proven_bounds = super::bounds::proven_checks(&p.types, f);
     let mut aggregates = super::local_aggregate::LocalAggregates::new(&p.types, f, &cx.abi);
     for b in &f.blocks {
         cx.e.bind(cx.labels[b.id.0 as usize]);
+        let block_start = cx.e.words.len();
         cx.retained = None;
         for i in &b.instructions {
-            if proven_bounds.contains(&i.id) {
+            if proven_bounds.contains(&i.id) || induction.is_some_and(|plan| plan.omit(&i.results))
+            {
                 continue;
             }
             cx.previous = cx.retained.take();
@@ -158,9 +189,20 @@ pub(super) fn lower(
                 cx.record_range(start, end, operation, None, i.span);
             }
         }
+        if let Some(plan) = induction {
+            plan.emit_update(cx.e, b.id, &cx.frame);
+        }
+        let term_start = cx.e.words.len();
         let start = cx.e.offset(b.terminator.span)?;
         cx.terminator(&b.terminator)?;
         let end = cx.e.offset(b.terminator.span)?;
+        if let Some(code) = &mut emitted {
+            code.blocks.push(EmittedBlock {
+                start: block_start,
+                terminator: term_start,
+                end: cx.e.words.len(),
+            });
+        }
         let (operation, message) = terminator_operation(&b.terminator);
         cx.record_range(start, end, operation, message, b.terminator.span);
     }
@@ -190,6 +232,7 @@ pub(super) struct Context<'a> {
     pub unwind: &'a mut Vec<PendingUnwindRow>,
     pub ranges: &'a mut Vec<PendingDebugRange>,
     pub(super) retained: Option<mir::ValueId>,
+    pub(super) induction: bool,
     previous: Option<mir::ValueId>,
 }
 impl Context<'_> {

@@ -35,6 +35,7 @@ mod numeric_wide_tests;
 mod ops;
 #[cfg(test)]
 mod ordered_tests;
+mod raw_induction;
 mod readonly;
 pub mod runtime;
 #[cfg(test)]
@@ -113,6 +114,23 @@ pub fn codegen_selected_with_debug(
         &std::collections::BTreeMap<crate::source::FileId, String>,
     )>,
 ) -> Result<CodegenOutput, FrontendError> {
+    codegen_selected_using(project, selected, debug_sources, raw_induction::lower)
+}
+
+fn codegen_selected_using(
+    project: &mir::Project,
+    selected: &std::collections::BTreeSet<String>,
+    debug_sources: Option<(
+        &crate::source::SourceDb,
+        &std::collections::BTreeMap<crate::source::FileId, String>,
+    )>,
+    lower: impl Fn(
+        &mir::Project,
+        &[mir::Global],
+        &mir::Function,
+        &mut emit::Emitter,
+    ) -> Result<function::PendingFunctionDebug, Diagnostic>,
+) -> Result<CodegenOutput, FrontendError> {
     mir::validate_project(project).map_err(|e| {
         FrontendError::new(vec![error(
             Span::synthetic(),
@@ -138,7 +156,7 @@ pub fn codegen_selected_with_debug(
             symbols.extend(rodata_symbols);
             for f in package.functions.iter().chain(package.initializer.iter()) {
                 let start = emitter.offset(f.span)?;
-                let pending = function::lower(project, f, &mut emitter)?;
+                let pending = lower(project, &package.globals, f, &mut emitter)?;
                 let size = emitter.offset(f.span)? - start;
                 let source = debug_sources
                     .and_then(|(sources, paths)| source_location(sources, paths, f.span));
