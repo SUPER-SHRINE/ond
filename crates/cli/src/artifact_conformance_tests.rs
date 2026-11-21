@@ -726,8 +726,11 @@ fn wide_typed_wire_values_keep_exact_bits() {
     assert!(serde_json::from_str::<ValueKind>(r#"{"Float64":18446744073709551616}"#).is_err());
 }
 
-fn wide_ondx_vector() -> Vec<u8> {
-    let cases = include_str!("../../../specs/ond/conformance/cases/executable-binaries.md");
+const WIDE_ONDX_CASES: &str =
+    include_str!("../../../specs/ond/conformance/cases/executable-binaries.md");
+
+fn wide_ondx_vector(cases: &str) -> Vec<u8> {
+    let cases = cases.replace("\r\n", "\n");
     let (_, bytes) = cases.split_once("```text\n").unwrap();
     let (bytes, _) = bytes.split_once("```").unwrap();
     bytes
@@ -739,7 +742,8 @@ fn wide_ondx_vector() -> Vec<u8> {
 
 #[test]
 fn wide_v2_spec_wire_and_hash_vectors() {
-    let bytes = wide_ondx_vector();
+    let ondx_lf = WIDE_ONDX_CASES.replace("\r\n", "\n");
+    let bytes = wide_ondx_vector(&ondx_lf);
     assert_eq!(bytes.len(), 84);
     assert_eq!(
         cache::hash(&bytes),
@@ -747,6 +751,14 @@ fn wide_v2_spec_wire_and_hash_vectors() {
     );
 
     let cases = include_str!("../../../specs/ond/conformance/cases/package-hash.md");
+    assert_eq!(wide_ondx_vector(&ondx_lf.replace('\n', "\r\n")), bytes);
+    let hash_lf = cases.replace("\r\n", "\n");
+    check_wide_hash_vectors(&hash_lf);
+    check_wide_hash_vectors(&hash_lf.replace('\n', "\r\n"));
+}
+
+fn check_wide_hash_vectors(cases: &str) {
+    let cases = cases.replace("\r\n", "\n");
     let mut blocks = cases.split("```json\n").skip(1);
     for (length, digest) in [
         (
@@ -782,7 +794,7 @@ fn wide_v2_accepts_its_own_wire_versions() {
     assert!(new.validate().is_ok());
     assert!(old.validate().is_err());
 
-    let bytes = wide_ondx_vector();
+    let bytes = wide_ondx_vector(WIDE_ONDX_CASES);
     let executable = ond_protocol::executable::Executable::read(&bytes).unwrap();
     assert_eq!(executable.write().unwrap(), bytes);
     let mut previous = bytes;

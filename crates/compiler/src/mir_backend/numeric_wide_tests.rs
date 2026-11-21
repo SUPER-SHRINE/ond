@@ -3,14 +3,21 @@ use super::tests::{Fixture, execute_steps, machine};
 use crate::linker::{LinkPlan, LinkedImage, link_objects_with_debug};
 use crate::test_support::{compile_image, startup_object};
 use kagura::{Bus, FaultCode};
+use std::sync::LazyLock;
 
-const CASES: &str = include_str!("../../../../specs/ond/conformance/cases/numeric-wide.md");
+const CASES_MARKDOWN: &str =
+    include_str!("../../../../specs/ond/conformance/cases/numeric-wide.md");
+static CASES: LazyLock<String> = LazyLock::new(|| normalize_cases(CASES_MARKDOWN));
 const EXIT: u32 = 0xffff8040;
 const OUTPUT: u32 = 0xffff8050;
 const STEP_LIMIT: usize = 2_000_000;
 
-fn case(name: &str) -> &str {
-    CASES
+fn normalize_cases(cases: &str) -> String {
+    cases.replace("\r\n", "\n")
+}
+
+fn case<'a>(cases: &'a str, name: &str) -> &'a str {
+    cases
         .split_once(&format!("\n## WIDE.{name}\n"))
         .unwrap_or_else(|| panic!("missing WIDE.{name}"))
         .1
@@ -20,13 +27,17 @@ fn case(name: &str) -> &str {
 }
 
 pub(super) fn source(name: &str) -> &str {
-    let (_, block) = case(name).split_once("\n```ond\n").unwrap();
+    case_source(case(&CASES, name))
+}
+
+fn case_source(section: &str) -> &str {
+    let (_, block) = section.split_once("\n```ond\n").unwrap();
     let (source, _) = block.split_once("```").unwrap();
     source
 }
 
-fn tables(name: &str) -> impl Iterator<Item = (&str, &str)> {
-    case(name).lines().filter_map(|line| {
+fn tables(section: &str) -> impl Iterator<Item = (&str, &str)> {
+    section.lines().filter_map(|line| {
         let (input, tail) = line.strip_prefix("| `")?.split_once("` | ")?;
         let (want, _) = tail.split_once(" |")?;
         Some((input, want.trim_matches('`')))
@@ -40,6 +51,8 @@ fn image(name: &str) -> LinkedImage {
 
 #[test]
 fn wide_case_inputs_are_available() {
+    let crlf = CASES.replace('\n', "\r\n");
+    let normalized = normalize_cases(&crlf);
     for name in [
         "integer",
         "float",
@@ -51,13 +64,16 @@ fn wide_case_inputs_are_available() {
         "retention",
     ] {
         let input = source(name);
+        let crlf_case = case(&normalized, name);
+        assert_eq!(case_source(crlf_case), input, "{name}");
+        assert!(tables(crlf_case).eq(tables(case(&CASES, name))), "{name}");
         assert!(input.starts_with("package main\n"), "{name}");
         assert!(input.contains("func main()"), "{name}");
         let _ = ond_compiler_core::parse_source_file(crate::source::FileId(0), input)
             .unwrap_or_else(|error| panic!("WIDE.{name}: {error:?}"));
     }
-    assert_eq!(tables("fault").count(), 8);
-    assert_eq!(tables("reject").count(), 8);
+    assert_eq!(tables(case(&CASES, "fault")).count(), 8);
+    assert_eq!(tables(case(&CASES, "reject")).count(), 8);
 }
 
 #[test]
@@ -82,7 +98,7 @@ fn wide_fixed_rounding_remainder_and_casts() {
 
 #[test]
 fn wide_numeric_faults_keep_committed_output() {
-    for (operation, expected) in tables("fault") {
+    for (operation, expected) in tables(case(&CASES, "fault")) {
         let source = source("fault").replace("OPERATION", operation);
         let fixture = Fixture::new(&source);
         let compiled = crate::pipeline::compile_project(&fixture.0)
@@ -124,7 +140,7 @@ fn wide_numeric_faults_keep_committed_output() {
 fn wide_numeric_rejections_require_recognized_types() {
     let source = source("reject");
     Fixture::new(source).core();
-    for (declaration, cause) in tables("reject") {
+    for (declaration, cause) in tables(case(&CASES, "reject")) {
         let invalid = source.replace("// DECLARATION", declaration);
         let fixture = Fixture::new(&invalid);
         let error = ond_compiler_core::compile_project(&fixture.0)
