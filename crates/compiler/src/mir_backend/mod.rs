@@ -1,4 +1,7 @@
 //! O0 MIR-only Kagura backend, with demand-driven MIR runtime helpers. No AST fallback.
+mod bounds;
+#[cfg(test)]
+mod bounds_tests;
 #[cfg(test)]
 mod branch_tests;
 mod calls;
