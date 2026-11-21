@@ -1,6 +1,6 @@
 //! Observe actual Kagura bus accesses, not only the final aggregate value.
 use super::tests::{Fixture, machine};
-use kagura::{Bus, BusFault, DefaultBus};
+use kagura::{Bus, BusFault, DefaultBus, FaultCode};
 use ram::Ram;
 const BASE: u32 = 0x20000000;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,7 +71,10 @@ fn run(source: &str, fault: Option<Access>) -> (TraceBus, bool) {
         fault,
     };
     for _ in 0..200000 {
-        if cpu.step(&mut bus).is_err() {
+        if let Err(error) = cpu.step(&mut bus) {
+            if fault.is_some() {
+                assert_eq!(error.code(), FaultCode::BusFault);
+            }
             return (bus, true);
         }
         if bus.inner.read32(0xffff8040).unwrap() != 0xdeadbeef {
@@ -251,4 +254,26 @@ fn nested_array_order_raw_offset_wrap_and_alignment_fault() {
         width: *w,
     });
     assert_eq!(bus.trace, reads.chain(writes).collect::<Vec<_>>());
+}
+
+#[test]
+#[ignore = "64 bit scalarのmemory accessが未実装"]
+fn wide_copy_observes_two_word_accesses_and_partial_fault_effects() {
+    let source = super::numeric_wide_tests::source("memory");
+    let all = [(false, 0), (false, 4), (true, 16), (true, 20)].map(|(write, offset)| Access {
+        write,
+        offset,
+        width: 4,
+    });
+    for (fault, count, low, high) in [
+        (None, 4, 0x04d2cc0b, 0xcccccc16),
+        (Some(all[1]), 2, 0xcccccccc, 0xcccccccc),
+        (Some(all[3]), 4, 0x04d2cc0b, 0xcccccccc),
+    ] {
+        let (mut bus, stopped) = run(source, fault);
+        assert_eq!(stopped, fault.is_some());
+        assert_eq!(bus.trace, all[..count]);
+        assert_eq!(bus.inner.read32(BASE + 16).unwrap(), low);
+        assert_eq!(bus.inner.read32(BASE + 20).unwrap(), high);
+    }
 }

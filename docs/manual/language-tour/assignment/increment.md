@@ -1,6 +1,6 @@
 # インクリメント
 
-`++`は整数または`f32`の変数を1増やす後置文です。
+`++`は数値型の変数を1増やす後置文です。
 
 ```ond title="main.ond"
 package main
@@ -20,9 +20,7 @@ func main() {
 
 ## 変数を1増やす
 
-この文は`count += 1`に相当します。\
-\
-対象はintegerまたは`f32`型です。
+この文は`count += 1`に相当します。
 
 この例の共通manifestとcompile/link手順は[最初のプログラム](../../getting-started/first-program.md)を参照してください。
 

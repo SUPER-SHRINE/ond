@@ -688,3 +688,106 @@ fn hash01_image_build_id_uses_full_binary_bytes() {
     assert_eq!(linked.debug.build_id, cache::hash(&bytes));
     ond_protocol::executable::Executable::read(&bytes).unwrap();
 }
+
+#[test]
+#[ignore = "64 bitと固定小数点の公開interfaceが未実装"]
+fn wide_typed_wire_values_keep_exact_bits() {
+    let cases = include_str!("../../../specs/ond/conformance/cases/interface-values.md");
+    let (_, section) = cases
+        .split_once("## 64 bit数値と固定小数点のValue")
+        .unwrap();
+    let mut count = 0;
+    for line in section.lines() {
+        let Some(row) = line.strip_prefix("| `const ") else {
+            continue;
+        };
+        let fields: Vec<_> = row.trim_end_matches("` |").split("` | `").collect();
+        let [declaration, expected_type, expected_value] = fields.as_slice() else {
+            panic!("unexpected wide Value row: {line}");
+        };
+        let interface = written_constant("wide-wire", &format!("const {declaration}"));
+        interface.validate().unwrap();
+        let Export::Constant(value) = &interface.exports["Value"] else {
+            panic!("expected a constant: {declaration}");
+        };
+        assert_eq!(
+            serde_json::to_string(&interface.types[value.ty as usize].kind).unwrap(),
+            *expected_type
+        );
+        let expected: ValueKind = serde_json::from_str(expected_value).unwrap();
+        assert_eq!(value.kind, expected);
+        assert_eq!(serde_json::to_string(&value.kind).unwrap(), *expected_value);
+        count += 1;
+    }
+    assert_eq!(count, 8);
+
+    let largest = r#"{"Float64":18446744073709551615}"#;
+    let value: ValueKind = serde_json::from_str(largest).unwrap();
+    assert_eq!(serde_json::to_string(&value).unwrap(), largest);
+    assert!(serde_json::from_str::<ValueKind>(r#"{"Float64":18446744073709551616}"#).is_err());
+}
+
+fn wide_ondx_vector() -> Vec<u8> {
+    let cases = include_str!("../../../specs/ond/conformance/cases/executable-binaries.md");
+    let (_, bytes) = cases.split_once("```text\n").unwrap();
+    let (bytes, _) = bytes.split_once("```").unwrap();
+    bytes
+        .split_whitespace()
+        .flat_map(|chunk| chunk.as_bytes().chunks_exact(2))
+        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+        .collect()
+}
+
+#[test]
+fn wide_v2_spec_wire_and_hash_vectors() {
+    let bytes = wide_ondx_vector();
+    assert_eq!(bytes.len(), 84);
+    assert_eq!(
+        cache::hash(&bytes),
+        "60b94a75019b353ab0513651ce0283fb2aa6aa12db5d8624ac2d66d6ae254771"
+    );
+
+    let cases = include_str!("../../../specs/ond/conformance/cases/package-hash.md");
+    let mut blocks = cases.split("```json\n").skip(1);
+    for (length, digest) in [
+        (
+            540,
+            "d6fff72e9563d08bb3aa314c69b0afa2a81ba1f1a3c30ff3d053b9c64fe485cf",
+        ),
+        (
+            756,
+            "8646d1bb2bb8b04ae50a390ef0a7ad4b363b93b8b2ef039bf5e34787333f1a75",
+        ),
+    ] {
+        let block = blocks.next().unwrap();
+        let json = block.lines().next().unwrap().as_bytes();
+        assert_eq!(json.len(), length);
+        assert_eq!(cache::hash(json), digest);
+        assert!(block.contains(digest));
+    }
+    assert!(blocks.next().is_none());
+}
+
+#[test]
+#[ignore = "ABI v2とartifact revision 8の読出しが未実装"]
+fn wide_v2_accepts_its_own_wire_versions() {
+    let old = ond_protocol::Contract {
+        revision: 7,
+        target: "kagura-v1".into(),
+        abi: "ond-kagura-v1".into(),
+    };
+    let new = ond_protocol::Contract {
+        revision: 8,
+        target: "kagura-v1".into(),
+        abi: "ond-kagura-v2".into(),
+    };
+    assert!(new.validate().is_ok());
+    assert!(old.validate().is_err());
+
+    let bytes = wide_ondx_vector();
+    let executable = ond_protocol::executable::Executable::read(&bytes).unwrap();
+    assert_eq!(executable.write().unwrap(), bytes);
+    let mut previous = bytes;
+    previous[12..16].copy_from_slice(&1u32.to_le_bytes());
+    assert!(ond_protocol::executable::Executable::read(&previous).is_err());
+}

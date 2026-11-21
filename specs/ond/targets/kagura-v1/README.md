@@ -4,7 +4,7 @@
 この target profile は [Ond Language v1](../../language/v1/README.md) の program を Kagura v1 上で実行するための、Ond側の契約を定義する。
 
 - [Target Runtime Contract](./machine.md)
-- [ABI](./abi.md)
+- [ABI `ond-kagura-v2`](./abi.md)
 - [Inline assembly](./inline-assembly.md)
 - [Objectとlinking](../../linking.md)
 

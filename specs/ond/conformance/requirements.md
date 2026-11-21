@@ -16,7 +16,7 @@
 | SYN-01 | Unicode Letter/Nd識別子、ASCII限定公開判定、BOM/NUL | [SYN-01の定義元](../language/v1/lexical.md#source形式) | [unicode_identifiers_use_letter_and_decimal_digit_categoriesの入力・期待](./implementation-index.md#既存回帰と要件) |
 | SYN-02 | UTF-8ファイル、LF/CRLF、空白、コメント | [SYN-02の定義元](../language/v1/lexical.md#source形式) | [eof_comments_bom_and_source_offsetsの入力・期待](./implementation-index.md#既存回帰と要件) |
 | SYN-03 | 数値候補の最大長走査、2/8/10/16進整数とunderscore制約 | [SYN-03の定義元](../language/v1/lexical.md#source形式) | [integer_spellings_and_radicesの入力・期待](./implementation-index.md#既存回帰と要件)、[lexical-observations](./cases/lexical-observations.md) |
-| SYN-04 | 数値候補の全体検査、decimal/hex float字句、直接binary32丸め | [SYN-04の定義元](../language/v1/lexical.md#source形式) | [float_forms_and_exponent_boundariesの入力・期待](./implementation-index.md#既存回帰と要件)、[lexical-observations](./cases/lexical-observations.md) |
+| SYN-04 | 数値候補の全体検査、decimal/hex float字句、文脈の型への直接丸め | [SYN-04の定義元](../language/v1/lexical.md#source形式) | [float_forms_and_exponent_boundariesの入力・期待](./implementation-index.md#既存回帰と要件)、[lexical-observations](./cases/lexical-observations.md) |
 | SYN-05 | quoted/raw string、escape範囲、CR・LF | [SYN-05の定義元](../language/v1/lexical.md#source形式) | [strings_are_validated_even_without_hir_loweringの入力・期待](./implementation-index.md#既存回帰と要件) |
 | SYN-06 | semicolon挿入・EOF・閉じ括弧前省略 | [SYN-06の定義元](../language/v1/lexical.md#semicolonと改行) | [eof_comments_bom_and_source_offsetsの入力・期待](./implementation-index.md#既存回帰と要件) |
 | SYN-07 | 演算子優先順位7段階、同順位左結合、postfix as | [SYN-07の定義元](../language/v1/expressions.md#演算子の優先順位) | [static-precedence](./cases/static-precedence.md) |
@@ -59,7 +59,7 @@
 | TYPE-05 | generic具体化経路で同じ宣言へ戻る型argument列 | [TYPE-05の定義元](../language/v1/types.md#型parameter) | [interface-values](./cases/interface-values.md) |
 | CAST-01 | 型不一致の暗黙変換拒否 | [CAST-01の定義元](../language/v1/types.md#型同一性) | [boundaries-conversions](./cases/boundaries-conversions.md) |
 | CAST-02 | 定数整数変換・実行時wrap変換 | [CAST-02の定義元](../language/v1/types.md#型同一性) | [numeric-casts](./cases/numeric-casts.md) |
-| CAST-03 | int↔f32、ties-even/trunc、NaN/Inf/範囲外 | [CAST-03の定義元](../language/v1/types.md#型同一性) | [numeric-casts](./cases/numeric-casts.md) |
+| CAST-03 | 数値型間の明示変換、ties-even/trunc、NaN/Inf/範囲外 | [CAST-03の定義元](../language/v1/types.md#型同一性) | [numeric-casts](./cases/numeric-casts.md) |
 | CAST-04 | `ond compile`での狭い整数とf32の実行時往復変換 | [CAST-04の定義元](../language/v1/types.md#狭い整数とf32の実行時往復変換)、[stack観測](../targets/kagura-v1/abi.md#7-stack-overflow) | [kagura-castsの実行時往復変換](./cases/kagura-casts.md#実行時往復変換) |
 | NIL-01 | pointer/function型nil、既定型なし、0とは別 | [NIL-01の定義元](../language/v1/types.md#nilとpointer) | [boundaries-conversions](./cases/boundaries-conversions.md)、[static-seed](./cases/static-seed.md) |
 | NIL-02 | nil function pointer call | [NIL-02の定義元](../language/v1/declarations.md#関数) | [faults_do_not_execute_following_effects_or_overwrite_destinationの入力・期待](./implementation-index.md#既存回帰と要件) |
@@ -71,13 +71,14 @@
 
 | ID | 要件の要約 | 規範定義元 | 対応するcase入力・期待 |
 | --- | --- | --- | --- |
-| NUM-01 | literal既定型/型文脈と整数6型の範囲 | [NUM-01の定義元](../language/v1/types.md#型) | [numeric-integers](./cases/numeric-integers.md) |
+| NUM-01 | literal既定型/型文脈と整数8型の範囲 | [NUM-01の定義元](../language/v1/types.md#型) | [numeric-integers](./cases/numeric-integers.md) |
 | NUM-02 | 定数算術の正確値、bitwiseのN-bit射影、値要求境界とruntime operandへのrange check | [NUM-02の定義元](../language/v1/expressions.md#integer-constant-arithmetic) | [numeric-integers](./cases/numeric-integers.md)、[static-seed](./cases/static-seed.md) |
 | NUM-03 | 定数shiftのu32 count、k mod N、左shift非wrap | [NUM-03の定義元](../language/v1/expressions.md#integer-constant-arithmetic) | [numeric-integers](./cases/numeric-integers.md) |
 | NUM-04 | 定数/動的div・rem、符号、0、min/-1 | [NUM-04の定義元](../language/v1/expressions.md#integer-arithmetic) | [numeric-integers](./cases/numeric-integers.md) |
-| NUM-05 | runtime wrap・bitwise・signed/unsigned比較 | [NUM-05の定義元](../language/v1/expressions.md#integer-arithmetic) | [numeric-integers](./cases/numeric-integers.md) |
-| FP-01 | constant binary32各演算、signed zero/Inf/NaN | [FP-01の定義元](../language/v1/expressions.md#floating-point-arithmetic) | [numeric-float-vectors](./cases/numeric-float-vectors.md)、[numeric-floats](./cases/numeric-floats.md)、[static-seed](./cases/static-seed.md) |
-| FP-02 | constant/runtimeのf32 bit一致 | [FP-02の定義元](../language/v1/expressions.md#floating-point-arithmetic) | [numeric-float-vectors](./cases/numeric-float-vectors.md) |
+| NUM-05 | runtime wrap・bitwise・signed/unsigned比較 | [NUM-05の定義元](../language/v1/expressions.md#integer-arithmetic) | [64 bit整数](./cases/numeric-wide.md#wideinteger)、 [numeric-integers](./cases/numeric-integers.md) |
+| FP-01 | constant binary32/binary64各演算、signed zero/Inf/NaN | [FP-01の定義元](../language/v1/expressions.md#floating-point-arithmetic) | [numeric-float-vectors](./cases/numeric-float-vectors.md)、[numeric-floats](./cases/numeric-floats.md)、[static-seed](./cases/static-seed.md) |
+| FP-02 | constant/runtimeの浮動小数点bits一致 | [FP-02の定義元](../language/v1/expressions.md#floating-point-arithmetic) | [binary64とf32の観測](./cases/numeric-wide.md#widefloat)、 [numeric-float-vectors](./cases/numeric-float-vectors.md) |
+| FIX-01 | 固定小数点の量子化、演算・比較、除数zeroと範囲外 | [固定小数点算術](../language/v1/expressions.md#fixed-point-arithmetic) | [numeric-wide](./cases/numeric-wide.md) |
 | OP-01 | operatorごとのoperand型・result型と型不一致error | [OP-01の定義元](../language/v1/expressions.md#式と評価順) | [boundaries-conversions](./cases/boundaries-conversions.md)、[boundaries-operators](./cases/boundaries-operators.md)、[layout-operators](./cases/layout-operators.md) 、[operator-contracts](./cases/operator-contracts.md) |
 | EVAL-01 | &&/\|\|短絡、callee→引数の左から右 | [EVAL-01の定義元](../language/v1/expressions.md#式と評価順) | [static-constant-contexts](./cases/static-constant-contexts.md) |
 | EVAL-02 | 一般operand、代入LHSのindex/pointer→RHS→書込順 | [EVAL-02の定義元](../language/v1/statements.md#静的成立条件) | [static-evaluation](./cases/static-evaluation.md) 、[operator-contracts](./cases/operator-contracts.md) |
@@ -125,7 +126,7 @@
 | INIT-01 | file辞書順/import DFS/宣言順/各package1回 | [INIT-01の定義元](../language/v1/execution.md#初期化とエントリ) | [serialized_packages_link_identically_to_full_codegen_without_runtime_initializersの入力・期待](./implementation-index.md#既存回帰と要件) |
 | INIT-02 | 全global事前zero、内部init、推論/参照順独立 | [INIT-02の定義元](../language/v1/execution.md#初期化とエントリ) | [globals_are_zeroed_or_initialized_from_compile_time_valuesの入力・期待](./implementation-index.md#既存回帰と要件) |
 | INIT-03 | mainちょうど1つ/引数戻り値なし、initは通常の関数名として許可 | [INIT-03の定義元](../language/v1/execution.md#初期化とエントリ) | [static-scope](./cases/static-scope.md) |
-| OUT-01 | caller指定のmain終了経路、ABI/rodata/layout/static link | [OUT-01の定義元](../language/v1/execution.md#build-output) | [global_objects_use_checked_natural_bss_layout_and_abs32_relocationsの入力・期待](./implementation-index.md#既存回帰と要件) |
+| OUT-01 | caller指定のmain終了経路、ABI/rodata/layout/static link | [OUT-01の定義元](../language/v1/execution.md#build-output)、[Kagura ABI](../targets/kagura-v1/abi.md) | [Direct-2とlayout](./cases/numeric-wide.md#wideabi)、 [global_objects_use_checked_natural_bss_layout_and_abs32_relocationsの入力・期待](./implementation-index.md#既存回帰と要件) |
 | OUT-02 | build toolのasset管理とsource入力の境界 | [OUT-02の定義元](../language/v1/execution.md#build-output) | [compile_project_does_not_predeclare_assetの入力・期待](./implementation-index.md#既存回帰と要件) |
 
 ## 診断と実装検証の追跡
@@ -152,7 +153,7 @@
 | BIN-02 | ROM直接参照・RAM全体コピー・zero初期化・容量・SP | [配置とロード](../artifacts.md#配置容量と出力範囲) | [ロード状態](./cases/executable-binaries.md#配置とロード状態) |
 | BIN-03 | self/externalと前置起動処理を反映した最終address | [起動](../artifacts.md#外部起動とセルフ起動)、[最終配置](../linking.md#最終配置とstartup) | [起動・識別子](./cases/executable-binaries.md#起動方式最終address識別子) |
 | CLI-01 | TOML設定元、入力省略、path、出力、引数error | [commands](../build/commands.md)、[設定](../build/packages.md#compileとlink設定) | [CLI](./cases/executable-binaries.md#cliのprojectとpath) |
-| FAULT-01 | KaguraのCPU faultとOndの意味分類 | [fault対応](../targets/kagura-v1/machine.md#faultと観測結果) | [debug-fault-contracts](./cases/debug-fault-contracts.md) |
+| FAULT-01 | KaguraのCPU faultとOndの意味分類 | [fault対応](../targets/kagura-v1/machine.md#faultと観測結果) | [64 bit数値のfault](./cases/numeric-wide.md#widefault)、 [debug-fault-contracts](./cases/debug-fault-contracts.md) |
 
 ## Project role
 <!-- ond-spec-id: conformance/requirements-roles -->

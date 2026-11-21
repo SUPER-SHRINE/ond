@@ -15,7 +15,7 @@
 
 - 値
   - [整数](language-tour/values/integers.md)
-  - [f32](language-tour/values/floats.md)
+  - [小数の値](language-tour/values/floats.md)
   - [真偽値](language-tour/values/booleans.md)
   - [文字列リテラル](language-tour/values/string-literals.md)
   - [nil](language-tour/values/nil.md)

@@ -71,21 +71,15 @@ aggregate copyはsource snapshotの読取完了後にdestinationへ書く。\
 ### 3.4 非公開ローカル集約値
 <!-- ond-spec-id: targets/kagura-v1/private-local-aggregate -->
 
-Kagura v1で、実行制御が途中から進入も分岐もしない単一の基本blockに扱いが収まり、次の条件を満たすstructまたは固定長配列のローカル変数とその一時値に適用する。
+Kagura v1では、sourceの評価でアドレスを取得した値、pointer、MMIOやABIが参照するstorageを、各契約に従って保持する。\
+そのstorageの観測可能な書込み結果、アクセス回数・幅・順序とアクセスに伴うfault、停止前に完了した副作用を維持する。
 
-- 集約を再帰的に展開したscalar要素は1個以上4個以下で、配置sizeは16 byte以下とする
-- block内のmemory accessはアドレスを取得しないローカルstorageと一時値に閉じ、対象の集約内の投影は宣言済みfieldまたは範囲内の定数indexで決まる
-- block内の処理は呼出しを必要としない値演算、検査、ローカルの読書きとコピーで構成し、関数呼出境界ではscalarの引数と直接返却の範囲に収まる戻り値を扱う
-- 対象の各要素は[配置契約](../../artifacts.md#配置容量と出力範囲)に従い、frame確保に成功したinvocationのRAM上で[型のalignment](#5-data-layout)を満たす
-- 対象領域は型の幅で行う読書きが成功するRAMであり、そのaccessの副作用はRAMのバイト列の更新に限る
+このstorageに該当しないローカル集約値、scalarやsnapshotの一時値は、その論理値と生存期間を保つ任意の場所で保持できる。\
+この範囲ではRAMへの格納を省略でき、必要な実体だけを配置し、同時に生存しない値のslotを再利用できる。\
+同じ裁量を言語の関数と演算の評価に用いる補助処理に適用する。\
+source snapshotはdestination更新前に確定し、各要素の値、浮動小数点型の格納bits、演算・変換・比較の結果とfaultを保持する。
 
-先行するblock内の書込みと入力値から要素の値を確定できる場合、その値を要素の読出しの結果として使える。\
-書込先の要素と書込値が同一のバイト列を持つと確定できる場合、その書込みを省略できる。\
-省略を含む実行でも、source snapshotの値はdestination更新前に確定し、各要素のzero value、`f32`のビット列と型同一性を保持する。\
-比較元は、同じ操作、入力値、リンクで解決したアドレス値、frameと初期RAMを用いてaccessを省略せずに実行した結果とする。\
-各操作の完了時とfault停止時には、その操作が使用したローカルstorage、値の一時領域とsnapshotの一時領域のバイト列、および完了済みの副作用が比較元と一致する。\
-比較元で書き込まないpaddingのバイト列は保持する。\
-frame内の配置、frame size、[stack overflow検査](./abi.md#7-stack-overflow)とその失敗時点も比較元と一致する。
+実際に使うframeは[call規約](./abi.md#6-stack-frame)、[stack容量検査](./abi.md#7-stack-overflow)、[unwind記録](../../debug-metadata/v1.md)を満たす。
 
 ## 4. Startup
 <!-- ond-spec-id: targets/kagura-v1/startup -->
@@ -102,12 +96,13 @@ mainから戻った際の制御経路は[link.exit](../../build/packages.md#comp
 | --- | ---: | ---: |
 | `u8`, `i8`, `bool` | 1 | 1 |
 | `u16`, `i16` | 2 | 2 |
-| `u32`, `i32`, `f32`, `*T`, function pointer | 4 | 4 |
+| `u32`, `i32`, `f32`, `q16`, `*T`, function pointer | 4 | 4 |
+| `u64`, `i64`, `f64`, `q32` | 8 | 4 |
 
 - guest type の最大 alignment は 4 byte とする
 - `bool` は memory 上の `0` を false、非 `0` を true とする
   - compiler は `0` または `1` を store する
-- f32は[言語のbinary32 bit pattern](../../language/v1/expressions.md#floating-point-arithmetic)をlittle-endianで配置する
+- 浮動小数点型は[定義された格納bits](../../language/v1/expressions.md#floating-point-arithmetic)、固定小数点型は[格納整数のbits](../../language/v1/types.md#型)をlittle-endianで配置する
 - `*T` は 32-bit bus address で、`nil` は `0x00000000` とする
 - `[N]T` は header のない連続した `N` 要素とし、alignment は `alignof(T)`、size は `N * sizeof(T)` とする
 - 固定長配列の `N * sizeof(T)` が `2^32-1` byte を超える場合は compile error とする
@@ -130,10 +125,16 @@ mainから戻った際の制御経路は[link.exit](../../build/packages.md#comp
 <!-- ond-spec-id: targets/kagura-v1/raw-pointer-access -->
 
 - pointerはaddress値であり、対応storageは変数宣言または明示allocationによって確保する
+- 整数からraw pointerへの明示変換は、整数値vの `v mod 2^32` を符号なしaddressとする
+- raw pointerから整数への明示変換は、addressを符号なし整数値として[整数間の変換規則](../../language/v1/types.md#型同一性)を適用する
 - [operator解決](../../language/v1/expressions.md#user-defined-operator)でbuiltin raw pointer indexを選んだ場合、`*T`の`pointer[index]`の実効addressは`(pointer + index * sizeof(T)) mod 2^32`とする
   - `index` は `u32` とする
 - raw indexed accessの有効address、allocation範囲とpointer生存期間は利用側の成立前提とする
-- scalar の参照外しは型幅と同じ 1 回の bus access とする
+- 32 bit以下のscalarは型のmemory幅で1回のbus accessを行う
+- 64 bitのscalarは低位wordをaddress A、高位wordを (A + 4) mod 2^32 として、低位から順に独立した32-bit bus accessを各1回行う
+  - 両accessが完了した読取りは2 wordを合わせた値を返し、copyは読取り完了後に書込みを始める
+  - 片方だけが完了した時点でもそのaccessのwriteまたはMMIO副作用を保持する
+  - scalarのmemory access規則は通常storage、aggregateの要素、ABIのmemory returnにも適用する
 - aggregate の読み書きは field または element 単位の複数 bus access とする
 - aggregateのaccess順とsnapshot copyは[Ordered aggregate access](#33-ordered-aggregate-access)に従う
 - fault時は[ordered aggregate access](#33-ordered-aggregate-access)の完了済みwrite/MMIO保持と停止規則に従う
@@ -162,9 +163,10 @@ debug metadataは次の意味分類を加え、CPU fault codeを変更しない�
 | Ondの条件・観測操作 | Kagura CPU fault | debug operation |
 | --- | --- | --- |
 | builtin配列bounds check失敗 | INVALID_INSTRUCTION | BoundsCheck |
-| runtime整数の除数zero | INVALID_INSTRUCTION | DivisionByZero |
+| runtime整数または固定小数点の除数zero | INVALID_INSTRUCTION | DivisionByZero |
 | runtime signed minInt/-1 | INVALID_INSTRUCTION | SignedDivisionOverflow |
-| runtime f32→整数の不正変換 | INVALID_INSTRUCTION | InvalidConversion |
+| runtimeの数値変換不成立 | INVALID_INSTRUCTION | InvalidConversion |
+| runtimeの固定小数点算術の範囲外 | INVALID_INSTRUCTION | FixedPointOverflow |
 | [stack確保時の容量不足/underflow](./abi.md#7-stack-overflow) | INVALID_INSTRUCTION | StackOverflow |
 | explicit trap | INVALID_INSTRUCTION | ExplicitTrap |
 | raw load/storeのalignment違反 | UNALIGNED_ACCESS | MemoryRead/MemoryWrite |

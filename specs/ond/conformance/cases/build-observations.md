@@ -1,7 +1,7 @@
 # Cacheとlinkの回帰入力
 <!-- ond-spec-id: conformance/cases/build-observations -->
 
-適用版はOnd Language v1、Kagura v1、artifact Contract revision 7とし、[版互換条件](../../artifacts.md#版識別と互換条件)を適用する。\
+適用版はOnd Language v1、Kagura v1、artifact Contract revision 8とし、[版互換条件](../../artifacts.md#版識別と互換条件)を適用する。\
 要件は`INIT-01`であり、操作の規範定義元は[cache](../../build/cache.md)、[compile/link](../../build/commands.md)、[linking](../../linking.md)、[初期化](../../language/v1/execution.md#初期化とエントリ)とする。
 
 ## Project入力と初期状態

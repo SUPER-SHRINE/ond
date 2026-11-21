@@ -1,6 +1,6 @@
 # 単項プラス `+`
 
-単項の`+`は整数値または`f32`値の前に置き、値の符号をそのまま保ちます。
+単項の`+`は数値の前に置き、値の符号をそのまま保ちます。
 
 ```ond title="main.ond"
 package main
@@ -26,4 +26,4 @@ func main() {
 
 この例の共通manifestとcompile/link手順は[最初のプログラム](../../../getting-started/first-program.md)を参照してください。
 
-単項演算の規則は[整数演算仕様](../../../../../specs/ond/language/v1/expressions.md#integer-arithmetic)と[浮動小数点演算](../../../../../specs/ond/language/v1/expressions.md#floating-point-arithmetic)を参照してください。
+単項演算の規則は[整数演算仕様](../../../../../specs/ond/language/v1/expressions.md#integer-arithmetic)と[浮動小数点演算](../../../../../specs/ond/language/v1/expressions.md#floating-point-arithmetic)、[固定小数点演算](../../../../../specs/ond/language/v1/expressions.md#fixed-point-arithmetic)を参照してください。
