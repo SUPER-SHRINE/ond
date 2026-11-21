@@ -117,7 +117,7 @@ fn frontend_error(message: impl Into<String>) -> FrontendError {
         message,
     )])
 }
-fn startup_object(init_symbols: &[String], main_symbol: &str) -> Object {
+pub(super) fn startup_object(init_symbols: &[String], main_symbol: &str) -> Object {
     use crate::kagura_encoding::word;
     // Test-machine exit MMIO is cartridge policy, not part of the shared ABI.
     crate::program::program_startup(

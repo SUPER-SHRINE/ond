@@ -195,7 +195,7 @@ fn validate_entry(inputs: Inputs, owner: &str) -> Entry {
     }
     let result = crate::ond::parse_project(&loaded).and_then(|ast| {
         let hir = lower_context_to_hir(&loaded, &ast, Some(&selected))?;
-        let mir = crate::pipeline::lower_to_mir(&hir)?;
+        let mir = crate::pipeline::lower_to_mir(&hir, false)?;
         // Package validation has external function/global references;
         // whole-project linkage checks belong to compile_loaded_project.
         for function in mir.packages.iter().flat_map(|package| &package.functions) {

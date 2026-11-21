@@ -89,6 +89,6 @@ allocatorの外部観測は[言語のheap契約](../../language/v1/execution.md#
 <!-- ond-spec-id: conformance/kagura-case-inventory -->
 
 - [整数336件](./kagura-integers.md)
-- [数値変換93件](./kagura-casts.md)
+- [数値変換93件](./kagura-casts.md)と[実行時往復変換の全値](./kagura-casts.md#実行時往復変換)
 - [評価/fault8件、共有50件](./kagura-evaluation-combinations.md)
 - [Inline assembly適合case](./inline-assembly.md)

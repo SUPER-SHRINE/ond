@@ -154,6 +154,22 @@ NaN、Inf、またはnが範囲外の場合はcompile-timeならcompile error、
 
 Kagura target における型のサイズ、alignment、zero value は [Ond for Kagura Machine Profile v1](../../targets/kagura-v1/machine.md) に従う。
 
+### 狭い整数とf32の実行時往復変換
+<!-- ond-spec-id: type-system/narrow-f32-roundtrip -->
+
+Ond Language v1とKagura v1の組み合わせで、[`ond compile`](../../build/commands.md#ond-compile)は次の条件をすべて満たす実行時の往復変換を省く。
+
+- 変換元と最終変換先は同一の組み込み型`T`であり、`T`は`u8`、`i8`、`u16`、`i16`のいずれか
+- 最終変換の入力は、`T`の値を組み込み型`f32`へ変換した直接の結果
+
+例えば`(value as f32) as T`で`value`が条件を満たす型の実行時の値の場合、最終変換の結果は元の`value`である。\
+この4型の全値はbinary32で正確に表現でき、最終変換で元の値に戻る。\
+最初の変換結果を他の処理が参照する場合は、それらの参照に対してその変換を保持する。\
+参照が残らない場合は、最初の変換も省く。
+
+入力を生成する処理の評価回数、順序、副作用と、[型同一性および定数変換の診断](#型同一性)を維持する。\
+変換を省いた場合のstack容量とfaultの観測は[Kagura ABIのStack Overflow](../../targets/kagura-v1/abi.md#7-stack-overflow)に従う。
+
 ## `nil`とpointer
 <!-- ond-spec-id: type-system/nil-and-pointers -->
 

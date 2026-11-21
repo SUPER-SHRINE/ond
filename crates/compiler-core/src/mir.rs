@@ -1,4 +1,5 @@
 mod display;
+mod narrow_f32_roundtrip;
 mod validate;
 mod validate_flow;
 mod validate_globals;
@@ -11,6 +12,7 @@ pub use crate::semantic::{FunctionType, TypeId, TypeKind, TypeTable};
 use crate::source::Span;
 
 pub use display::format_project;
+pub(crate) use narrow_f32_roundtrip::elide_narrow_f32_roundtrips;
 pub use validate::{ValidationError, validate_function, validate_project};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
