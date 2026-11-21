@@ -35,6 +35,9 @@ mod numeric_wide_tests;
 mod ops;
 #[cfg(test)]
 mod ordered_tests;
+mod quotient_reuse;
+#[cfg(test)]
+mod quotient_reuse_tests;
 mod raw_induction;
 mod readonly;
 pub mod runtime;

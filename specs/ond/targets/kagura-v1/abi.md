@@ -142,6 +142,9 @@ debug sidecarの対応rangeには`StackOverflow`を記録する。\
 stack容量は[非公開ローカル集約値と一時値](./machine.md#34-非公開ローカル集約値)の配置裁量や[狭い整数とf32の実行時往復変換](../../language/v1/types.md#狭い整数とf32の実行時往復変換)の省略を反映した実行時のframeに対して検査する。\
 同じsource入力とstack設定でも、使用するframeによって確保の成否が変わり得る。
 
+[整数剰余計算での商の再利用](./machine.md#整数剰余計算での商の再利用)で省いた剰余の補助処理のframeも、容量検査の対象に含めない。\
+この補助処理のframe確保を省くことで、その確保に失敗するはずだったstack容量でも、元の剰余の位置から評価を続けられる。
+
 ## 8. Bounds Error
 <!-- ond-spec-id: targets/kagura-v1/abi-bounds-error -->
 
