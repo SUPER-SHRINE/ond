@@ -75,7 +75,7 @@ impl Frame {
         }
         let scratch = reserve(&mut cursor, scratch_size, f.span)?;
         let ra = reserve(&mut cursor, 4, f.span)?;
-        let incoming = (0..f.parameters.len() + usize::from(abi.hidden.is_some()))
+        let incoming = (0..abi.arguments.len() + usize::from(abi.hidden.is_some()))
             .map(|_| reserve(&mut cursor, 4, f.span))
             .collect::<Result<Vec<_>, _>>()?;
         let mut calls = BTreeMap::new();

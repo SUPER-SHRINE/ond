@@ -94,7 +94,12 @@ fn validate_type_table(types: &TypeTable) -> Vec<ValidationError> {
             | TypeKind::I16
             | TypeKind::U32
             | TypeKind::I32
-            | TypeKind::F32 => {}
+            | TypeKind::F32
+            | TypeKind::U64
+            | TypeKind::I64
+            | TypeKind::F64
+            | TypeKind::Q16
+            | TypeKind::Q32 => {}
         }
     }
     errors
@@ -378,7 +383,12 @@ impl Validator<'_> {
                         self.expect_integer(block, *length, "bounds length");
                     }
                     Check::NonZero { value } => {
-                        self.expect_integer(block, *value, "non-zero check")
+                        if let Some(ty) = self.value_type(block, *value)
+                            && !self.types.is_integer(ty)
+                            && self.types.fixed_fraction(ty).is_none()
+                        {
+                            self.error(Some(block), "invalid non-zero check operand type".into());
+                        }
                     }
                     Check::SignedDivisionOverflow { lhs, rhs } => {
                         self.expect_integer(block, *lhs, "division lhs");

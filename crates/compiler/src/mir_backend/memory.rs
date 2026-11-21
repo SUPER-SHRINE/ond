@@ -4,8 +4,7 @@ pub(super) fn address(e: &mut Emitter, reg: u8, offset: u32) {
     e.stack_address(reg, offset);
 }
 pub(super) fn read(e: &mut Emitter, reg: u8, base: u8, offset: u32, ty: layout::ScalarLayout) {
-    e.immediate(3, offset);
-    e.emit(0, 3, base, 3, 0);
+    let (base, imm) = access_address(e, base, offset, ty);
     e.emit(
         match ty.size {
             1 => 4,
@@ -13,16 +12,31 @@ pub(super) fn read(e: &mut Emitter, reg: u8, base: u8, offset: u32, ty: layout::
             _ => 7,
         },
         reg,
-        3,
+        base,
         0,
-        0,
+        imm,
     );
+    if ty.size == 8 {
+        e.emit(7, reg + 1, base, 0, imm + 4);
+    }
     ops::normalize(e, reg, ty);
 }
 pub(super) fn write(e: &mut Emitter, reg: u8, base: u8, offset: u32, ty: layout::ScalarLayout) {
-    e.immediate(3, offset);
-    e.emit(0, 3, base, 3, 0);
-    e.emit(store_opcode(ty), reg, 3, 0, 0);
+    let (base, imm) = access_address(e, base, offset, ty);
+    e.emit(store_opcode(ty), reg, base, 0, imm);
+    if ty.size == 8 {
+        e.emit(11, if reg == 0 { 0 } else { reg + 1 }, base, 0, imm + 4);
+    }
+}
+fn access_address(e: &mut Emitter, base: u8, offset: u32, ty: layout::ScalarLayout) -> (u8, i16) {
+    let last = if ty.size == 8 { 4 } else { 0 };
+    if offset <= i16::MAX as u32 - last {
+        (base, offset as i16)
+    } else {
+        e.immediate(3, offset);
+        e.emit(0, 3, base, 3, 0);
+        (3, 0)
+    }
 }
 pub(super) fn store_opcode(ty: layout::ScalarLayout) -> u32 {
     match ty.size {
@@ -54,8 +68,12 @@ impl Context<'_> {
     ) -> Result<(), Diagnostic> {
         address(self.e, 4, src);
         if !layout::aggregate(&self.p.types, ty) {
-            read(self.e, 1, 4, 0, layout::scalar(&self.p.types, ty, span)?);
+            let scalar = layout::scalar(&self.p.types, ty, span)?;
+            read(self.e, 1, 4, 0, scalar);
             self.e.store(1, dst);
+            if scalar.size == 8 {
+                self.e.store(2, dst + 4);
+            }
             return Ok(());
         }
         address(self.e, 5, dst);

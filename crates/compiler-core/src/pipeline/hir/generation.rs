@@ -375,9 +375,16 @@ fn normalized_value(project: &hir::Project, value: &hir::Expr) -> Result<String,
         | hir::ExprKind::Nil
         | hir::ExprKind::Integer(0)
         | hir::ExprKind::Float32(0)
+        | hir::ExprKind::Float64(0)
+        | hir::ExprKind::Fixed(0)
         | hir::ExprKind::Bool(false) => quote("Zero"),
         hir::ExprKind::Integer(bits) => format!("{{\"Integer\":{bits}}}"),
         hir::ExprKind::Float32(bits) => format!("{{\"Float32\":{bits}}}"),
+        hir::ExprKind::Float64(bits) => format!("{{\"Float64\":{bits}}}"),
+        hir::ExprKind::Fixed(bits) => format!(
+            "{{\"Fixed{}\":{bits}}}",
+            project.types.fixed_fraction(value.ty).unwrap()
+        ),
         hir::ExprKind::Bool(value) => format!("{{\"Bool\":{value}}}"),
         hir::ExprKind::Composite(elements) => {
             let mut children = Vec::new();
@@ -608,6 +615,9 @@ fn wire_value(
         ValueKind::Zero | ValueKind::Nil => hir::ExprKind::Zero,
         ValueKind::Integer(bits) => hir::ExprKind::Integer(*bits),
         ValueKind::Float32(bits) => hir::ExprKind::Float32(*bits),
+        ValueKind::Float64(bits) => hir::ExprKind::Float64(*bits),
+        ValueKind::Fixed16(bits) => hir::ExprKind::Fixed(u64::from(*bits)),
+        ValueKind::Fixed32(bits) => hir::ExprKind::Fixed(*bits),
         ValueKind::Bool(value) => hir::ExprKind::Bool(*value),
         ValueKind::Composite(elements) => {
             let children = elements

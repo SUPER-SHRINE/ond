@@ -177,6 +177,17 @@ pub fn append_builtin_type_completion_items(items: &mut Vec<Value>) {
         ("i16", "16-bit signed integer"),
         ("i32", "32-bit signed integer"),
         ("f32", "32-bit floating-point number"),
+        ("u64", "64-bit unsigned integer"),
+        ("i64", "64-bit signed integer"),
+        ("f64", "64-bit floating-point number"),
+        (
+            "q16",
+            "32-bit signed fixed-point number with 16 fractional bits",
+        ),
+        (
+            "q32",
+            "64-bit signed fixed-point number with 32 fractional bits",
+        ),
         ("bool", "boolean"),
     ]
     .into_iter()

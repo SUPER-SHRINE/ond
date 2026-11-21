@@ -21,7 +21,19 @@ pub(crate) fn continuation(ch: char) -> bool {
 pub(crate) fn builtin_type(name: &str) -> bool {
     matches!(
         name,
-        "bool" | "u8" | "i8" | "u16" | "i16" | "u32" | "i32" | "f32"
+        "bool"
+            | "u8"
+            | "i8"
+            | "u16"
+            | "i16"
+            | "u32"
+            | "i32"
+            | "f32"
+            | "u64"
+            | "i64"
+            | "f64"
+            | "q16"
+            | "q32"
     )
 }
 

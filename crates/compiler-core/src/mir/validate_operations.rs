@@ -4,8 +4,7 @@ use crate::semantic::Intrinsic;
 use std::collections::{BTreeMap, BTreeSet};
 
 fn cast_valid(types: &TypeTable, from: TypeId, to: TypeId) -> bool {
-    let numeric =
-        |ty| types.is_integer(ty) || matches!(types.underlying_kind(ty), Some(TypeKind::F32));
+    let numeric = |ty| types.is_numeric(ty);
     (types.underlying_id(from).is_some() && types.underlying_id(from) == types.underlying_id(to))
         || (numeric(from) && numeric(to))
         || (types.is_integer(from)
@@ -61,6 +60,11 @@ pub(super) fn function(types: &TypeTable, f: &Function) -> Vec<ValidationError> 
                     Constant::Float32 { ty, .. } => {
                         matches!(types.underlying_kind(*ty), Some(TypeKind::F32))
                     }
+                    Constant::NumericBits { bits, ty } => match types.underlying_kind(*ty) {
+                        Some(TypeKind::F64 | TypeKind::Q32) => true,
+                        Some(TypeKind::Q16) => u32::try_from(*bits).is_ok(),
+                        _ => false,
+                    },
                     Constant::Bool { ty, .. } => {
                         matches!(types.underlying_kind(*ty), Some(TypeKind::Bool))
                     }
@@ -73,10 +77,9 @@ pub(super) fn function(types: &TypeTable, f: &Function) -> Vec<ValidationError> 
                     }
                 },
                 InstructionKind::Unary { op, operand } => ty(*operand).is_some_and(|ty| match op {
-                    UnaryOp::Negate => {
-                        types.is_integer(ty)
-                            || matches!(types.underlying_kind(ty), Some(TypeKind::F32))
-                    }
+                    UnaryOp::Negate => types.is_integer(ty) || types.is_float(ty),
+                    UnaryOp::FixedNegate => types.fixed_fraction(ty).is_some(),
+                    UnaryOp::FloatPlus => types.is_float(ty),
                     UnaryOp::BitNot => types.is_integer(ty),
                     UnaryOp::LogicalNot => {
                         matches!(types.underlying_kind(ty), Some(TypeKind::Bool))
@@ -92,11 +95,10 @@ pub(super) fn function(types: &TypeTable, f: &Function) -> Vec<ValidationError> 
                     | BinaryOp::FloatLess
                     | BinaryOp::FloatLessEqual
                     | BinaryOp::FloatGreater
-                    | BinaryOp::FloatGreaterEqual => {
-                        matches!(types.underlying_kind(ty), Some(TypeKind::F32))
-                    }
+                    | BinaryOp::FloatGreaterEqual => types.is_float(ty),
                     BinaryOp::Equal | BinaryOp::NotEqual => {
                         types.is_integer(ty)
+                            || types.fixed_fraction(ty).is_some()
                             || matches!(
                                 types.underlying_kind(ty),
                                 Some(TypeKind::Bool | TypeKind::Pointer(_) | TypeKind::Function(_))
@@ -105,14 +107,23 @@ pub(super) fn function(types: &TypeTable, f: &Function) -> Vec<ValidationError> 
                     BinaryOp::LessSigned
                     | BinaryOp::LessEqualSigned
                     | BinaryOp::GreaterSigned
-                    | BinaryOp::GreaterEqualSigned
-                    | BinaryOp::ShiftRightArithmetic => types.is_signed_integer(ty),
+                    | BinaryOp::GreaterEqualSigned => {
+                        types.is_signed_integer(ty) || types.fixed_fraction(ty).is_some()
+                    }
+                    BinaryOp::ShiftRightArithmetic => types.is_signed_integer(ty),
                     BinaryOp::LessUnsigned
                     | BinaryOp::LessEqualUnsigned
                     | BinaryOp::GreaterUnsigned
                     | BinaryOp::GreaterEqualUnsigned
                     | BinaryOp::ShiftRightLogical => {
                         types.is_integer(ty) && !types.is_signed_integer(ty)
+                    }
+                    BinaryOp::Add
+                    | BinaryOp::Subtract
+                    | BinaryOp::Multiply
+                    | BinaryOp::Divide
+                    | BinaryOp::Remainder => {
+                        types.is_integer(ty) || types.fixed_fraction(ty).is_some()
                     }
                     _ => types.is_integer(ty),
                 }),
@@ -122,8 +133,7 @@ pub(super) fn function(types: &TypeTable, f: &Function) -> Vec<ValidationError> 
                     behavior,
                 } => ty(*value).is_some_and(|from| {
                     cast_valid(types, from, *to)
-                        && (!matches!(types.underlying_kind(from), Some(TypeKind::F32))
-                            || !types.is_integer(*to)
+                        && (cast_behavior(types, from, *to) != CastBehavior::Checked
                             || *behavior == CastBehavior::Checked)
                 }),
                 InstructionKind::AggregateCopy { source, .. } => matches!(

@@ -177,7 +177,9 @@ pub(crate) fn float(text: &str) -> Result<f32, &'static str> {
     }
     let clean = text.replace('_', "");
     let value = if clean.starts_with("0x") || clean.starts_with("0X") {
-        hex_float::parse(&clean)?
+        f32::from_bits(
+            hex_float::parse(&clean, 23, 127).map_err(|_| "f32 literal out of range")? as u32,
+        )
     } else {
         clean.parse::<f32>().map_err(|_| "invalid f32 literal")?
     };
@@ -185,4 +187,78 @@ pub(crate) fn float(text: &str) -> Result<f32, &'static str> {
         return Err("f32 literal out of range");
     }
     Ok(value)
+}
+
+pub(crate) fn double(text: &str) -> Result<f64, &'static str> {
+    let clean = text.replace('_', "");
+    let value = if clean.starts_with("0x") || clean.starts_with("0X") {
+        f64::from_bits(hex_float::parse(&clean, 52, 1023)?)
+    } else {
+        clean.parse().map_err(|_| "invalid f64 literal")?
+    };
+    value
+        .is_finite()
+        .then_some(value)
+        .ok_or("f64 literal out of range")
+}
+
+pub(crate) fn fixed(text: &str, fraction: u32, negative: bool) -> Result<u64, &'static str> {
+    use num_bigint::BigInt;
+    use num_traits::{ToPrimitive, Zero};
+
+    const OVERFLOW: &str = "fixed-point literal out of range";
+    let raw = if let Some(integer) = integer_exact(text) {
+        integer << fraction
+    } else {
+        let clean = text.replace('_', "");
+        let hex = clean.starts_with("0x") || clean.starts_with("0X");
+        let (mantissa, exponent) = if hex {
+            clean[2..]
+                .split_once(['p', 'P'])
+                .ok_or("hexadecimal float requires a p exponent")?
+        } else {
+            clean.split_once(['e', 'E']).unwrap_or((&clean, "0"))
+        };
+        let mut scale = exponent.parse::<i64>().unwrap_or_else(|_| {
+            if exponent.starts_with('-') {
+                i64::MIN
+            } else {
+                i64::MAX
+            }
+        });
+        let fractional_digits = mantissa.split_once('.').map_or(0, |(_, frac)| frac.len()) as i64;
+        scale = scale.saturating_sub(fractional_digits * if hex { 4 } else { 1 });
+        let digits = mantissa.replace('.', "");
+        let value = BigInt::parse_bytes(digits.as_bytes(), if hex { 16 } else { 10 })
+            .ok_or("invalid fixed-point literal")?;
+        if value.is_zero() {
+            return Ok(0);
+        }
+        if scale > 64 {
+            return Err(OVERFLOW);
+        }
+        // Any remaining exponent corresponds to a bounded integer or a
+        // denominator with size proportional to the source significand.
+        if scale < -(4 * digits.len() as i64 + 64) {
+            return Ok(0);
+        }
+        let base = BigInt::from(if hex { 2 } else { 10 });
+        let scaled = value << fraction;
+        if scale >= 0 {
+            scaled * base.pow(scale as u32)
+        } else {
+            let denominator = base.pow((-scale) as u32);
+            let q = &scaled / &denominator;
+            let twice_remainder = (&scaled % &denominator) * 2u32;
+            if twice_remainder > denominator
+                || (twice_remainder == denominator && (&q % 2u32) != BigInt::ZERO)
+            {
+                q + 1
+            } else {
+                q
+            }
+        }
+    };
+    let raw = if negative { -raw } else { raw };
+    crate::constant::fixed_bits(raw.to_i128().ok_or(OVERFLOW)?, fraction)
 }

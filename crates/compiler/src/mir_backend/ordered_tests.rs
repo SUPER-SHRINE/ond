@@ -257,7 +257,6 @@ fn nested_array_order_raw_offset_wrap_and_alignment_fault() {
 }
 
 #[test]
-#[ignore = "64 bit scalarのmemory accessが未実装"]
 fn wide_copy_observes_two_word_accesses_and_partial_fault_effects() {
     let source = super::numeric_wide_tests::source("memory");
     let all = [(false, 0), (false, 4), (true, 16), (true, 20)].map(|(write, offset)| Access {

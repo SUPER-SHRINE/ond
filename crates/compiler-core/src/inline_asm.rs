@@ -74,6 +74,7 @@ pub fn scalar(types: &TypeTable, ty: TypeId) -> bool {
                 | TypeKind::I32
                 | TypeKind::Bool
                 | TypeKind::F32
+                | TypeKind::Q16
                 | TypeKind::Pointer(_)
                 | TypeKind::Function(_)
         )

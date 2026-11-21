@@ -41,6 +41,7 @@ pub mod runtime;
 mod test_build_tests;
 #[cfg(test)]
 mod tests;
+mod wide;
 use crate::{
     diagnostic::{Diagnostic, FrontendError},
     ir::object::*,

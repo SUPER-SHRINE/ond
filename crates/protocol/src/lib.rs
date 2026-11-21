@@ -9,9 +9,9 @@ pub mod link;
 pub mod object;
 pub use ond_interface as interface;
 
-pub const REVISION: u32 = 7;
+pub const REVISION: u32 = 8;
 pub const TARGET: &str = "kagura-v1";
-pub const ABI: &str = "ond-kagura-v1";
+pub const ABI: &str = "ond-kagura-v2";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]

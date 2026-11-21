@@ -101,6 +101,11 @@ pub(crate) fn type_expr(project: &hir::Project, id: TypeId) -> Result<String, St
         TypeKind::U32 => quote("U32"),
         TypeKind::I32 => quote("I32"),
         TypeKind::F32 => quote("F32"),
+        TypeKind::U64 => quote("U64"),
+        TypeKind::I64 => quote("I64"),
+        TypeKind::F64 => quote("F64"),
+        TypeKind::Q16 => quote("Q16"),
+        TypeKind::Q32 => quote("Q32"),
         TypeKind::Defined { .. } => format!("{{\"Defined\":{}}}", nominal(project, id)?.1),
         TypeKind::Pointer(inner) => format!("{{\"Pointer\":{}}}", type_expr(project, *inner)?),
         TypeKind::Array { length, element } => format!(

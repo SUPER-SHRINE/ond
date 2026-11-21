@@ -60,6 +60,7 @@ fn static_value(types: &TypeTable, value: &StaticValue) -> Value {
         StaticValueKind::Zero | StaticValueKind::Nil => zero(types, value.ty),
         StaticValueKind::Integer(bits) => Value::Number(*bits),
         StaticValueKind::Float32(bits) => Value::Number(u64::from(*bits)),
+        StaticValueKind::NumericBits(bits) => Value::Number(*bits),
         StaticValueKind::Bool(value) => Value::Number(u64::from(*value)),
         StaticValueKind::Function { .. } => Value::Number(1),
         StaticValueKind::Composite(items) => {

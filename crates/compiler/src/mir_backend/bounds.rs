@@ -216,13 +216,16 @@ fn analyze_block(
 }
 
 fn opaque(types: &mir::TypeTable, f: &mir::Function, i: &I) -> bool {
-    let float = |ty| matches!(types.underlying_kind(ty), Some(mir::TypeKind::F32));
+    let float = |ty| types.is_float(ty) || types.fixed_fraction(ty).is_some();
     let value_is_float = |id: mir::ValueId| float(f.values[id.0 as usize].ty);
     // Numeric operations lowered to runtime helper calls are call barriers as well.
     match i {
         I::InlineAssembly { .. } | I::Call { .. } => true,
         I::Binary { op, lhs, .. } => {
-            matches!(op, mir::BinaryOp::Divide | mir::BinaryOp::Remainder) || value_is_float(*lhs)
+            matches!(op, mir::BinaryOp::Divide | mir::BinaryOp::Remainder)
+                || value_is_float(*lhs)
+                || *op == mir::BinaryOp::Multiply
+                    && super::layout::words(types, f.values[lhs.0 as usize].ty) == 2
         }
         I::Unary { operand, .. } => value_is_float(*operand),
         I::Cast { value, to, .. } => value_is_float(*value) != float(*to),

@@ -278,7 +278,7 @@ fn art01_writer_sparse_order() {
         i.exports
     );
 }
-const ARTIFACT_A: &str = r###"{"build_id":"1111111111111111111111111111111111111111111111111111111111111111","compiler_id":"0000000000000000000000000000000000000000000000000000000000000000","contract":{"abi":"ond-kagura-v1","revision":7,"target":"kagura-v1"},"debug":{"functions":[],"package":"sample","ranges":[]},"dependencies":{},"imports":[],"initializer":null,"interface":{"exports":{},"package":"sample","types":[]},"object":{"name":"diagnostic","relocations":[],"sections":[],"symbols":[]},"package":"sample"}"###;
+const ARTIFACT_A: &str = r###"{"build_id":"1111111111111111111111111111111111111111111111111111111111111111","compiler_id":"0000000000000000000000000000000000000000000000000000000000000000","contract":{"abi":"ond-kagura-v2","revision":8,"target":"kagura-v1"},"debug":{"functions":[],"package":"sample","ranges":[]},"dependencies":{},"imports":[],"initializer":null,"interface":{"exports":{},"package":"sample","types":[]},"object":{"name":"diagnostic","relocations":[],"sections":[],"symbols":[]},"package":"sample"}"###;
 fn artifact_mutation(
     change: fn(&mut serde_json::Value),
 ) -> Result<PackageArtifact, serde_json::Error> {
@@ -317,7 +317,7 @@ fn closed_artifact_and_manifest_reject_removed_tests_field() {
         let mut artifact: serde_json::Value = serde_json::from_str(ARTIFACT_A).unwrap();
         artifact["tests"] = tests.clone();
         assert!(serde_json::from_value::<PackageArtifact>(artifact).is_err());
-        let manifest = serde_json::json!({"contract":{"revision":7,"target":"kagura-v1","abi":"ond-kagura-v1"},"compiler_id":ZERO_COMPILER,"packages":[],"program":{"entry_symbol":"main.main","initializers":[]},"tests":tests});
+        let manifest = serde_json::json!({"contract":{"revision":8,"target":"kagura-v1","abi":"ond-kagura-v2"},"compiler_id":ZERO_COMPILER,"packages":[],"program":{"entry_symbol":"main.main","initializers":[]},"tests":tests});
         assert!(serde_json::from_value::<ond_protocol::CompilationManifest>(manifest).is_err());
     }
 }
@@ -325,7 +325,7 @@ fn closed_artifact_and_manifest_reject_removed_tests_field() {
 fn art01_duplicate_decoded_key() {
     assert!(
         serde_json::from_str::<Contract>(
-            r#"{"revision":7,"\u0072evision":7,"target":"kagura-v1","abi":"ond-kagura-v1"}"#
+            r#"{"revision":8,"\u0072evision":8,"target":"kagura-v1","abi":"ond-kagura-v2"}"#
         )
         .is_err(),
         "ART-01.duplicate-decoded-key"
@@ -396,28 +396,28 @@ fn art01_base64_reject() {
     }
 }
 #[test]
-fn contract_revision_seven() {
+fn contract_revision_eight() {
     let expected = Contract {
-        revision: 7,
+        revision: 8,
         target: "kagura-v1".into(),
-        abi: "ond-kagura-v1".into(),
+        abi: "ond-kagura-v2".into(),
     };
     assert_eq!(Contract::default(), expected);
     expected.validate().unwrap();
     let mut legacy = expected;
-    legacy.revision = 6;
+    legacy.revision = 7;
     assert!(legacy.validate().is_err(), "明示入力の旧revisionは拒否する");
 }
 #[test]
 fn hash01_public_struct_canonical_writer() {
     let c = Contract {
-        revision: 7,
+        revision: 8,
         target: "kagura-v1".into(),
-        abi: "ond-kagura-v1".into(),
+        abi: "ond-kagura-v2".into(),
     };
     assert_eq!(
         cache::encode(&c).unwrap(),
-        br#"{"abi":"ond-kagura-v1","revision":7,"target":"kagura-v1"}"#
+        br#"{"abi":"ond-kagura-v2","revision":8,"target":"kagura-v1"}"#
     );
 }
 #[test]
@@ -425,11 +425,11 @@ fn hash01_file_bytes() {
     assert_eq!(ARTIFACT_A.len(), 486);
     assert_eq!(
         cache::hash(ARTIFACT_A.as_bytes()),
-        "46abc29ca81801ce7a3bfcded39db1424d1d5ba7f53490384b8dcbc2dcb005f2"
+        "a51171e16aca5ead7836d219b42636b63c827ed2051bca75b7c4a6f8204a2141"
     );
     assert_eq!(
         cache::hash(format!("{ARTIFACT_A}\n").as_bytes()),
-        "da4b0eb92e4e1a6c9e3c5b4337f602c46c4902acb131b5f41db6ddc12ad66ea3"
+        "1320ceb6256367ee0aff2e244002645fea64e9b4e37304ce38cbf80304722506"
     );
 }
 #[test]
@@ -484,12 +484,12 @@ fn hash_package(label: &str, source: &str, expected: &str, length: usize) {
     let (_, generation) =
         ond_compiler_core::compile_loaded_project_with_generation(loaded).unwrap();
     let generation: serde_json::Value = serde_json::from_str(&generation.packages["main"]).unwrap();
-    let input = serde_json::json!({"compiler_id":ZERO_COMPILER,"contract":{"abi":"ond-kagura-v1","revision":7,"target":"kagura-v1"},"dependencies":{},"generation":generation,"manifest_hash":cache::hash(b"[project]\nname = \"main\"\n"),"package":"main","sources":[{"content_hash":cache::hash(source.as_bytes()),"path":"main.ond"}]});
+    let input = serde_json::json!({"compiler_id":ZERO_COMPILER,"contract":{"abi":"ond-kagura-v2","revision":8,"target":"kagura-v1"},"dependencies":{},"generation":generation,"manifest_hash":cache::hash(b"[project]\nname = \"main\"\n"),"package":"main","sources":[{"content_hash":cache::hash(source.as_bytes()),"path":"main.ond"}]});
     let bytes = cache::encode(&input).unwrap();
     assert_eq!(bytes.len(), length, "{label}");
     assert_eq!(cache::hash(&bytes), expected, "{label}: canonical bytes");
-    request.contract.revision = 7;
-    let result = compile(request, ZERO_COMPILER).expect("HASH-01 revision 7 compile precondition");
+    request.contract.revision = 8;
+    let result = compile(request, ZERO_COMPILER).expect("HASH-01 revision 8 compile precondition");
     assert_eq!(result.manifest.packages.len(), 1);
     assert_eq!(result.manifest.packages[0].build_id, expected, "{label}");
 }
@@ -498,7 +498,7 @@ fn hash01_package_empty() {
     hash_package(
         "HASH-01.package-empty",
         "package main\nfunc main(){}\n",
-        "6ab6bd11899fd905bb33b9127f979f963d96e035338d3b3b7ba37ac57d65752a",
+        "d6fff72e9563d08bb3aa314c69b0afa2a81ba1f1a3c30ff3d053b9c64fe485cf",
         540,
     );
 }
@@ -507,7 +507,7 @@ fn hash01_package_unused_body() {
     hash_package(
         "HASH-01.package-unused-body",
         "package main\nfunc add(x:i32)->i32{return x+1}\nfunc main(){}\n",
-        "4e6ba067bcfba3520df5fb9a94eea4847c2e3cddd5b13bd2b4a1dea52f78de00",
+        "8646d1bb2bb8b04ae50a390ef0a7ad4b363b93b8b2ef039bf5e34787333f1a75",
         756,
     );
 }
@@ -690,7 +690,6 @@ fn hash01_image_build_id_uses_full_binary_bytes() {
 }
 
 #[test]
-#[ignore = "64 bitと固定小数点の公開interfaceが未実装"]
 fn wide_typed_wire_values_keep_exact_bits() {
     let cases = include_str!("../../../specs/ond/conformance/cases/interface-values.md");
     let (_, section) = cases
@@ -769,7 +768,6 @@ fn wide_v2_spec_wire_and_hash_vectors() {
 }
 
 #[test]
-#[ignore = "ABI v2とartifact revision 8の読出しが未実装"]
 fn wide_v2_accepts_its_own_wire_versions() {
     let old = ond_protocol::Contract {
         revision: 7,

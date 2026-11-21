@@ -43,7 +43,7 @@ error行は操作の失敗、link行は[CLI失敗契約](../../build/commands.md
 | HASH-01.scalar-key-order | key U+E000→0、key U+1F600→1のobject | 7b22ee8080223a302c22f09f9880223a317d | a712a1804e0980b85da1fbebfb21070144773d51ac011435af287d757b3e7dc5 |
 
 `HASH-01.file-bytes`はAをBOM/末尾LFなしで保存した486byteと、Aの末尾にLFを1byte追加した487byteを別fileとする。\
-content_hashは順に`46abc29ca81801ce7a3bfcded39db1424d1d5ba7f53490384b8dcbc2dcb005f2`、`da4b0eb92e4e1a6c9e3c5b4337f602c46c4902acb131b5f41db6ddc12ad66ea3`と比較する。\
+content_hashは順に`a51171e16aca5ead7836d219b42636b63c827ed2051bca75b7c4a6f8204a2141`、`1320ceb6256367ee0aff2e244002645fea64e9b4e37304ce38cbf80304722506`と比較する。\
 JSON値の一致を理由に同じbytesへ再encodeして比較しない。
 
 ## Manifest path

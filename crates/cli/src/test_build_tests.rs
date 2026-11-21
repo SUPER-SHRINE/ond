@@ -44,7 +44,7 @@ fn pkg01_source_files_have_complete_public_hash_input() {
     .map(
         |(path, text)| serde_json::json!({"path":path,"content_hash":cache::hash(text.as_bytes())}),
     );
-    let input = serde_json::json!({"contract":{"revision":7,"target":"kagura-v1","abi":"ond-kagura-v1"},"compiler_id":id,"manifest_hash":cache::hash(b"[project]\nname = \"p\"\n"),"package":"p","sources":sources,"dependencies":{},"generation":generation});
+    let input = serde_json::json!({"contract":{"revision":8,"target":"kagura-v1","abi":"ond-kagura-v2"},"compiler_id":id,"manifest_hash":cache::hash(b"[project]\nname = \"p\"\n"),"package":"p","sources":sources,"dependencies":{},"generation":generation});
     let result = compile(f.request(), &id).unwrap();
     assert_eq!(
         result.manifest.packages[0].build_id,

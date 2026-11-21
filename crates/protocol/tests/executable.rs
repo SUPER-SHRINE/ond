@@ -1,6 +1,6 @@
 use ond_protocol::executable::Executable;
 fn fixture() -> Vec<u8> {
-    "4f4e4458 01000000 01000000 01000000 54000000 50000010 00010010 02000000 01000000 50000000 04000000 50000010 04000000 04000000 04000000 00000000 00000000 54000010 04000000 04000000 000000c0".split_whitespace().flat_map(|s| (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i+2],16).unwrap()).collect::<Vec<_>>()).collect()
+    "4f4e4458 01000000 01000000 02000000 54000000 50000010 00010010 02000000 01000000 50000000 04000000 50000010 04000000 04000000 04000000 00000000 00000000 54000010 04000000 04000000 000000c0".split_whitespace().flat_map(|s| (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i+2],16).unwrap()).collect::<Vec<_>>()).collect()
 }
 fn put(bytes: &mut [u8], offset: usize, value: u32) {
     bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
@@ -17,7 +17,7 @@ fn bin_01_fixed_wire_roundtrip_and_mutations() {
         (0, 0),
         (4, 2),
         (8, 2),
-        (12, 2),
+        (12, 1),
         (28, u32::MAX),
         (56, 5),
         (56, 1),
@@ -90,7 +90,7 @@ fn bin_02_data_tail_and_empty_data_wire_vectors() {
     let mut d = Vec::new();
     d.extend_from_slice(b"ONDX");
     for value in [
-        1u32, 1, 1, 110, 0x10000068, 0x10000100, 3, 1, 104, 4, 0x10000068, 4, 4, 3, 108, 2,
+        1u32, 1, 2, 110, 0x10000068, 0x10000100, 3, 1, 104, 4, 0x10000068, 4, 4, 3, 108, 2,
         0x1000006c, 4, 4, 4, 0, 0, 0x10000070, 4, 4,
     ] {
         d.extend(value.to_le_bytes());

@@ -178,6 +178,8 @@ fn evaluated(value: &hir::Expr) -> bool {
         | hir::ExprKind::Integer(_)
         | hir::ExprKind::Bool(_)
         | hir::ExprKind::Float32(_)
+        | hir::ExprKind::Float64(_)
+        | hir::ExprKind::Fixed(_)
         | hir::ExprKind::Nil => true,
         hir::ExprKind::Composite(elements) => elements.iter().all(|(_, value)| evaluated(value)),
         _ => false,

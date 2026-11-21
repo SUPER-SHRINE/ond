@@ -86,8 +86,8 @@ fn conditional_local_islands_execute_both_directions_and_skip_literals() {
 
 fn large_config() -> crate::ProjectConfig {
     crate::ProjectConfig {
-        ram_size: 1024 * 1024,
-        stack_size: 65536,
+        ram_size: 8 * 1024 * 1024,
+        stack_size: 262144,
     }
 }
 
@@ -97,7 +97,7 @@ fn far_startup_initializer_calls_stack_arguments_and_function_addresses_execute(
         "package main\n
         var State:u32=23
         func sum(a:u32,b:u32,c:u32,d:u32,e:u32,f:u32,g:u32)->u32 {return a+b+c+d+e+f+g+State}
-        func padding(){var buf:[2000]u8;buf[1999]=1}
+        func padding(){var buf:[34000]u8;buf[33999]=1}
         func main(){var direct=sum(1,2,3,4,5,6,7);var indirect= sum;
             *(4294934608 as u32 as *u32) = direct+indirect(7,6,5,4,3,2,1)}",
     );
@@ -116,7 +116,7 @@ fn large_loop_and_conditional_edges_execute_from_source() {
         let fixture = Fixture::new(&format!(
             "package main\n
             func loop(flag:bool)->u32 {{var n:u32;for n<2 {{
-                if flag {{var buf:[1600]u8;buf[1599]=1}}
+                if flag {{var buf:[34000]u8;buf[33999]=1}}
                 n=n+1
             }};return n}}
             func main(){{*(4294934608 as u32 as *u32) = loop({flag})}}"

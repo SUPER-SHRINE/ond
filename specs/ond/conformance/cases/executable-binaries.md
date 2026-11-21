@@ -169,7 +169,7 @@ func main(){var p=&G;var out=536871168 as u32 as *u32;out[0]=f()+*p;out[1]=p as 
 | BIN-03.debug-prefix | self生成物のdebug情報を読む | function/range/unwindは標準Text内。前置起動処理にsource・unwind情報を生成しない |
 
 `HASH-01.binary-vector`はWの全84 byteだけをSHA-256へ入力し、`60b94a75019b353ab0513651ce0283fb2aa6aa12db5d8624ac2d66d6ae254771`との完全一致を比較する。\
-`HASH-01.binary-prefix`はWの前へ4個のzero byteを加えた88 byteをhashし、`718f1c5a7693158554c0a490403ecf5ca2c56ac0bc15e3f833a37c7ad1e4166e`と比較する。\
+`HASH-01.binary-prefix`はWの前へ4個のzero byteを加えた88 byteをhashし、`52dbc6ef0dc4527d366ed2f7052529159e4eacd73062c2888863647d578f8fea`と比較する。\
 後者は全bytesをhashする操作だけの入力であり、selfの起動処理適合を検査する入力ではない。
 
 `HASH-01.sidecar-mismatch`は成功生成物の独立copyと有効なdebug sidecarを用意し、sidecarのbuild_idの先頭hex digitだけを別値へ変更する（0なら1、それ以外なら0）。\

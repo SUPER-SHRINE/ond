@@ -407,6 +407,11 @@ fn lower_context_with_generation(
                                             | "u32"
                                             | "i32"
                                             | "f32"
+                                            | "u64"
+                                            | "i64"
+                                            | "f64"
+                                            | "q16"
+                                            | "q32"
                                     )
                                     || type_universe
                                         .iter()
@@ -660,6 +665,11 @@ fn lower_context_with_generation(
                                                     | "u32"
                                                     | "i32"
                                                     | "f32"
+                                                    | "u64"
+                                                    | "i64"
+                                                    | "f64"
+                                                    | "q16"
+                                                    | "q32"
                                             )
                                             || type_universe
                                                 .iter()

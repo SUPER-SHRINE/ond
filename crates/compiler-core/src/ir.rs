@@ -740,6 +740,8 @@ pub mod hir {
         Zero,
         Integer(u64),
         Float32(u32),
+        Float64(u64),
+        Fixed(u64),
         Bool(bool),
         Nil,
         Local(LocalId),
