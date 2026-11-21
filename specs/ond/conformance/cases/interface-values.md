@@ -1,7 +1,7 @@
 # 公開interfaceと型付きwire値
 <!-- ond-spec-id: conformance/cases/interface-values -->
 
-要件は`ART-01`とし、Contract revision 7の[公開interface](../../artifacts.md#公開interface)、[wire形式](../../artifacts.md#json-wire形式)、[具体化identity](../../build/cache.md#意味型具体化定数の正規化)を定義元とする。
+要件は`ART-01`とし、Contract revision 8の[公開interface](../../artifacts.md#公開interface)、[wire形式](../../artifacts.md#json-wire形式)、[具体化identity](../../build/cache.md#意味型具体化定数の正規化)を定義元とする。
 
 ## 型付きValueの読出しと生成
 <!-- ond-spec-id: conformance/interface-values/typed-values -->
@@ -153,3 +153,25 @@ func main(){Global=Id[u8](1)}
 | Case ID | 操作と比較対象 | 期待 |
 | --- | --- | --- |
 | PKG-01.root-logical-normal | compileし、rootのPackageArtifact、Interface、DebugObject、CompilationManifest.ArtifactRef、PackageBuildInput、Generation.interfaceのpackage、NominalIdと非公開fieldのprivate_owner、Id[u8]のDeclarationId.package、Objectの通常非generic function/global symbol、ProgramMetadata.entry_symbolを比較 | 論理package fieldはすべてp、nominal名はp.Root、Root.secretのprivate_ownerはp、IdのDeclarationId.packageはp、通常symbolはmain.mainとmain.Global、entry_symbolはmain.main |
+
+## 64 bit数値と固定小数点のValue
+<!-- ond-spec-id: conformance/interface-values/wide-numeric -->
+
+各行は独立projectとし、`package main`、表の宣言、`func main(){}`をLFで区切り末尾LFを付け、main.ondへ置く。\
+manifestは[共通case契約](./README.md#入力と期待結果の読み方)を使う。\
+Coreと公開interface生成は受理し、export `Value` が参照する型のKindと、Value.kindのcanonical JSON bytesを比較する。\
+表のValue.kindを読出し直した場合に、同じ値を再encodeできることも比較する。
+
+| 宣言 | 型のKind | Value.kind |
+| --- | --- | --- |
+| `const Value:u64=18446744073709551615` | `"U64"` | `{"Integer":18446744073709551615}` |
+| `const Value:i64=-9223372036854775808` | `"I64"` | `{"Integer":9223372036854775808}` |
+| `const Value:f64=0.1` | `"F64"` | `{"Float64":4591870180066957722}` |
+| `const Value:f64=-0.0` | `"F64"` | `{"Float64":9223372036854775808}` |
+| `const Value:f64=0.0` | `"F64"` | `"Zero"` |
+| `const Value:q16=-0.5` | `"Q16"` | `{"Fixed16":4294934528}` |
+| `const Value:q32=-0.5` | `"Q32"` | `{"Fixed32":18446744071562067968}` |
+| `const Value:q32=0.0` | `"Q32"` | `"Zero"` |
+
+`{"Float64":18446744073709551615}`はf64のNaN payloadとしてreadとwriteで正確な整数bitsを保持する。\
+`{"Float64":18446744073709551616}`はpayloadの範囲外となり、wire読出しで拒否する。

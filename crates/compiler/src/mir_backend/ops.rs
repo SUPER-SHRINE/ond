@@ -18,6 +18,9 @@ pub(super) fn sign_extend(e: &mut Emitter, reg: u8, ty: ScalarLayout) {
 }
 pub(super) fn unary(e: &mut Emitter, op: mir::UnaryOp) {
     match op {
+        mir::UnaryOp::FixedNegate | mir::UnaryOp::FloatPlus => {
+            unreachable!("operation uses numeric lowering")
+        }
         mir::UnaryOp::Negate => {
             e.emit(1, 1, 1, 1, 0);
             e.emit(0, 1, 1, 0, 1);

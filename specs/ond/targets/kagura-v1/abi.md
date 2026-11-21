@@ -1,7 +1,7 @@
 # Ond ABI for Kagura v1
 <!-- ond-spec-id: targets/kagura-v1/abi -->
 
-本書は Ond for Kagura v1 の関数呼び出し規約を定義する。\
+本書は target `kagura-v1` の関数呼び出し規約 `ond-kagura-v2` を定義する。\
 値の memory layout は [Ond for Kagura Machine Profile v1](./machine.md) に従う。
 
 ## 1. Registers
@@ -56,11 +56,14 @@ call/returnを生成する命令列は本章のABIを満たす。
 
 | Class | Values | ABI words |
 | --- | --- | ---: |
-| Direct-1 | integer, `f32`, `bool`, raw pointer, function pointer | 1 |
+| Direct-1 | 32 bit以下の整数、`f32`、`q16`、`bool`、raw pointer、function pointer | 1 |
+| Direct-2 | `u64`、`i64`、`f64`、`q32` | 2 |
 | Indirect | array, struct | pointer 1 |
 
+defined typeの分類はunderlying型に従う。\
 Direct-1 のうち integer、`bool`、pointer は値を下位 bit に置き、未使用の上位 bit を `0` にする。\
-f32は[言語のbinary32](../../language/v1/expressions.md#floating-point-arithmetic)の32bit patternをそのまま置く。
+浮動小数点型と固定小数点型はそれぞれの格納bitsをそのまま渡す。\
+Direct-2は低位32 bit、高位32 bitの順にword列へ置く。
 
 Indirect argumentではcallerが値をcaller-owned temporaryへcopyし、その先頭pointerを渡す。\
 temporaryと渡したpointerの有効期間はcalleeのreturnまでであり、calleeはその期間内にtemporaryを変更できる。\
@@ -71,10 +74,12 @@ callerの元の値はcall後も保持する。
 
 source-level argument を宣言順に ABI word 列へ変換する。
 
-- Direct-1 は 1 word を追加する
+- Direct-1 は 1 word、Direct-2 は低位・高位の順に2 wordを追加する
 - Indirect は temporary の pointer 1 word を追加する
 
 先頭 6 word を `r1..r6` に置き、残りを `CFA + 0`, `CFA + 4`, ... に置く。\
+各wordは連続して配置し、値の前にalignmentのための空きwordを挿入しない。\
+Direct-2の低位wordが `r6` に置かれる場合、その高位wordを `CFA + 0` に置く。\
 stack argument area は caller が確保し、全体を 8-byte 境界へ切り上げる。
 
 memory return を使う関数では、return area の pointer を先頭の hidden argument word とする。\
@@ -89,11 +94,11 @@ user argument はその後ろへ続ける。
 - Indirect value を含む場合、または合計 5 word 以上なら、すべての戻り値を caller-owned return area へ書く
 
 return area は戻り値を field とする record として配置する。\
-Direct-1 は 4-byte slot、Indirect value は通常の memory layout を使い、各値を最大 4-byte の natural alignment へ揃える。
+Direct-1 は 4-byte slot、Direct-2 と Indirect value は通常の memory layout を使い、各値を最大 4-byte の natural alignment へ揃える。
 
 狭いDirect-1のslotも配置alignmentは元の型に従うため、word境界とは限らない（例: `([1]u8, u8, u16, i32)` はoffset 0/1/6/12）。\
 狭いslotの値は型幅で読み書きし、未使用の上位byteは0として書く。\
-各値の型幅とalignmentに従ったaccessで読み書きする。\
+各値を[配置とアクセス幅](./machine.md#5-data-layout)に従って読み書きする。\
 ゼロサイズのIndirect fieldはrecord内でsize=0を維持し、return area全体の物理予約は最低1 byteとする。
 
 ## 6. Stack Frame
@@ -114,7 +119,7 @@ low address
 - nested call を行う関数は call 前に return address を保存し、return 前に `r15` へ戻す
 - outgoing argument area は child call に必要な最大サイズを frame 内へ確保し、call ごとに再利用できる
 - memory return area と child call の outgoing argument area は重ねない
-- local scalar slot は 4 byteとし、aggregateは通常のmemory layoutを使う
+- 実体を置くlocal scalar slotには型の格納に必要な容量を確保し、aggregateは通常のmemory layoutを使う
 
 標準 prologue と epilogue:
 
@@ -134,9 +139,8 @@ frame を確保する関数は、減算の underflow または `new_sp < STACK_B
 debug sidecarの対応rangeには`StackOverflow`を記録する。\
 この経路は停止時点のstack容量でtrapを完了して実行を終了する。
 
-[狭い整数とf32の実行時往復変換](../../language/v1/types.md#狭い整数とf32の実行時往復変換)を省く場合、除去する変換処理とその値の保持に必要だったstack容量の分だけ、実行時のstack需要を減らせる。\
-その需要に由来する`StackOverflow`は、同じ入力とstack設定でも通常の処理継続に変わり、後続の処理や副作用が実行され得る。\
-残るframeには本節の容量検査を適用し、実行される入力生成処理、明示trap、その他の演算とアクセスには[既定のfault規則](./machine.md#faultと観測結果)を適用する。
+stack容量は[非公開ローカル集約値と一時値](./machine.md#34-非公開ローカル集約値)の配置裁量や[狭い整数とf32の実行時往復変換](../../language/v1/types.md#狭い整数とf32の実行時往復変換)の省略を反映した実行時のframeに対して検査する。\
+同じsource入力とstack設定でも、使用するframeによって確保の成否が変わり得る。
 
 ## 8. Bounds Error
 <!-- ond-spec-id: targets/kagura-v1/abi-bounds-error -->

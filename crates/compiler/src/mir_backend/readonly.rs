@@ -179,9 +179,11 @@ pub(super) fn write_value(
                 "composite static initializer requires aggregate type",
             )),
         },
-        V::Integer(bits) => write_scalar(types, value.ty, *bits as u32, offset, data, span),
-        V::Float32(bits) => write_scalar(types, value.ty, *bits, offset, data, span),
-        V::Bool(boolean) => write_scalar(types, value.ty, u32::from(*boolean), offset, data, span),
+        V::Integer(bits) | V::NumericBits(bits) => {
+            write_scalar(types, value.ty, *bits, offset, data, span)
+        }
+        V::Float32(bits) => write_scalar(types, value.ty, u64::from(*bits), offset, data, span),
+        V::Bool(boolean) => write_scalar(types, value.ty, u64::from(*boolean), offset, data, span),
         V::Function { symbol, .. } => {
             relocations.push(Relocation {
                 section,
@@ -198,7 +200,7 @@ pub(super) fn write_value(
 fn write_scalar(
     types: &mir::TypeTable,
     ty: mir::TypeId,
-    bits: u32,
+    bits: u64,
     offset: u32,
     data: &mut [u8],
     span: Span,

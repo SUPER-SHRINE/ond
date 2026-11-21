@@ -63,6 +63,7 @@ pub enum StaticValueKind {
     Zero,
     Integer(u64),
     Float32(u32),
+    NumericBits(u64),
     Bool(bool),
     Nil,
     Function {
@@ -177,6 +178,14 @@ impl InstructionKind {
         match self {
             Self::InlineAssembly { .. } => Effects {
                 memory: MemoryEffect::ReadWrite,
+                may_trap: true,
+                calls: false,
+            },
+            Self::Unary {
+                op: UnaryOp::FixedNegate,
+                ..
+            } => Effects {
+                memory: MemoryEffect::None,
                 may_trap: true,
                 calls: false,
             },
@@ -373,6 +382,8 @@ pub enum CastBehavior {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnaryOp {
     Negate,
+    FixedNegate,
+    FloatPlus,
     BitNot,
     LogicalNot,
 }
@@ -455,6 +466,10 @@ pub enum Constant {
         bits: u32,
         ty: TypeId,
     },
+    NumericBits {
+        bits: u64,
+        ty: TypeId,
+    },
     Bool {
         value: bool,
         ty: TypeId,
@@ -473,6 +488,7 @@ impl Constant {
             Self::Zero(ty)
             | Self::Integer { ty, .. }
             | Self::Float32 { ty, .. }
+            | Self::NumericBits { ty, .. }
             | Self::Bool { ty, .. }
             | Self::Nil(ty)
             | Self::Function { ty, .. } => *ty,
@@ -498,6 +514,21 @@ pub enum TrapKind {
     DivisionByZero,
     SignedDivisionOverflow,
     InvalidConversion,
+    FixedPointOverflow,
     StackOverflow,
     Explicit(String),
+}
+
+pub(crate) fn cast_behavior(types: &TypeTable, from: TypeId, to: TypeId) -> CastBehavior {
+    let from_base = types.underlying_id(from);
+    let to_base = types.underlying_id(to);
+    if from_base != to_base
+        && (types.fixed_fraction(to).is_some()
+            || types.is_integer(to) && !types.is_integer(from) && types.is_numeric(from)
+            || from_base == Some(TypeId::F64) && to_base == Some(TypeId::F32))
+    {
+        CastBehavior::Checked
+    } else {
+        CastBehavior::Infallible
+    }
 }

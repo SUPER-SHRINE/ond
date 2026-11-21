@@ -36,7 +36,22 @@ pub(super) fn load(source: &str) -> Result<mir::Project, FrontendError> {
         ],
     };
     let mut project = ond_compiler_core::compile_loaded_project(loaded)
-        .map_err(|e| failure(format!("frontend failed in runtime_support.ond: {e}")))?
+        .map_err(|e| {
+            let details = e
+                .diagnostics()
+                .iter()
+                .map(|diagnostic| {
+                    let span = diagnostic.primary.span;
+                    let token = source.get(span.start..span.end).unwrap_or("");
+                    let line = source
+                        .get(..span.start)
+                        .map_or(0, |prefix| prefix.lines().count());
+                    format!("line {line} {token:?}: {}", diagnostic.message)
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            failure(format!("frontend failed in runtime_support.ond: {details}"))
+        })?
         .mir;
     project.packages.retain(|p| p.logical_path == "runtime");
     project.initialization_order.clear();
@@ -53,7 +68,12 @@ pub(super) fn load(source: &str) -> Result<mir::Project, FrontendError> {
     // division by zero. Give this compiler-owned primitive an explicit MIR trap so
     // soft-float does not depend on integer division (or recursively on itself).
     for f in &mut project.packages[0].functions {
-        if f.name == "runtime.__sf_invalid" {
+        let trap = match f.name.as_str() {
+            "runtime.__sf_invalid" => mir::TrapKind::InvalidConversion,
+            "runtime.__fixed_overflow" => mir::TrapKind::FixedPointOverflow,
+            _ => continue,
+        };
+        {
             f.locals.clear();
             f.values.clear();
             f.entry = mir::BlockId(0);
@@ -62,7 +82,7 @@ pub(super) fn load(source: &str) -> Result<mir::Project, FrontendError> {
                 parameters: vec![],
                 instructions: vec![],
                 terminator: mir::Terminator {
-                    kind: mir::TerminatorKind::Trap(mir::TrapKind::InvalidConversion),
+                    kind: mir::TerminatorKind::Trap(trap),
                     span: f.span,
                 },
             }];

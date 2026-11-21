@@ -1,0 +1,74 @@
+// Exact unsigned 32-by-32 product as two words.
+func __wide_product_word(a:u32,b:u32) -> u64 {
+    var x = a & 65535
+    var y = b & 65535
+    var p = x * y
+    var cross = (a >> 16) * y + (p >> 16)
+    var high = cross >> 16
+    cross = (cross & 65535) + x * (b >> 16)
+    high += (cross >> 16) + (a >> 16) * (b >> 16)
+    var low = (cross << 16) + (p & 65535)
+    return (high as u64 << 32) | low as u64
+}
+
+func __ond_mul64(a:u64,b:u64) -> u64 {
+    var al = a as u32
+    var bl = b as u32
+    var high = (a >> 32) as u32 * bl + (b >> 32) as u32 * al
+    return __wide_product_word(al,bl) + (high as u64 << 32)
+}
+
+// Restoring division. Carry from shifting the partial remainder is retained.
+func __wide_divrem(a:u64,b:u64) -> (u64,u64) {
+    var q:u64
+    var r:u64
+    for varBit := 64 as u32; varBit != 0; varBit-- {
+        var carry = r >> 63
+        r = (r << 1) | ((a >> (varBit - 1)) & 1)
+        q <<= 1
+        if carry != 0 || r >= b {
+            r -= b
+            q |= 1
+        }
+    }
+    return q,r
+}
+
+func __ond_udiv64(a:u64,b:u64) -> u64 {
+    var q,_ = __wide_divrem(a,b)
+    return q
+}
+func __ond_urem64(a:u64,b:u64) -> u64 {
+    var _,r = __wide_divrem(a,b)
+    return r
+}
+func __ond_idiv64(a:u64,b:u64) -> u64 {
+    var an = a >> 63 != 0
+    var bn = b >> 63 != 0
+    if an { a = -a }
+    if bn { b = -b }
+    var q = __ond_udiv64(a,b)
+    if an != bn { return -q }
+    return q
+}
+func __ond_irem64(a:u64,b:u64) -> u64 {
+    var an = a >> 63 != 0
+    if an { a = -a }
+    if b >> 63 != 0 { b = -b }
+    var r = __ond_urem64(a,b)
+    if an { return -r }
+    return r
+}
+
+// Product of two unsigned 64-bit values as low and high 64-bit limbs.
+func __wide_product(a:u64,b:u64) -> (u64,u64) {
+    var al = a as u32
+    var ah = (a >> 32) as u32
+    var bl = b as u32
+    var bh = (b >> 32) as u32
+    var low = __wide_product_word(al,bl)
+    var cross = __wide_product_word(ah,bl) + (low >> 32)
+    var center = __wide_product_word(al,bh) + (cross & 0xffffffff)
+    var high = __wide_product_word(ah,bh) + (cross >> 32) + (center >> 32)
+    return (center << 32) | (low & 0xffffffff), high
+}

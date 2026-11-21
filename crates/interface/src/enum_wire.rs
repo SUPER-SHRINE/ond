@@ -29,6 +29,11 @@ impl<'de> Deserialize<'de> for Kind {
                 "U32" => Kind::U32,
                 "I32" => Kind::I32,
                 "F32" => Kind::F32,
+                "U64" => Kind::U64,
+                "I64" => Kind::I64,
+                "F64" => Kind::F64,
+                "Q16" => Kind::Q16,
+                "Q32" => Kind::Q32,
                 _ => return Err(D::Error::custom("invalid primitive type variant")),
             },
             Wire::Payload(payload) => match payload {
@@ -48,6 +53,9 @@ impl<'de> Deserialize<'de> for ValueKind {
         enum Payload {
             Integer(u64),
             Float32(u32),
+            Float64(u64),
+            Fixed16(u32),
+            Fixed32(u64),
             Bool(bool),
             Composite(Vec<(u32, Value)>),
         }
@@ -66,6 +74,9 @@ impl<'de> Deserialize<'de> for ValueKind {
             Wire::Payload(payload) => match payload {
                 Payload::Integer(value) => ValueKind::Integer(value),
                 Payload::Float32(value) => ValueKind::Float32(value),
+                Payload::Float64(value) => ValueKind::Float64(value),
+                Payload::Fixed16(value) => ValueKind::Fixed16(value),
+                Payload::Fixed32(value) => ValueKind::Fixed32(value),
                 Payload::Bool(value) => ValueKind::Bool(value),
                 Payload::Composite(value) => ValueKind::Composite(value),
             },

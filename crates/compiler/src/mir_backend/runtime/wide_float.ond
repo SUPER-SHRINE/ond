@@ -1,0 +1,158 @@
+// Binary64 arithmetic uses a 53-bit significand and three rounding bits.
+// These helpers work on raw IEEE encodings so copying preserves payload bits.
+func __float_sign(sign:bool, bit:u32) -> u64 {
+    if sign { return 1 as u64 << bit }
+    return 0
+}
+func __float_jam(n:u64, count:u32) -> u64 {
+    if count == 0 { return n }
+    if count >= 64 {
+        if n != 0 { return 1 }
+        return 0
+    }
+    var shifted = n >> count
+    if (shifted << count) != n { shifted |= 1 }
+    return shifted
+}
+func __float_pack(sign:bool, exponent:i32, ext:u64, fraction:u32, bias:i32) -> u64 {
+    var signBit = fraction + 8
+    if fraction == 52 { signBit = 63 }
+    var bits = __float_sign(sign, signBit)
+    if ext == 0 { return bits }
+    var emin = 1 - bias
+    if exponent < emin {
+        ext = __float_jam(ext, (emin - exponent) as u32)
+        exponent = emin
+    }
+    var q = ext >> 3
+    var remainder = ext & 7
+    if remainder > 4 || (remainder == 4 && (q & 1) != 0) { q++ }
+    var unit = 1 as u64 << fraction
+    if q == unit << 1 { q >>= 1; exponent++ }
+    if exponent > bias { return bits | (((2 * bias + 1) as u64) << fraction) }
+    if q < unit { return bits | q }
+    return bits | ((exponent + bias) as u64 << fraction) | (q - unit)
+}
+func __float_normalize(mantissa:u64, exponent:i32) -> (u64,i32) {
+    for mantissa < 0x10000000000000 {
+        mantissa <<= 1
+        exponent--
+    }
+    return mantissa,exponent
+}
+
+func __float_abs(bits:u64) -> u64 { return bits & 0x7fffffffffffffff }
+func __float_exp(abs:u64) -> i32 {
+    var value = (abs >> 52) as i32
+    if value == 0 { return -1022 }
+    return value - 1023
+}
+func __float_mantissa(abs:u64) -> u64 {
+    var low = abs & 0xfffffffffffff
+    if abs >> 52 != 0 { low |= 0x10000000000000 }
+    return low
+}
+func __ond_neg64(a:u64) -> u64 {
+    if __float_abs(a) > 0x7ff0000000000000 { return 0x7ff8000000000000 }
+    return a ^ 0x8000000000000000
+}
+
+func __float_add(a:u64,b:u64) -> u64 {
+    var am = __float_abs(a)
+    var bm = __float_abs(b)
+    if am < bm { a,b = b,a; am,bm = bm,am }
+    var sa = a >> 63 != 0
+    var sb = b >> 63 != 0
+    if am == 0x7ff0000000000000 {
+        if bm == am && sa != sb { return 0x7ff8000000000000 }
+        return a
+    }
+    if am == 0 {
+        return __float_sign(sa && sb,63)
+    }
+    if bm == 0 { return a }
+    var ae = __float_exp(am)
+    var be = __float_exp(bm)
+    var x = __float_mantissa(am) << 3
+    var y = __float_jam(__float_mantissa(bm) << 3, (ae-be) as u32)
+    var z:u64
+    if sa == sb {
+        z = x+y
+        if z >= 0x100000000000000 { z = __float_jam(z,1); ae++ }
+    } else {
+        z = x-y
+        if z == 0 { return 0 }
+        for ae > -1022 && z < 0x80000000000000 { z <<= 1; ae-- }
+    }
+    return __float_pack(sa,ae,z,52,1023)
+}
+
+func __float_mul(a:u64,b:u64,negative:bool) -> u64 {
+    if a == 0x7ff0000000000000 || b == 0x7ff0000000000000 {
+        if a == 0 || b == 0 { return 0x7ff8000000000000 }
+        return __float_sign(negative,63) | 0x7ff0000000000000
+    }
+    if a == 0 || b == 0 { return __float_sign(negative,63) }
+    var x,xe = __float_normalize(__float_mantissa(a), __float_exp(a))
+    var y,ye = __float_normalize(__float_mantissa(b), __float_exp(b))
+    var low,high = __wide_product(x,y)
+    var shift:u32 = 49
+    var e = xe+ye
+    if high >> 41 != 0 { shift++; e++ }
+    var ext = (high << (64-shift)) | __float_jam(low,shift)
+    return __float_pack(negative,e,ext,52,1023)
+}
+
+func __float_div(a:u64,b:u64,negative:bool) -> u64 {
+    if (a == 0 && b == 0) || (a == 0x7ff0000000000000 && b == a) { return 0x7ff8000000000000 }
+    if b == 0 || a == 0x7ff0000000000000 {
+        return __float_sign(negative,63) | 0x7ff0000000000000
+    }
+    if a == 0 || b == 0x7ff0000000000000 { return __float_sign(negative,63) }
+    var x,xe = __float_normalize(__float_mantissa(a), __float_exp(a))
+    var y,ye = __float_normalize(__float_mantissa(b), __float_exp(b))
+    var e = xe-ye
+    if x < y { x <<= 1; e-- }
+    var ext:u64
+    var count:u32 = 56
+    for count != 0 {
+        ext <<= 1
+        if x >= y { x -= y; ext |= 1 }
+        x <<= 1
+        count--
+    }
+    if x != 0 { ext |= 1 }
+    return __float_pack(negative,e,ext,52,1023)
+}
+
+// Returns result bits for arithmetic, or 0/1 for comparison.
+func __ond_binary64(a:u64,b:u64,op:u32) -> u64 {
+    var am = __float_abs(a)
+    var bm = __float_abs(b)
+    var unordered = am > 0x7ff0000000000000 || bm > 0x7ff0000000000000
+    var negative = (a ^ b) >> 63 != 0
+    if unordered { return 0x7ff8000000000000 }
+    if op == 0 { return __float_add(a,b) }
+    if op == 1 { return __float_add(a,b ^ 0x8000000000000000) }
+    if op == 2 { return __float_mul(am,bm,negative) }
+    return __float_div(am,bm,negative)
+}
+
+func __ond_compare64(a:u64,b:u64,op:u32) -> u64 {
+    var am = __float_abs(a)
+    var bm = __float_abs(b)
+    var unordered = am > 0x7ff0000000000000 || bm > 0x7ff0000000000000
+    var negative = (a ^ b) >> 63 != 0
+    if unordered { if op == 5 { return 1 }; return 0 }
+    var equal = a == b || (am == 0 && bm == 0)
+    var less = false
+    if !equal {
+        if negative { less = a >> 63 != 0 } else {
+            if a >> 63 != 0 { less = am > bm } else { less = am < bm }
+        }
+    }
+    if (op == 4 && equal) || (op == 5 && !equal) ||
+        (op == 6 && less) || (op == 7 && (less || equal)) ||
+        (op == 8 && !less && !equal) || (op == 9 && !less) { return 1 }
+    return 0
+}

@@ -109,7 +109,7 @@ pub(super) const CASES: &[Case] = &[
         ],
         expected: Expected::Reject(&[ExpectedDiagnostic {
             severity: Severity::Error,
-            message: Message::Exact("integer literal requires an integer type"),
+            message: Message::Exact("integer literal requires a numeric type"),
             location: Location::Source {
                 file: "global.ond",
                 text: "1",

@@ -33,6 +33,11 @@ pub enum Kind {
     U32,
     I32,
     F32,
+    U64,
+    I64,
+    F64,
+    Q16,
+    Q32,
     Pointer(TypeRef),
     Array { length: u32, element: TypeRef },
     Function(Signature),
@@ -82,6 +87,9 @@ pub enum ValueKind {
     Zero,
     Integer(u64),
     Float32(u32),
+    Float64(u64),
+    Fixed16(u32),
+    Fixed32(u64),
     Bool(bool),
     Nil,
     /// Sparse field/index list; absent elements are zero.
@@ -298,7 +306,11 @@ impl Interface {
             (ValueKind::Integer(value), Kind::I8) => *value == *value as i8 as i64 as u64,
             (ValueKind::Integer(value), Kind::I16) => *value == *value as i16 as i64 as u64,
             (ValueKind::Integer(value), Kind::I32) => *value == *value as i32 as i64 as u64,
-            (ValueKind::Float32(_), Kind::F32)
+            (ValueKind::Integer(_), Kind::U64 | Kind::I64)
+            | (ValueKind::Float32(_), Kind::F32)
+            | (ValueKind::Float64(_), Kind::F64)
+            | (ValueKind::Fixed16(_), Kind::Q16)
+            | (ValueKind::Fixed32(_), Kind::Q32)
             | (ValueKind::Bool(_), Kind::Bool)
             | (ValueKind::Nil, Kind::Pointer(_) | Kind::Function(_)) => true,
             (ValueKind::Composite(elements), Kind::Array { .. } | Kind::Struct(_)) => {

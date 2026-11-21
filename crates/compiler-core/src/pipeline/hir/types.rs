@@ -703,6 +703,11 @@ pub(super) fn resolve_type(
                 "u32" => Some(TypeId::U32),
                 "i32" => Some(TypeId::I32),
                 "f32" => Some(TypeId::F32),
+                "u64" => Some(TypeId::U64),
+                "i64" => Some(TypeId::I64),
+                "f64" => Some(TypeId::F64),
+                "q16" => Some(TypeId::Q16),
+                "q32" => Some(TypeId::Q32),
                 _ => None,
             };
             if builtin.is_some() {

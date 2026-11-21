@@ -2,7 +2,7 @@
 <!-- ond-spec-id: conformance/cases/roles -->
 
 要件は`ROLE-01`〜`ROLE-10`とし、各節で対応する規範と観測操作を指定する。\
-適用版はOnd Language v1、Contract revision 7、target kagura-v1、ABI ond-kagura-v1である。\
+適用版はOnd Language v1、Contract revision 8、target kagura-v1、ABI ond-kagura-v2である。\
 各行は独立したprojectで、既存cacheと依存projectは、そのcaseが指定する場合だけ置く。\
 入力はUTF-8、LF区切り、末尾LFありとし、`<br>`はLF、HTML entityは元の文字へ復号する。\
 特記しないcompile操作はproject rootで`ond compile .`を実行し、成功はexit 0、source/config入力の失敗はexit 1と原因診断を比較する。\

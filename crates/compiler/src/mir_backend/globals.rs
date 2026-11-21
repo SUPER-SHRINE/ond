@@ -69,9 +69,9 @@ fn initialize_value(
     use mir::StaticValueKind;
     let bits = match &value.kind {
         StaticValueKind::Zero | StaticValueKind::Nil => return Ok(()),
-        StaticValueKind::Integer(bits) => *bits as u32,
-        StaticValueKind::Float32(bits) => *bits,
-        StaticValueKind::Bool(value) => u32::from(*value),
+        StaticValueKind::Integer(bits) | StaticValueKind::NumericBits(bits) => *bits,
+        StaticValueKind::Float32(bits) => u64::from(*bits),
+        StaticValueKind::Bool(value) => u64::from(*value),
         StaticValueKind::Function { symbol, .. } => {
             emitter.symbol(1, symbol, span)?;
             memory::write(
@@ -103,14 +103,17 @@ fn initialize_value(
         }
     };
     if bits != 0 {
-        emitter.immediate(1, bits);
-        memory::write(
-            emitter,
-            1,
-            2,
-            offset,
-            layout::scalar(types, value.ty, span)?,
-        );
+        let scalar = layout::scalar(types, value.ty, span)?;
+        emitter.immediate(1, bits as u32);
+        if scalar.size == 8 {
+            // Preserve the global base across compound initializer elements.
+            emitter.emit(0, 4, 2, 0, 0);
+            emitter.immediate(2, (bits >> 32) as u32);
+            memory::write(emitter, 1, 4, offset, scalar);
+            emitter.emit(0, 2, 4, 0, 0);
+        } else {
+            memory::write(emitter, 1, 2, offset, scalar);
+        }
     }
     Ok(())
 }

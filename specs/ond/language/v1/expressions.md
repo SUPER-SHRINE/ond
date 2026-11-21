@@ -58,15 +58,16 @@ CallExpr      = PrimaryExpr Arguments .
 v1 は次の式を持つ。\
 operand の型が適合しない式はコンパイルエラーとする。
 
-- integer、`f32`、`true`、`false`、`nil`、文字列、array、struct の literal
+- 整数、浮動小数点、`true`、`false`、`nil`、文字列、array、struct の literal
 - 関数 call、method call、配列 index、raw pointer index、struct field access
 - addressable な変数、配列要素、struct field に対する `&value` と、`*pointer` による参照外し
 - integer の単項 `+`, `-`, `^`
-- `f32` の単項 `+`, `-`
+- 浮動小数点型、固定小数点型の単項 `+`, `-`
 - integer の `+`, `-`, `*`, `/`, `%`, `&`, `|`, `^`, `&^`, `<<`, `>>`
-- `f32` の `+`, `-`, `*`, `/`
+- 浮動小数点型の `+`, `-`, `*`, `/`
+- 固定小数点型の `+`, `-`, `*`, `/`, `%`
 - 同じ integer 型、`bool`、同じ raw pointer 型、同じ function pointer 型に対する `==`, `!=`
-- `f32` に対する `==`, `!=`, `<`, `<=`, `>`, `>=`
+- 同じ浮動小数点型または同じ固定小数点型に対する `==`, `!=`, `<`, `<=`, `>`, `>=`
 - integer に対する `<`, `<=`, `>`, `>=`
 - `bool` に対する `!`, `&&`, `||`
 
@@ -167,29 +168,37 @@ const C: u8 = 250 + 10   // 260はu8で表現できないためcompile error
 
 定数式としての意味は最適化の有無に依存しない。\
 runtime 式を最適化で定数畳み込みする場合は、元のruntime式のwrap・fault規則を保持する。\
-`f32` の定数演算は以下のbinary32規則に従い、整数の正確値計算とは区別する。
+浮動小数点型と固定小数点型の定数演算はそれぞれ以下の規則に従う。
 
 ### Floating-Point Arithmetic
 <!-- ond-spec-id: expressions/floating-point-arithmetic -->
 
-f32は32bitのbinary32値とする。\
-bit pattern Bに対し、s=floor(B/2^31)、E=floor(B/2^23) mod 256、F=B mod 2^23として値を定める。
+同じ浮動小数点型のoperandにこの節の算術と比較を適用する。\
+算術の結果はoperandと同じ型、比較の結果はboolとなる。
+
+| 型 | 形式 | 全幅 W | 指数幅 H | fraction幅 P | bias J | canonical quiet NaN |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| `f32` | binary32 | 32 | 8 | 23 | 127 | `0x7fc00000` |
+| `f64` | binary64 | 64 | 11 | 52 | 1023 | `0x7ff8000000000000` |
+
+bit pattern Bに対し、s=floor(B/2^(W-1))、E=floor(B/2^P) mod 2^H、F=B mod 2^P、L=2^H-1として値を定める。
 
 | 条件 | 値 |
 | --- | --- |
 | E=0かつF=0 | 符号sのzero |
-| E=0かつF>0 | (-1)^s × F × 2^-149 |
-| 1<=E<=254 | (-1)^s × (2^23+F) × 2^(E-150) |
-| E=255かつF=0 | 符号sのInf |
-| E=255かつF>0 | NaN |
+| E=0かつF>0 | (-1)^s × F × 2^(1-J-P) |
+| 0<E<L | (-1)^s × (2^P+F) × 2^(E-J-P) |
+| E=LかつF=0 | 符号sのInf |
+| E=LかつF>0 | NaN |
 
 raw memoryのload/storeと値copyはbit patternを保持する。\
-演算でNaNを生成する場合は常にcanonical quiet NaN `0x7fc00000`を結果とする。\
-memoryでのbyte順は[target layout](../../targets/kagura-v1/machine.md#5-data-layout)を参照する。
+演算でNaNを生成する場合は、結果型のcanonical quiet NaNを返す。\
+memoryでのbyte順は[target layout](../../targets/kagura-v1/machine.md#5-data-layout)に従う。
 
-符号s、数学的な正確な非負の大きさmに対する丸めR(s,m)を次のように定義する。\
-m=0は符号sのzero、m>=2^128-2^103は符号sのInfとする。\
-それ以外のm>0は、k=max(-149,floor(log2(m))-23)とし、m/2^kに最も近い整数q（等距離なら偶数）を選び、符号s・大きさq×2^kのbinary32へencodeする。\
+結果型について、符号sと数学的に正確な非負の大きさmの丸めR(s,m)を次のように定義する。\
+m=0は符号sのzero、m>=2^(L-J)-2^(L-J-P-2)は符号sのInfとする。\
+それ以外のm>0では、k=max(1-J-P,floor(log2(m))-P)とし、m/2^kに最も近い整数qを選ぶ。\
+等距離の場合は偶数のqを選び、符号s・大きさq×2^kを結果型にencodeする。\
 q=0でも符号sを保持する。
 
 各primitive演算は正確結果を1回だけRで丸め、融合や中間精度によって結果bitsを変えない。\
@@ -214,13 +223,40 @@ q=0でも符号sを保持する。
 | a/b | 有限値/Inf、またはzero/非zero有限値 | 符号xorのzero |
 | a/b | 有限非zero同士 | 符号xorと正確な商の大きさをRへ渡す |
 
-f32のzero divisionは上表のbinary32値を返す。\
+浮動小数点型のzero divisionは上表の値を返す。\
 比較はNaNがあれば`==`はfalse、`!=`はtrue、順序比較はすべてfalseとする。\
 それ以外は数値の大小を比較し、-Inf<全有限値<+Inf、+0=-0とする。
 
-f32 literalは正確なliteral値へ同じRを適用し、Infへ丸められるliteralはcompile error、underflowによるzeroは受理する。\
-compile-timeのf32定数評価とruntime演算は同じresult bitsを生成する。\
-整数との変換の成立条件は[型変換](./types.md#型同一性)に従う。
+浮動小数点型のリテラルは字句から求めた正確値に結果型のRを適用する。\
+Infへ丸められるリテラルはcompile errorとし、underflowによるzeroは受理する。\
+定数評価にもruntimeと同じprimitive規則を適用し、同じ結果bitsを返す。\
+明示変換は[型変換](./types.md#型同一性)に従う。
+
+### Fixed-Point Arithmetic
+<!-- ond-spec-id: expressions/fixed-point-arithmetic -->
+
+[固定小数点型](./types.md#型)の算術と比較は、同じ型のoperandに適用する。\
+算術の結果はoperandと同じ型、比較の結果はboolとなる。
+
+型の小数部をF bit、S=2^Fとする。\
+数学的に正確な数値vの量子化は、v × Sに最も近い整数を選び、等距離なら偶数を選ぶ操作である。\
+選んだ整数が型の格納整数範囲内なら、それを結果の格納整数とする。
+
+| 演算 | 算術に用いる正確値、または比較対象 |
+| --- | --- |
+| 単項 `+`、`-` | operand値、その符号を反転した値 |
+| `+`、`-`、`*`、`/` | 数学的な和、差、積、商。除算は除数が非zeroの場合に成立 |
+| `%` | 格納整数A、Bに対し、B≠0のとき、格納整数A−trunc(A/B)×Bをそのまま返す。truncは0方向の切り捨て |
+| `==`、`!=`、`<`、`<=`、`>`、`>=` | operandの数学値 |
+
+`%`の中間商に型の範囲検査や固定小数点の丸めを適用しない。\
+余りが非zeroなら被除数と同じ符号を持つ。\
+例えば `1.5 % 1`、`-1.5 % 1`、`1.5 % -1` は固定小数点型の文脈でそれぞれ0.5、-0.5、0.5となる。
+
+単項算術、`+`、`-`、`*`、`/`の正確値と固定小数点型のリテラルには量子化を適用する。\
+部分式ごとに結果を確定して後続のoperandとし、定数評価でも各primitiveに同じ規則を適用する。\
+量子化した格納整数が範囲外の場合または `/` と `%` の除数がzeroの場合は、定数評価ではcompile error、実行時には[targetのfault](../../targets/kagura-v1/machine.md#faultと観測結果)となる。\
+compound assignmentは対応する演算、`++` と `--` は値1（格納整数S）の加算と減算を使い、[代入順序](./statements.md#静的成立条件)を守る。
 
 ## 文字列リテラル
 <!-- ond-spec-id: literals/strings -->

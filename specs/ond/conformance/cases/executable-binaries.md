@@ -1,7 +1,7 @@
 # 実行可能バイナリと生成入口の契約case
 <!-- ond-spec-id: conformance/cases/executable-binaries -->
 
-適用版はOnd Language v1、target `kagura-v1`、ABI `ond-kagura-v1`、ONDX version 1、artifact Contract revision 7とする。\
+適用版はOnd Language v1、target `kagura-v1`、ABI `ond-kagura-v2`、ONDX version 1、artifact Contract revision 8とする。\
 各caseは独立したfile・memory状態から開始し、同一case内では同じcompiler executableを使用する。\
 本書の実行操作は生成物の適合を確認する試験手順であり、利用者のtest実行方法や合否判定を定めるものではない。\
 各表の要件IDは[要件索引](../requirements.md#成果物buildtarget)に対応する。
@@ -14,7 +14,7 @@
 空白と改行はbyte列へ含めず、2桁ごとに1 byteへ復号する。
 
 ```text
-4f4e4458 01000000 01000000 01000000
+4f4e4458 01000000 01000000 02000000
 54000000 50000010 00010010 02000000
 01000000 50000000 04000000 50000010 04000000 04000000
 04000000 00000000 00000000 54000010 04000000 04000000
@@ -34,7 +34,7 @@ error行ではentryへの制御移行を行わない。
 | BIN-01.magic | offset 0のbyteを00へ変更 | magic不一致error |
 | BIN-01.version | offset 4のu32を2へ変更 | version不一致error |
 | BIN-01.target | offset 8のu32を2へ変更 | target不一致error |
-| BIN-01.abi | offset 12のu32を2へ変更 | abi不一致error |
+| BIN-01.abi | offset 12のu32を1へ変更 | abi不一致error |
 | BIN-01.truncated | 最後の1 byteを削除 | image_sizeに対する欠落error |
 | BIN-01.trailer | 末尾へ00を1 byte追加 | image_sizeを超える末尾byteのerror |
 | BIN-01.table-size | section_countを0xffffffffへ変更 | セクション表長・範囲のerror。u32へ折り返さない |
@@ -168,8 +168,8 @@ func main(){var p=&G;var out=536871168 as u32 as *u32;out[0]=f()+*p;out[1]=p as 
 | HASH-01.binary-full | 各成功生成物の全出力bytesのSHA-256を独立計算 | debug sidecarのbuild_idと一致。selfでは前置起動処理もhash入力 |
 | BIN-03.debug-prefix | self生成物のdebug情報を読む | function/range/unwindは標準Text内。前置起動処理にsource・unwind情報を生成しない |
 
-`HASH-01.binary-vector`はWの全84 byteだけをSHA-256へ入力し、`72d1a90b13286b8c57c4e1576be01d319d4070f963981067b9e55b2b73d4fc43`との完全一致を比較する。\
-`HASH-01.binary-prefix`はWの前へ4個のzero byteを加えた88 byteをhashし、`718f1c5a7693158554c0a490403ecf5ca2c56ac0bc15e3f833a37c7ad1e4166e`と比較する。\
+`HASH-01.binary-vector`はWの全84 byteだけをSHA-256へ入力し、`60b94a75019b353ab0513651ce0283fb2aa6aa12db5d8624ac2d66d6ae254771`との完全一致を比較する。\
+`HASH-01.binary-prefix`はWの前へ4個のzero byteを加えた88 byteをhashし、`52dbc6ef0dc4527d366ed2f7052529159e4eacd73062c2888863647d578f8fea`と比較する。\
 後者は全bytesをhashする操作だけの入力であり、selfの起動処理適合を検査する入力ではない。
 
 `HASH-01.sidecar-mismatch`は成功生成物の独立copyと有効なdebug sidecarを用意し、sidecarのbuild_idの先頭hex digitだけを別値へ変更する（0なら1、それ以外なら0）。\

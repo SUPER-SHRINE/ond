@@ -25,6 +25,11 @@ impl TypeId {
     pub const U32: Self = Self(5);
     pub const I32: Self = Self(6);
     pub const F32: Self = Self(7);
+    pub const U64: Self = Self(8);
+    pub const I64: Self = Self(9);
+    pub const F64: Self = Self(10);
+    pub const Q16: Self = Self(11);
+    pub const Q32: Self = Self(12);
 }
 
 impl fmt::Display for TypeId {
@@ -95,6 +100,11 @@ impl TypeTable {
             ("u32", TypeKind::U32),
             ("i32", TypeKind::I32),
             ("f32", TypeKind::F32),
+            ("u64", TypeKind::U64),
+            ("i64", TypeKind::I64),
+            ("f64", TypeKind::F64),
+            ("q16", TypeKind::Q16),
+            ("q32", TypeKind::Q32),
         ] {
             table.push(Some(name.to_string()), kind, Span::synthetic());
         }
@@ -200,6 +210,8 @@ impl TypeTable {
                     | TypeKind::I16
                     | TypeKind::U32
                     | TypeKind::I32
+                    | TypeKind::U64
+                    | TypeKind::I64
             )
         )
     }
@@ -207,8 +219,27 @@ impl TypeTable {
     pub fn is_signed_integer(&self, id: TypeId) -> bool {
         matches!(
             self.underlying_kind(id),
-            Some(TypeKind::I8 | TypeKind::I16 | TypeKind::I32)
+            Some(TypeKind::I8 | TypeKind::I16 | TypeKind::I32 | TypeKind::I64)
         )
+    }
+
+    pub fn is_float(&self, id: TypeId) -> bool {
+        matches!(
+            self.underlying_kind(id),
+            Some(TypeKind::F32 | TypeKind::F64)
+        )
+    }
+
+    pub fn fixed_fraction(&self, id: TypeId) -> Option<u32> {
+        match self.underlying_kind(id)? {
+            TypeKind::Q16 => Some(16),
+            TypeKind::Q32 => Some(32),
+            _ => None,
+        }
+    }
+
+    pub fn is_numeric(&self, id: TypeId) -> bool {
+        self.is_integer(id) || self.is_float(id) || self.fixed_fraction(id).is_some()
     }
 
     pub fn display(&self, id: TypeId) -> TypeDisplay<'_> {
@@ -234,9 +265,11 @@ impl TypeTable {
                     TypeKind::U32
                     | TypeKind::I32
                     | TypeKind::F32
+                    | TypeKind::Q16
                     | TypeKind::Pointer(_)
                     | TypeKind::Function(_),
                 ) => Ok((4, 4)),
+                Some(TypeKind::U64 | TypeKind::I64 | TypeKind::F64 | TypeKind::Q32) => Ok((8, 4)),
                 Some(TypeKind::Array { length, element }) => {
                     let (size, alignment) = visit(table, *element, depth + 1)?;
                     Ok((
@@ -299,6 +332,11 @@ pub enum TypeKind {
     U32,
     I32,
     F32,
+    U64,
+    I64,
+    F64,
+    Q16,
+    Q32,
     Pointer(TypeId),
     Function(FunctionType),
     Array { length: u32, element: TypeId },
@@ -379,6 +417,11 @@ impl fmt::Display for TypeDisplay<'_> {
             TypeKind::U32 => f.write_str("u32"),
             TypeKind::I32 => f.write_str("i32"),
             TypeKind::F32 => f.write_str("f32"),
+            TypeKind::U64 => f.write_str("u64"),
+            TypeKind::I64 => f.write_str("i64"),
+            TypeKind::F64 => f.write_str("f64"),
+            TypeKind::Q16 => f.write_str("q16"),
+            TypeKind::Q32 => f.write_str("q32"),
             TypeKind::Pointer(inner) => write!(f, "*{}", self.table.display(*inner)),
             TypeKind::Function(signature) => {
                 let parameters = signature

@@ -34,7 +34,10 @@ impl LocalAggregates {
         let [block] = f.blocks.as_slice() else {
             return None;
         };
-        if abi.hidden.is_some()
+        if f.values
+            .iter()
+            .any(|v| layout::words(types, v.ty) == 2 || types.fixed_fraction(v.ty).is_some())
+            || abi.hidden.is_some()
             || f.parameters
                 .iter()
                 .any(|id| layout::aggregate(types, f.locals[id.0 as usize].ty))
@@ -260,7 +263,8 @@ fn small_aggregate(types: &mir::TypeTable, ty: mir::TypeId, span: Span) -> bool 
 
 fn region(types: &mir::TypeTable, base: u32, ty: mir::TypeId, span: Span) -> Option<Region> {
     let leaves = layout::leaves(types, ty, span).ok()?;
-    (!leaves.is_empty()).then_some(Region { base, leaves })
+    (!leaves.is_empty() && leaves.iter().all(|(_, leaf)| leaf.size <= 4))
+        .then_some(Region { base, leaves })
 }
 
 fn value_region(cx: &Context<'_>, id: ValueId, span: Span) -> Option<Region> {

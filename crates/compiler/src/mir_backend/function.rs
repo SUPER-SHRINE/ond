@@ -1,4 +1,4 @@
-//! Stack-resident lowering. r7..r11 are never touched.
+//! Two-word and scalar lowering with short-lived result registers and stack backing.
 use super::{emit::Emitter, frame::Frame, memory, *};
 use ond_protocol::debug::{DebugOperation, ReturnAddressLocation};
 
@@ -76,28 +76,52 @@ pub(super) fn lower(
         cfa_sp_offset: frame.size,
         return_address: ReturnAddressLocation::StackOffset(frame.ra),
     });
-    for (n, arg) in abi.hidden.iter().chain(&abi.arguments).enumerate() {
-        let reg = match arg {
-            layout::Argument::Register(r) => *r,
-            layout::Argument::Stack(o) => {
-                e.load(12, frame.size + o);
-                12
-            }
-        };
-        e.store(reg, frame.incoming[n]);
+    let capture = |e: &mut Emitter, arg: layout::Argument| match arg {
+        layout::Argument::Register(r) => r,
+        layout::Argument::Stack(o) => {
+            e.load(12, frame.size + o);
+            12
+        }
+    };
+    let aggregate_parameters = f
+        .parameters
+        .iter()
+        .any(|id| layout::aggregate(&p.types, f.locals[id.0 as usize].ty));
+    let hidden = usize::from(abi.hidden.is_some());
+    if aggregate_parameters {
+        for (n, arg) in abi.hidden.iter().chain(&abi.arguments).enumerate() {
+            let reg = capture(e, *arg);
+            e.store(reg, frame.incoming[n]);
+        }
+    } else if let Some(arg) = abi.hidden {
+        let reg = capture(e, arg);
+        e.store(reg, frame.incoming[0]);
     }
-    for (n, id) in f.parameters.iter().enumerate() {
+    let mut incoming = hidden;
+    for id in &f.parameters {
         let ty = f.locals[id.0 as usize].ty;
-        let input = frame.incoming[n + usize::from(abi.hidden.is_some())];
+        let input = frame.incoming[incoming];
         if layout::aggregate(&p.types, ty) {
             e.load(4, input);
             memory::address(e, 5, frame.local(*id));
             memory::copy(e, &p.types, ty, f.span)?;
         } else {
-            e.load(1, input);
-            ops::normalize(e, 1, layout::scalar(&p.types, ty, f.span)?);
-            e.store(1, frame.local(*id));
+            let scalar = layout::scalar(&p.types, ty, f.span)?;
+            for word in 0..layout::words(&p.types, ty) {
+                let index = incoming + word as usize;
+                let reg = if aggregate_parameters {
+                    e.load(1, frame.incoming[index]);
+                    1
+                } else {
+                    capture(e, abi.arguments[index - hidden])
+                };
+                if word == 0 {
+                    ops::normalize(e, reg, scalar);
+                }
+                e.store(reg, frame.local(*id) + 4 * word);
+            }
         }
+        incoming += layout::words(&p.types, ty) as usize;
     }
     let labels: Vec<_> = f.blocks.iter().map(|_| e.label()).collect();
     e.branch(0, labels[f.entry.0 as usize], f.span);
@@ -111,15 +135,19 @@ pub(super) fn lower(
         function_start,
         unwind: &mut unwind,
         ranges: &mut ranges,
+        retained: None,
+        previous: None,
     };
     let proven_bounds = super::bounds::proven_checks(&p.types, f);
     let mut aggregates = super::local_aggregate::LocalAggregates::new(&p.types, f, &cx.abi);
     for b in &f.blocks {
         cx.e.bind(cx.labels[b.id.0 as usize]);
+        cx.retained = None;
         for i in &b.instructions {
             if proven_bounds.contains(&i.id) {
                 continue;
             }
+            cx.previous = cx.retained.take();
             let start = cx.e.offset(i.span)?;
             if !aggregates.as_mut().is_some_and(|a| a.emit(&mut cx, i)) {
                 cx.instruction(i)?;
@@ -161,6 +189,8 @@ pub(super) struct Context<'a> {
     pub function_start: u32,
     pub unwind: &'a mut Vec<PendingUnwindRow>,
     pub ranges: &'a mut Vec<PendingDebugRange>,
+    pub(super) retained: Option<mir::ValueId>,
+    previous: Option<mir::ValueId>,
 }
 impl Context<'_> {
     pub(super) fn record_range(
@@ -182,7 +212,25 @@ impl Context<'_> {
         }
     }
     pub(super) fn load(&mut self, id: mir::ValueId, reg: u8) {
-        self.e.load(reg, self.frame.value(id));
+        self.load_word(id, 0, reg);
+    }
+    /// Only call before an instruction has written its operand registers.
+    pub(super) fn load_first(&mut self, id: mir::ValueId, words: u32) {
+        if self.previous.take() != Some(id) {
+            self.load(id, 1);
+            if words == 2 {
+                self.load_word(id, 1, 2);
+            }
+        }
+    }
+    pub(super) fn load_word(&mut self, id: mir::ValueId, word: u32, reg: u8) {
+        self.e.load(reg, self.frame.value(id) + 4 * word);
+    }
+    pub(super) fn store_result(&mut self, id: mir::ValueId, reg: u8) {
+        self.e.store(reg, self.frame.value(id));
+        if layout::words(&self.p.types, self.ty(id)) == 2 {
+            self.e.store(reg + 1, self.frame.value(id) + 4);
+        }
     }
     pub(super) fn ty(&self, id: mir::ValueId) -> mir::TypeId {
         self.f.values[id.0 as usize].ty
@@ -201,8 +249,19 @@ impl Context<'_> {
                     }
                 }
                 match c {
-                    mir::Constant::Zero(_) | mir::Constant::Nil(_) => self.e.immediate(1, 0),
-                    mir::Constant::Integer { bits, .. } => self.e.immediate(1, *bits as u32),
+                    mir::Constant::Zero(_) | mir::Constant::Nil(_) => {
+                        self.e.immediate(1, 0);
+                        if layout::words(&self.p.types, c.ty()) == 2 {
+                            self.e.immediate(2, 0);
+                        }
+                    }
+                    mir::Constant::Integer { bits, .. }
+                    | mir::Constant::NumericBits { bits, .. } => {
+                        self.e.immediate(1, *bits as u32);
+                        if layout::words(&self.p.types, c.ty()) == 2 {
+                            self.e.immediate(2, (*bits >> 32) as u32);
+                        }
+                    }
                     mir::Constant::Float32 { bits, .. } => self.e.immediate(1, *bits),
                     mir::Constant::Bool { value, .. } => self.e.immediate(1, u32::from(*value)),
                     mir::Constant::Function { symbol, .. } => self.e.symbol(1, symbol, i.span)?,
@@ -235,6 +294,9 @@ impl Context<'_> {
                     memory::copy(self.e, &self.p.types, place.ty, i.span)?;
                 } else {
                     self.load(*value, 1);
+                    if layout::words(&self.p.types, place.ty) == 2 {
+                        self.load_word(*value, 1, 2);
+                    }
                     memory::write(
                         self.e,
                         1,
@@ -267,9 +329,30 @@ impl Context<'_> {
             }
             I::Check(check) => self.numeric_check(check, i.span)?,
             I::Unary { op, operand } => {
-                self.load(*operand, 1);
-                if self.float(self.ty(*operand)) {
+                let ty = self.ty(*operand);
+                self.load_first(*operand, layout::words(&self.p.types, ty));
+                if *op == mir::UnaryOp::FloatPlus {
+                    self.float_positive(ty, i.span);
+                } else if let Some(fraction) = self.p.types.fixed_fraction(ty) {
+                    self.load_wide_operand(*operand, 3, i.span)?;
+                    self.e.emit(0, 1, 0, 0, 0);
+                    self.e.emit(0, 2, 0, 0, 0);
+                    self.e.immediate(5, fraction);
+                    self.e.immediate(6, 1);
+                    self.e.call(&runtime::Helper::Fixed.symbol(), i.span)?;
+                } else if self.p.types.underlying_id(ty) == Some(mir::TypeId::F64) {
+                    self.e.call(&runtime::Helper::Neg64.symbol(), i.span)?;
+                } else if self.float(ty) {
                     self.e.call(&runtime::Helper::F32Neg.symbol(), i.span)?;
+                } else if layout::words(&self.p.types, ty) == 2 {
+                    match op {
+                        mir::UnaryOp::Negate => wide::negate(self.e),
+                        mir::UnaryOp::BitNot => {
+                            self.e.emit(1, 1, 1, 1, 0);
+                            self.e.emit(1, 2, 2, 2, 0);
+                        }
+                        _ => unreachable!(),
+                    }
                 } else {
                     ops::unary(self.e, *op);
                 }
@@ -302,7 +385,8 @@ impl Context<'_> {
                 1,
                 layout::scalar(&self.p.types, self.ty(*result), i.span)?,
             );
-            self.e.store(1, self.frame.value(*result));
+            self.store_result(*result, 1);
+            self.retained = Some(*result);
         }
         Ok(())
     }
@@ -401,6 +485,9 @@ fn terminator_operation(terminator: &mir::Terminator) -> (DebugOperation, Option
         }
         mir::TerminatorKind::Trap(mir::TrapKind::SignedDivisionOverflow) => {
             (DebugOperation::SignedDivisionOverflow, None)
+        }
+        mir::TerminatorKind::Trap(mir::TrapKind::FixedPointOverflow) => {
+            (DebugOperation::FixedPointOverflow, None)
         }
         mir::TerminatorKind::Trap(mir::TrapKind::InvalidConversion) => {
             (DebugOperation::InvalidConversion, None)

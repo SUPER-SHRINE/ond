@@ -1,6 +1,6 @@
 # 単項マイナス `-`
 
-単項の`-`は一つの整数値または`f32`値に適用します。
+単項の`-`は一つの数値に適用します。
 
 ```ond title="main.ond"
 package main
@@ -26,4 +26,4 @@ func main() {
 
 この例の共通manifestとcompile/link手順は[最初のプログラム](../../../getting-started/first-program.md)を参照してください。
 
-単項演算の規則は[整数演算仕様](../../../../../specs/ond/language/v1/expressions.md#integer-arithmetic)と[浮動小数点演算](../../../../../specs/ond/language/v1/expressions.md#floating-point-arithmetic)を参照してください。
+単項演算の規則は[整数演算仕様](../../../../../specs/ond/language/v1/expressions.md#integer-arithmetic)と[浮動小数点演算](../../../../../specs/ond/language/v1/expressions.md#floating-point-arithmetic)、[固定小数点演算](../../../../../specs/ond/language/v1/expressions.md#fixed-point-arithmetic)を参照してください。

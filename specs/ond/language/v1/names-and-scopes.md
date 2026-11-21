@@ -78,7 +78,7 @@ package-qualified name は `packageName.ExportedName` とする。
   - package-level declaration の scope は package 全体とする
 - `if` の init で宣言した名前は condition、両 branch から見える
   - `for` の init で宣言した名前は condition、post、loop body から見える
-- 組み込み型名`bool`, `u8`, `i8`, `u16`, `i16`, `u32`, `i32`, `f32`をbinding名に使う入力はcompile errorとなる
+- [組み込み型名](./types.md#型)をbinding名に使う入力はcompile errorとなる
   - `type`・`var`・`const`・`:=`・関数宣言・関数宣言のparameterでbindingを導入する名前として使用するとcompile errorとする
   - package/localの両scopeへ同じ検査を適用する
 - struct field名と関数型の説明用parameter名はmemberまたは説明として扱い、組み込み型名の綴りも成立する

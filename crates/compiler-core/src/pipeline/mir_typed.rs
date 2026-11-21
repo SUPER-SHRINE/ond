@@ -84,6 +84,9 @@ fn lower_static_value(
         hir::ExprKind::Zero => mir::StaticValueKind::Zero,
         hir::ExprKind::Integer(value) => mir::StaticValueKind::Integer(*value),
         hir::ExprKind::Float32(value) => mir::StaticValueKind::Float32(*value),
+        hir::ExprKind::Float64(value) | hir::ExprKind::Fixed(value) => {
+            mir::StaticValueKind::NumericBits(*value)
+        }
         hir::ExprKind::Bool(value) => mir::StaticValueKind::Bool(*value),
         hir::ExprKind::Nil => mir::StaticValueKind::Nil,
         hir::ExprKind::Function(symbol) => {
@@ -380,7 +383,8 @@ impl FunctionBuilder<'_> {
                             continue;
                         }
                         if matches!(op, ast::BinaryOp::Div | ast::BinaryOp::Rem)
-                            && self.types.is_integer(place.ty)
+                            && (self.types.is_integer(place.ty)
+                                || self.types.fixed_fraction(place.ty).is_some())
                         {
                             self.emit_effect(
                                 mir::InstructionKind::Check(mir::Check::NonZero { value: *rhs }),
@@ -401,13 +405,7 @@ impl FunctionBuilder<'_> {
                                 op: select_binary_op(self.types, *op, place.ty)?,
                                 lhs,
                                 rhs: *rhs,
-                                overflow: if matches!(op, ast::BinaryOp::Div | ast::BinaryOp::Rem)
-                                    && self.types.is_integer(place.ty)
-                                {
-                                    mir::OverflowBehavior::Checked
-                                } else {
-                                    mir::OverflowBehavior::Wrap
-                                },
+                                overflow: arithmetic_overflow(self.types, *op, place.ty),
                             },
                             *span,
                         );
@@ -484,7 +482,8 @@ impl FunctionBuilder<'_> {
                     } else {
                         let ty = self.values[lhs.0 as usize].ty;
                         if matches!(op, ast::BinaryOp::Div | ast::BinaryOp::Rem)
-                            && self.types.is_integer(ty)
+                            && (self.types.is_integer(ty)
+                                || self.types.fixed_fraction(ty).is_some())
                         {
                             self.emit_effect(
                                 mir::InstructionKind::Check(mir::Check::NonZero { value: *rhs }),
@@ -497,7 +496,7 @@ impl FunctionBuilder<'_> {
                                 op: select_binary_op(self.types, *op, ty)?,
                                 lhs: *lhs,
                                 rhs: *rhs,
-                                overflow: mir::OverflowBehavior::Wrap,
+                                overflow: arithmetic_overflow(self.types, *op, ty),
                             },
                             *span,
                         )
@@ -682,6 +681,12 @@ impl FunctionBuilder<'_> {
                     ty: expr.ty,
                 })
             }
+            hir::ExprKind::Float64(bits) | hir::ExprKind::Fixed(bits) => {
+                mir::InstructionKind::Constant(mir::Constant::NumericBits {
+                    bits: *bits,
+                    ty: expr.ty,
+                })
+            }
             hir::ExprKind::Float32(bits) => {
                 mir::InstructionKind::Constant(mir::Constant::Float32 {
                     bits: *bits,
@@ -704,9 +709,13 @@ impl FunctionBuilder<'_> {
             hir::ExprKind::Unary { op, operand } => {
                 let operand = self.lower_expr(operand)?;
                 let op = match op {
+                    ast::UnaryOp::Minus if self.types.fixed_fraction(expr.ty).is_some() => {
+                        mir::UnaryOp::FixedNegate
+                    }
                     ast::UnaryOp::Minus => mir::UnaryOp::Negate,
                     ast::UnaryOp::BitNot => mir::UnaryOp::BitNot,
                     ast::UnaryOp::Not => mir::UnaryOp::LogicalNot,
+                    ast::UnaryOp::Plus if self.types.is_float(expr.ty) => mir::UnaryOp::FloatPlus,
                     ast::UnaryOp::Plus => return Some(operand),
                     _ => return None,
                 };
@@ -756,7 +765,8 @@ impl FunctionBuilder<'_> {
                 let lhs = self.lower_expr(lhs)?;
                 let rhs = self.lower_expr(rhs)?;
                 if matches!(op, ast::BinaryOp::Div | ast::BinaryOp::Rem)
-                    && self.types.is_integer(lhs_type(self, lhs)?)
+                    && (self.types.is_integer(lhs_type(self, lhs)?)
+                        || self.types.fixed_fraction(lhs_type(self, lhs)?).is_some())
                 {
                     self.emit_effect(
                         mir::InstructionKind::Check(mir::Check::NonZero { value: rhs }),
@@ -778,13 +788,7 @@ impl FunctionBuilder<'_> {
                     op: select_binary_op(self.types, *op, lhs_type(self, lhs)?)?,
                     lhs,
                     rhs,
-                    overflow: if matches!(op, ast::BinaryOp::Div | ast::BinaryOp::Rem)
-                        && self.types.is_integer(lhs_type(self, lhs)?)
-                    {
-                        mir::OverflowBehavior::Checked
-                    } else {
-                        mir::OverflowBehavior::Wrap
-                    },
+                    overflow: arithmetic_overflow(self.types, *op, lhs_type(self, lhs)?),
                 }
             }
             hir::ExprKind::Cast { value } => {
@@ -792,15 +796,8 @@ impl FunctionBuilder<'_> {
                 let direct_float_cast = value.ty == mir::TypeId::F32
                     && matches!(value.kind, hir::ExprKind::Cast { .. });
                 let value = self.lower_expr(value)?;
-                let behavior = if matches!(
-                    self.types.underlying_kind(lhs_type(self, value)?),
-                    Some(crate::semantic::TypeKind::F32)
-                ) && self.types.is_integer(expr.ty)
-                {
-                    mir::CastBehavior::Checked
-                } else {
-                    mir::CastBehavior::Infallible
-                };
+                let from = lhs_type(self, value)?;
+                let behavior = mir::cast_behavior(self.types, from, expr.ty);
                 let result = self.emit_value(
                     expr.ty,
                     mir::InstructionKind::Cast {
@@ -1077,17 +1074,31 @@ fn lhs_type(builder: &FunctionBuilder<'_>, value: mir::ValueId) -> Option<mir::T
     builder.values.get(value.0 as usize).map(|value| value.ty)
 }
 
+fn arithmetic_overflow(
+    types: &crate::semantic::TypeTable,
+    op: ast::BinaryOp,
+    ty: mir::TypeId,
+) -> mir::OverflowBehavior {
+    use ast::BinaryOp::*;
+    if (matches!(op, Div | Rem) && types.is_integer(ty))
+        || (matches!(op, Add | Sub | Mul | Div | Rem) && types.fixed_fraction(ty).is_some())
+    {
+        mir::OverflowBehavior::Checked
+    } else {
+        mir::OverflowBehavior::Wrap
+    }
+}
+
 fn select_binary_op(
     types: &crate::semantic::TypeTable,
     op: ast::BinaryOp,
     ty: mir::TypeId,
 ) -> Option<mir::BinaryOp> {
-    use crate::semantic::TypeKind;
     use ast::BinaryOp as Ast;
     use mir::BinaryOp as Mir;
 
-    let signed = types.is_signed_integer(ty);
-    let float = matches!(types.underlying_kind(ty), Some(TypeKind::F32));
+    let signed = types.is_signed_integer(ty) || types.fixed_fraction(ty).is_some();
+    let float = types.is_float(ty);
     Some(match op {
         Ast::Add if float => Mir::FloatAdd,
         Ast::Sub if float => Mir::FloatSubtract,

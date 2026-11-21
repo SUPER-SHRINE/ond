@@ -5,7 +5,7 @@ use crate::kagura_encoding::{self as encoding, word};
 pub(super) struct Emitter {
     pub words: Vec<u32>,
     labels: Vec<Option<usize>>,
-    branches: Vec<(usize, usize, Span)>,
+    branches: Vec<(usize, usize, Span, bool)>,
     relocations: Vec<Relocation>,
 }
 impl Emitter {
@@ -28,17 +28,26 @@ impl Emitter {
         self.labels[label] = Some(self.words.len());
     }
     pub fn branch(&mut self, condition: u8, target: usize, span: Span) {
-        self.branches.push((self.words.len(), target, span));
+        self.branches.push((self.words.len(), target, span, false));
         // r12/r13 must be dead on the taken edge. The island is always skipped
         // on fallthrough, and its reserved size is included in every label.
         self.words.extend(encoding::local_slot(condition));
     }
+    pub fn near_branch(&mut self, condition: u8, target: usize, span: Span) {
+        self.branches.push((self.words.len(), target, span, true));
+        self.emit(12, 0, condition, 0, 0);
+    }
     pub fn immediate(&mut self, reg: u8, bits: u32) {
-        // Base 256 digits avoid sign-extending the low half of a 32-bit constant.
-        self.emit(0, reg, 0, 0, (bits >> 24) as i16);
-        for shift in [16, 8, 0] {
-            self.emit(2, reg, reg, 0, 8);
-            self.emit(0, reg, reg, 0, ((bits >> shift) & 255) as i16);
+        let low = bits as i16;
+        if low as i32 as u32 == bits {
+            self.emit(0, reg, 0, 0, low);
+        } else {
+            let high = (bits.wrapping_sub(low as i32 as u32) >> 16) as i16;
+            self.emit(0, reg, 0, 0, high);
+            self.emit(2, reg, reg, 0, 16);
+            if low != 0 {
+                self.emit(0, reg, reg, 0, low);
+            }
         }
     }
     pub fn symbol(&mut self, reg: u8, name: &str, span: Span) -> Result<(), Diagnostic> {
@@ -120,11 +129,13 @@ impl Emitter {
     }
     pub fn finish(mut self) -> Result<(Vec<u8>, Vec<Relocation>), Diagnostic> {
         self.offset(Span::synthetic())?;
-        for (at, target, span) in self.branches {
+        for (at, target, span, near) in self.branches {
             let target = self.labels[target].ok_or_else(|| error(span, "unbound block label"))?;
             let delta = target as i64 - at as i64 - 1;
             let imm = if let Ok(imm) = i16::try_from(delta) {
                 imm
+            } else if near {
+                return Err(error(span, "local short branch exceeds its reserved range"));
             } else {
                 // Modular byte delta plus captured PC gives the final address
                 // at any placement; the enclosing text size was checked above.

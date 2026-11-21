@@ -1,0 +1,63 @@
+// Checked signed fixed-point on raw storage bits. q16 inputs are sign-extended.
+func __fixed_overflow() { trap "fixed-point overflow" }
+
+func __fixed_signed(magnitude:u64, negative:bool, fraction:u32) -> u64 {
+    var limit = 1 as u64 << (2 as u32 * fraction-1)
+    if magnitude > limit || (!negative && magnitude == limit) { __fixed_overflow() }
+    if negative { return -magnitude }
+    return magnitude
+}
+
+func __fixed_round(q:u64,r:u64,d:u64) -> u64 {
+    if r > d-r || (r == d-r && (q & 1) != 0) {
+        if q == 0xffffffffffffffff { __fixed_overflow() }
+        q++
+    }
+    return q
+}
+
+// Divide a shifted numerator with a high limb less than the divisor.
+func __fixed_divrem(low:u64, high:u64, d:u64) -> (u64,u64) {
+    var q:u64
+    var r = high
+    for bit := 64 as u32; bit != 0; bit-- {
+        var carry = r >> 63
+        r = (r << 1) | ((low >> (bit-1)) & 1)
+        q <<= 1
+        if carry != 0 || r >= d { r -= d; q |= 1 }
+    }
+    return q,r
+}
+
+func __ond_fixed(a:u64,b:u64,fraction:u32,op:u32) -> u64 {
+    var sa = a >> 63 != 0
+    var sb = b >> 63 != 0
+    if op == 4 { return __ond_irem64(a,b) }
+    if op < 2 {
+        var result:u64
+        if op == 0 {
+            result = a+b
+            if sa == sb && (result >> 63 != 0) != sa { __fixed_overflow() }
+        } else {
+            result = a-b
+            if sa != sb && (result >> 63 != 0) != sa { __fixed_overflow() }
+        }
+        if fraction == 16 && result != (result as i32) as u64 { __fixed_overflow() }
+        return result
+    }
+    if sa { a = -a }
+    if sb { b = -b }
+    var magnitude:u64
+    if op == 2 {
+        var low,high = __wide_product(a,b)
+        if high >> fraction != 0 { __fixed_overflow() }
+        var d = 1 as u64 << fraction
+        magnitude = __fixed_round((high << (64-fraction)) | (low >> fraction),low & (d-1),d)
+    } else {
+        var high = a >> (64-fraction)
+        if high >= b { __fixed_overflow() }
+        var q,r = __fixed_divrem(a << fraction, high, b)
+        magnitude = __fixed_round(q,r,b)
+    }
+    return __fixed_signed(magnitude,sa != sb,fraction)
+}

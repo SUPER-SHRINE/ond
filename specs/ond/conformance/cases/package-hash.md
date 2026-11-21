@@ -2,7 +2,7 @@
 <!-- ond-spec-id: conformance/cases/package-hash -->
 
 要件は`HASH-01`、定義元は[公開識別子](../../build/cache.md#公開識別子)と[正規化集合](../../build/cache.md#意味型具体化定数の正規化)とする。\
-適用Contractはrevision 7、target kagura-v1、abi ond-kagura-v1である。\
+適用Contractはrevision 8、target kagura-v1、abi ond-kagura-v2である。\
 操作はsourceとmanifestからPackageBuildInputを構成してcanonical JSONとSHA-256を比較する。\
 compiler_idはこのhash操作の論理入力として64個の`0`に固定し、package=main、dependencies={}とする。\
 各caseは独立し、依存project、既存cacheは用いない。\
@@ -22,10 +22,10 @@ Case IDは`HASH-01.package-empty`とする。\
 期待PackageBuildInputのcanonical JSONは次の1行とし、hash対象はBOM・末尾LFのないUTF-8 bytesとする。
 
 ```json
-{"compiler_id":"0000000000000000000000000000000000000000000000000000000000000000","contract":{"abi":"ond-kagura-v1","revision":7,"target":"kagura-v1"},"dependencies":{},"generation":{"constants":[],"instances":[],"interface":{"exports":{},"package":"main"},"nominals":[],"types":[{"Function":{"parameters":[],"returns":[]}}]},"manifest_hash":"ad9dfebb3e1eab1840f379b08ba516d127330923ef130b8a458de00abcfbd92b","package":"main","sources":[{"content_hash":"a774e3c1f96c0cb6e9acc84245f2cc3f7a03e298a4848f957bd0b4828d929631","path":"main.ond"}]}
+{"compiler_id":"0000000000000000000000000000000000000000000000000000000000000000","contract":{"abi":"ond-kagura-v2","revision":8,"target":"kagura-v1"},"dependencies":{},"generation":{"constants":[],"instances":[],"interface":{"exports":{},"package":"main"},"nominals":[],"types":[{"Function":{"parameters":[],"returns":[]}}]},"manifest_hash":"ad9dfebb3e1eab1840f379b08ba516d127330923ef130b8a458de00abcfbd92b","package":"main","sources":[{"content_hash":"a774e3c1f96c0cb6e9acc84245f2cc3f7a03e298a4848f957bd0b4828d929631","path":"main.ond"}]}
 ```
 
-比較するbyte長は`540`、package build_idは`6ab6bd11899fd905bb33b9127f979f963d96e035338d3b3b7ba37ac57d65752a`である。
+比較するbyte長は`540`、package build_idは`d6fff72e9563d08bb3aa314c69b0afa2a81ba1f1a3c30ff3d053b9c64fe485cf`である。
 
 ## HASH-01.package-unused-body
 <!-- ond-spec-id: conformance/package-hash/package-unused-body -->
@@ -40,10 +40,10 @@ Case IDは`HASH-01.package-unused-body`とする。\
 期待PackageBuildInputのcanonical JSONは次の1行とし、hash対象はBOM・末尾LFのないUTF-8 bytesとする。
 
 ```json
-{"compiler_id":"0000000000000000000000000000000000000000000000000000000000000000","contract":{"abi":"ond-kagura-v1","revision":7,"target":"kagura-v1"},"dependencies":{},"generation":{"constants":[{"owner":{"declaration":{"Function":{"name":"add","package":"main"}},"receiver_arguments":[],"type_arguments":[]},"value":{"kind":{"Integer":1},"ty":"I32"}}],"instances":[],"interface":{"exports":{},"package":"main"},"nominals":[],"types":["I32",{"Function":{"parameters":["I32"],"returns":["I32"]}},{"Function":{"parameters":[],"returns":[]}}]},"manifest_hash":"ad9dfebb3e1eab1840f379b08ba516d127330923ef130b8a458de00abcfbd92b","package":"main","sources":[{"content_hash":"de4a8cdb3878cf02dd158dcd700021da1ddce93469eaacc9ffbbd94f2942ac2e","path":"main.ond"}]}
+{"compiler_id":"0000000000000000000000000000000000000000000000000000000000000000","contract":{"abi":"ond-kagura-v2","revision":8,"target":"kagura-v1"},"dependencies":{},"generation":{"constants":[{"owner":{"declaration":{"Function":{"name":"add","package":"main"}},"receiver_arguments":[],"type_arguments":[]},"value":{"kind":{"Integer":1},"ty":"I32"}}],"instances":[],"interface":{"exports":{},"package":"main"},"nominals":[],"types":["I32",{"Function":{"parameters":["I32"],"returns":["I32"]}},{"Function":{"parameters":[],"returns":[]}}]},"manifest_hash":"ad9dfebb3e1eab1840f379b08ba516d127330923ef130b8a458de00abcfbd92b","package":"main","sources":[{"content_hash":"de4a8cdb3878cf02dd158dcd700021da1ddce93469eaacc9ffbbd94f2942ac2e","path":"main.ond"}]}
 ```
 
-比較するbyte長は`756`、package build_idは`4e6ba067bcfba3520df5fb9a94eea4847c2e3cddd5b13bd2b4a1dea52f78de00`である。
+比較するbyte長は`756`、package build_idは`8646d1bb2bb8b04ae50a390ef0a7ad4b363b93b8b2ef039bf5e34787333f1a75`である。
 
 ## 定数と型集合の境界
 <!-- ond-spec-id: conformance/package-hash/constant-boundaries -->

@@ -59,15 +59,18 @@ impl Context<'_> {
         if let Some(location) = abi.hidden {
             self.argument_address(location, returns);
         }
-        for ((value, copy), location) in arguments.iter().zip(copies).zip(abi.arguments) {
+        let mut locations = abi.arguments.into_iter();
+        for (value, copy) in arguments.iter().zip(copies) {
             if let Some(slot) = copy {
-                self.argument_address(location, slot);
+                self.argument_address(locations.next().unwrap(), slot);
             } else {
-                match location {
-                    layout::Argument::Register(r) => self.load(*value, r),
-                    layout::Argument::Stack(o) => {
-                        self.load(*value, 12);
-                        self.e.store(12, o);
+                for word in 0..layout::words(&self.p.types, self.ty(*value)) {
+                    match locations.next().unwrap() {
+                        layout::Argument::Register(r) => self.load_word(*value, word, r),
+                        layout::Argument::Stack(o) => {
+                            self.load_word(*value, word, 12);
+                            self.e.store(12, o);
+                        }
                     }
                 }
             }
@@ -98,19 +101,25 @@ impl Context<'_> {
                         0,
                         layout::scalar(&self.p.types, self.ty(*value), i.span)?,
                     );
-                    self.e.store(1, self.frame.value(*value));
+                    self.store_result(*value, 1);
                 }
             }
         } else {
-            for (n, value) in i.results.iter().enumerate() {
-                let r = n as u8 + 1;
+            let mut r = 1;
+            for value in &i.results {
                 ops::normalize(
                     self.e,
                     r,
                     layout::scalar(&self.p.types, self.ty(*value), i.span)?,
                 );
-                self.e.store(r, self.frame.value(*value));
+                self.store_result(*value, r);
+                r += layout::words(&self.p.types, self.ty(*value)) as u8;
             }
+        }
+        if abi.hidden.is_none()
+            && let [result] = i.results.as_slice()
+        {
+            self.retained = Some(*result);
         }
         Ok(())
     }
@@ -139,6 +148,9 @@ impl Context<'_> {
                 } else {
                     self.load(*value, 1);
                     let ty = layout::scalar(&self.p.types, self.ty(*value), span)?;
+                    if ty.size == 8 {
+                        self.load_word(*value, 1, 2);
+                    }
                     memory::write(self.e, 1, 5, 0, ty);
                     // Narrow Direct-1 slots can start at a non-word-aligned record offset.
                     // Preserve the natural alignment and canonical zero upper ABI bits.
@@ -149,8 +161,12 @@ impl Context<'_> {
                 }
             }
         } else {
-            for (n, value) in values.iter().enumerate() {
-                self.load(*value, n as u8 + 1);
+            let mut reg = 1;
+            for value in values {
+                for word in 0..layout::words(&self.p.types, self.ty(*value)) {
+                    self.load_word(*value, word, reg);
+                    reg += 1;
+                }
             }
         }
         Ok(())

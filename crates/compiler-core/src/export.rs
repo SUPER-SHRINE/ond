@@ -158,6 +158,11 @@ impl Writer<'_> {
             TypeKind::U32 => Kind::U32,
             TypeKind::I32 => Kind::I32,
             TypeKind::F32 => Kind::F32,
+            TypeKind::U64 => Kind::U64,
+            TypeKind::I64 => Kind::I64,
+            TypeKind::F64 => Kind::F64,
+            TypeKind::Q16 => Kind::Q16,
+            TypeKind::Q32 => Kind::Q32,
             TypeKind::Pointer(p) => Kind::Pointer(self.ty(p)?),
             TypeKind::Array { length, element } => Kind::Array {
                 length,
@@ -206,6 +211,11 @@ impl Writer<'_> {
             hir::ExprKind::Zero => ValueKind::Zero,
             hir::ExprKind::Integer(v) => ValueKind::Integer(*v),
             hir::ExprKind::Float32(v) => ValueKind::Float32(*v),
+            hir::ExprKind::Float64(v) => ValueKind::Float64(*v),
+            hir::ExprKind::Fixed(v) if self.project.types.fixed_fraction(expr.ty) == Some(16) => {
+                ValueKind::Fixed16(*v as u32)
+            }
+            hir::ExprKind::Fixed(v) => ValueKind::Fixed32(*v),
             hir::ExprKind::Bool(v) => ValueKind::Bool(*v),
             hir::ExprKind::Nil => ValueKind::Nil,
             hir::ExprKind::Composite(items) => ValueKind::Composite(
@@ -219,6 +229,9 @@ impl Writer<'_> {
         let kind = match kind {
             ValueKind::Integer(0)
             | ValueKind::Float32(0)
+            | ValueKind::Float64(0)
+            | ValueKind::Fixed16(0)
+            | ValueKind::Fixed32(0)
             | ValueKind::Bool(false)
             | ValueKind::Nil => ValueKind::Zero,
             ValueKind::Composite(mut items) => {

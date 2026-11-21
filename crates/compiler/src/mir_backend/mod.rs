@@ -30,6 +30,8 @@ mod memory_tests;
 mod numeric;
 #[cfg(test)]
 mod numeric_tests;
+#[cfg(test)]
+mod numeric_wide_tests;
 mod ops;
 #[cfg(test)]
 mod ordered_tests;
@@ -39,6 +41,7 @@ pub mod runtime;
 mod test_build_tests;
 #[cfg(test)]
 mod tests;
+mod wide;
 use crate::{
     diagnostic::{Diagnostic, FrontendError},
     ir::object::*,

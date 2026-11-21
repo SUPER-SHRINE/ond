@@ -189,7 +189,7 @@ fn verify(p: &mir::Project) -> Result<(), String> {
     }
     for ty in INTEGERS.iter().map(|t| t.name).chain(["f32"]) {
         for (tag, op) in [
-            ("positive", None),
+            ("positive", (ty == "f32").then_some(mir::UnaryOp::FloatPlus)),
             ("negative", Some(mir::UnaryOp::Negate)),
             ("complement", Some(mir::UnaryOp::BitNot)),
         ] {

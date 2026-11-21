@@ -23,6 +23,7 @@ keyの同一性はescapeをdecodeしたstringで比較し、Unicode正規化は�
 | bytes | 下記の標準Base64 string |
 | T[] | TのJSON array。順序は各契約の列順に従う |
 
+整数fieldは10進表記から正確に解釈し、浮動小数点への丸めを介さない。\
 整数fieldのfraction、exponent、先頭zero、`-0`はerrorとなる。\
 byte列はalphabet `A-Z a-z 0-9 + /`を使う標準Base64とし、末尾の不足6bit群をzeroで埋め、必要な`=`paddingを付ける。\
 空byte列は空string、非空列の文字数は4の倍数で、最終quartet以外のpadding、whitespace、URL-safe alphabet、非zero pad bitsはerrorとなる。
@@ -36,11 +37,11 @@ variant名は大文字・小文字を含め以下の綴りと完全一致し、�
 | SymbolBinding | `"Local"`, `"Exported"`, `"Imported"` |
 | SymbolKind | `"Function"`, `"Object"`, `"Section"`, `"Runtime"` |
 | RelocationKind | `"Abs32"`, `"Call16"`, `"Jump16"`, `"CallSlot"`, `"JumpSlot"` |
-| Kind unit | `"Bool"`, `"U8"`, `"I8"`, `"U16"`, `"I16"`, `"U32"`, `"I32"`, `"F32"` |
+| Kind unit | `"Bool"`, `"U8"`, `"I8"`, `"U16"`, `"I16"`, `"U32"`, `"I32"`, `"U64"`, `"I64"`, `"F32"`, `"F64"`, `"Q16"`, `"Q32"` |
 | Kind payload | `{"Pointer": TypeRef}`, `{"Array":{"length":u32,"element":TypeRef}}`, `{"Function":Signature}`, `{"Struct":Field[]}`, `{"Defined":TypeRef}` |
 | Export | `{"Type":TypeRef}`, `{"Constant":Value}`, `{"Global":TypeRef}`, `{"Function":Signature}` |
 | ValueKind unit | `"Zero"`, `"Nil"` |
-| ValueKind payload | `{"Integer":u64}`, `{"Float32":u32}`, `{"Bool":bool}`, `{"Composite":[[u32,Value],...]}` |
+| ValueKind payload | `{"Integer":u64}`, `{"Float32":u32}`, `{"Float64":u64}`, `{"Fixed16":u32}`, `{"Fixed32":u64}`, `{"Bool":bool}`, `{"Composite":[[u32,Value],...]}` |
 
 compiler_id、build_id、content_hashの保存値は[SHA-256識別子](./build/cache.md#公開識別子)の小文字hex64桁とする。
 
@@ -63,7 +64,7 @@ packageを跨ぐ具体化codeへの参照に必要なObject symbolはExportedと
 | --- | --- | --- |
 | Interface | `package: string`, `types: Type[]`, `exports: map<string,Export>` | 論理package path、型配列、ASCII大文字で始まる公開名からExportへのmap |
 | Type | `name: string or null`, `kind: Kind`, `methods: ConcreteMethod[]` | 下記のnominal名または無名型のnull、型構造、公開concrete method |
-| Kind | `Bool`, `U8`, `I8`, `U16`, `I16`, `U32`, `I32`, `F32` | primitive型 |
+| Kind | `Bool`, `U8`, `I8`, `U16`, `I16`, `U32`, `I32`, `U64`, `I64`, `F32`, `F64`, `Q16`, `Q32` | primitive型 |
 | Kind | `Pointer(TypeRef)`, `Array {length: u32, element: TypeRef}` | 参照先型、配列長と要素型 |
 | Kind | `Function(Signature)`, `Struct(Field[])`, `Defined(TypeRef)` | 関数型、宣言順field列、underlying型 |
 | Signature | `parameters: TypeRef[]`, `returns: TypeRef[]` | source-visibleな引数型列と戻り値型列 |
@@ -71,7 +72,7 @@ packageを跨ぐ具体化codeへの参照に必要なObject symbolはExportedと
 | ConcreteMethod | `name: string`, `signature: Signature`, `pointer_receiver: bool`, `symbol: string` | 公開method名、receiverを除いたsignature、receiver種別とlink symbol |
 | Export | `Type(TypeRef)`, `Constant(Value)`, `Global(TypeRef)`, `Function(Signature)` | 公開宣言の種別と情報 |
 | Value | `ty: TypeRef`, `kind: ValueKind` | 確定型と評価済み値 |
-| ValueKind | `Zero`, `Integer(u64)`, `Float32(u32)`, `Bool(bool)`, `Nil`, `Composite((u32, Value)[])` | zero、整数bits、binary32 bits、bool、型付きnil、疎なindex/field値列 |
+| ValueKind | `Zero`, `Integer(u64)`, `Float32(u32)`, `Float64(u64)`, `Fixed16(u32)`, `Fixed32(u64)`, `Bool(bool)`, `Nil`, `Composite((u32, Value)[])` | zero、整数bits、浮動小数点bits、固定小数点bits、bool、型付きnil、疎なindex/field値列 |
 
 TypeRefはこのinterfaceのtypes配列indexをu32で表す。\
 非genericの公開宣言から到達する型を再帰的に保存し、非公開のnamed typeと具体化したgeneric型も公開戻り値などから到達すればtypesへ含める。\
@@ -92,7 +93,8 @@ Value.tyがDefinedならunderlyingを辿って値の構造型を解決し、次�
 | --- | --- |
 | Zero | 全型のzero value |
 | Integer | 整数型。unsignedは型の値範囲内の非負値。signedは型幅のtwo's-complement値を64bitへ符号拡張したu64 bitsと完全一致 |
-| Float32 | f32。payloadはbinary32のu32 bits |
+| Float32、Float64 | それぞれf32、f64。payloadは対応形式のu32、u64 bits |
+| Fixed16、Fixed32 | それぞれq16、q32。payloadは格納整数のtwo's-complement bitsを符号なしu32、u64として表した値 |
 | Bool | bool。payloadはbool |
 | Nil | PointerまたはFunction型のnil |
 | Composite | arrayまたはstruct。indexは配列では0以上length未満、structでは宣言順の0始まりfield index。各子tyは対応する要素/field型と同一で、indexは一意 |
@@ -100,7 +102,7 @@ Value.tyがDefinedならunderlyingを辿って値の構造型を解決し、次�
 Compositeの省略要素は指定型のzero valueとする。\
 ValueKind単体のwire構造検査と、所属Interfaceのtypesを使うこの型・値の整合検査はそれぞれ適用する。\
 読出しは明示したscalar zeroとzeroのComposite要素も受理する。\
-writerは[正規化値](./build/cache.md#意味型具体化定数の正規化)と同じく、型のzero表現をZeroへ、Compositeをindex昇順とzero要素省略へ統一し、f32の-0 bitsを保持する。
+writerは[正規化値](./build/cache.md#意味型具体化定数の正規化)と同じく、型のzero表現をZeroへ、Compositeをindex昇順とzero要素省略へ統一し、浮動小数点型の-0 bitsを保持する。
 
 読出時には型参照の範囲、公開binding名、nominal名の重複、aggregate indexの重複、\
 成果物とinterfaceのpackage一致を検証する。\
@@ -117,8 +119,8 @@ cache再利用は[cache契約](./build/cache.md)に従う。
 | --- | --- | --- | --- |
 | language | sourceの構文・型・意味 | Ond v1 | [language v1](./language/v1/README.md)の入力と規則に適用 |
 | target profile | machine/layout/runtime | `kagura-v1` | languageのtarget委譲を具体化 |
-| ABI | call/register/引数・戻り値 | `ond-kagura-v1` | `kagura-v1`に適用 |
-| artifact Contract | PackageArtifactとCompilationManifestの外層 | revision `7`, target `kagura-v1`, abi `ond-kagura-v1` | tuple全要素が表の値に一致すると受理。Contractの未知fieldはerror |
+| ABI | call/register/引数・戻り値 | `ond-kagura-v2` | `kagura-v1`に適用 |
+| artifact Contract | PackageArtifactとCompilationManifestの外層 | revision `8`, target `kagura-v1`, abi `ond-kagura-v2` | tuple全要素が表の値に一致すると受理。Contractの未知fieldはerror |
 | compiler_id | artifact生成元とcache再利用の識別 | 実行executable全体のSHA-256 | CLI linkはmanifest、全artifact、実行linkerの同一値を要求 |
 
 language版、target版、ABI版は対応する規範文書の適用対象を識別する。\
@@ -233,7 +235,7 @@ LinkedImageはruntime addressとpatch済みbytesを表す。\
 ## 実行可能バイナリ
 <!-- ond-spec-id: artifacts/executable-binary-draft -->
 
-本節は、Ond Language v1、target profile `kagura-v1`、ABI `ond-kagura-v1`のbuildを表す実行可能バイナリを定義する。\
+本節は、Ond Language v1、target profile `kagura-v1`、ABI `ond-kagura-v2`のbuildを表す実行可能バイナリを定義する。\
 永続的な配置・起動・終了設定は、projectの[compileとlink設定](./build/packages.md#compileとlink設定)に従う。
 
 中間成果物`.ondpkg`と`.ondbuild`は[PackageArtifactとCompilationManifest](#packageartifactとcompilationmanifest)のJSON wire形式に従う。\
@@ -256,7 +258,7 @@ magic以外の全fieldはlittle-endianのu32とし、offsetとsizeの単位はby
 | 0 | magic | ASCIIの`ONDX`を表す4 byte `4f 4e 44 58` |
 | 4 | version | `1` |
 | 8 | target | `1` = `kagura-v1` |
-| 12 | abi | `1` = `ond-kagura-v1` |
+| 12 | abi | `2` = `ond-kagura-v2` |
 | 16 | image_size | 固定ヘッダから最後のセクションデータ末尾までの標準実行バイナリ全長 |
 | 20 | entry_address | ロード完了後に制御を渡すruntime entryの絶対address |
 | 24 | initial_sp | entryへ制御を渡す際のstack pointer値 |
@@ -368,13 +370,13 @@ ROM容量とRAM容量は配置先の上限であり、容量末尾までのpaddi
 ### RAMコピーのwire例
 <!-- ond-spec-id: artifacts/executable-ram-copy-example -->
 
-次の例は、target `kagura-v1`、ABI `ond-kagura-v1`、startup external、ROM省略、RAM base `0x10000000`、RAM size `0x100`、stack-size `0x40`に対するwire読出しとロードの適合判定を対象とする。\
+次の例は、target `kagura-v1`、ABI `ond-kagura-v2`、startup external、ROM省略、RAM base `0x10000000`、RAM size `0x100`、stack-size `0x40`に対するwire読出しとロードの適合判定を対象とする。\
 観測点はentryへ制御を渡す直前とし、RAMの初期byte値は任意とする。\
 Textの命令列をOnd programとして実行する場合の適合判定は、[言語規則](./language/v1/README.md)と[startup](./targets/kagura-v1/machine.md#4-startup)に従って別に行う。
 
 | ヘッダfield | 値 |
 | --- | --- |
-| magic・version・target・abi | `ONDX`・`1`・`1`・`1` |
+| magic・version・target・abi | `ONDX`・`1`・`1`・`2` |
 | image_size | `0x54` |
 | entry_address | `0x10000050` |
 | initial_sp | `0x10000100` |
