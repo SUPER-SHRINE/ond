@@ -1,11 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
 
 use compiler::ir::ast;
-use compiler::source::{SourceDb, Span};
+use compiler::source::Span;
 use serde_json::{Value, json};
 
-use crate::protocol::{Position, lsp_offset};
+use crate::protocol::{Position, lsp_offset, mask_block_comments};
 use crate::symbol_index::{IndexedSymbol, IndexedSymbolKind, ProjectSymbolIndex};
 
 const MAX_COMPLETION_INFERRED_POINTER_DEPTH: usize = 16;
@@ -314,14 +313,7 @@ pub fn completion_text_with_placeholder(
     line: u32,
     character: u32,
 ) -> Option<(String, &'static str)> {
-    let mut sources = SourceDb::default();
-    let file_id = sources.add_file(PathBuf::new(), text.to_string());
-    let offset = sources
-        .file(file_id)
-        .offset_at_line_col(line as usize + 1, character as usize + 1);
-    if offset > text.len() || !text.is_char_boundary(offset) {
-        return None;
-    }
+    let offset = lsp_offset(text, &Position { line, character }).ok()?;
 
     let bytes = text.as_bytes();
     let mut member_start = offset;
@@ -401,6 +393,42 @@ fn incomplete_assignment_operator(suffix: &str) -> bool {
         suffix,
         "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "&^=" | "<<=" | ">>="
     )
+}
+
+pub(crate) fn completion_text_with_identifier_call(
+    text: &str,
+    line: u32,
+    character: u32,
+) -> Option<String> {
+    let offset = lsp_offset(text, &Position { line, character }).ok()?;
+    let masked = mask_block_comments(text);
+    let code = masked.as_deref().unwrap_or(text);
+    let before = code[..offset]
+        .rsplit_once('\n')
+        .map_or(&code[..offset], |(_, line)| line);
+    let after = code[offset..].split('\n').next()?;
+    let is_identifier_char = |ch: char| ch == '_' || ch.is_alphanumeric();
+    let prefix = before.trim_end_matches(is_identifier_char);
+    let identifier = &before[prefix.len()..];
+    let first = identifier.chars().next()?;
+    if !(first == '_' || first.is_alphabetic()) {
+        return None;
+    }
+
+    let prefix = prefix.trim_end();
+    if !prefix.is_empty() && !prefix.ends_with(['{', ';']) {
+        return None;
+    }
+    let suffix = after.trim_start_matches(is_identifier_char);
+    let remainder = suffix.trim_start();
+    if !remainder.is_empty() && !remainder.starts_with(['}', ';']) && !remainder.starts_with("//") {
+        return None;
+    }
+
+    // A call is a valid expression statement and introduces no local binding.
+    let mut completed = text.to_string();
+    completed.insert_str(offset + after.len() - suffix.len(), "()");
+    Some(completed)
 }
 
 pub fn completion_qualifier(text: &str, line: u32, character: u32) -> Option<String> {
@@ -2688,6 +2716,19 @@ mod tests {
             assert!(repaired.ends_with("__ond_completion_value"), "{repaired}");
         }
         assert!(completion_text_with_value_placeholder("value ", 0, 6).is_none());
+    }
+
+    #[test]
+    fn repairs_member_at_utf16_position_after_non_bmp_comment() {
+        let prefix = "    /* 𐐀𐐀𐐀 .x */ value.";
+        let source = format!("{prefix}member");
+        let (repaired, marker) = super::completion_text_with_placeholder(
+            &source,
+            0,
+            prefix.encode_utf16().count() as u32,
+        )
+        .unwrap();
+        assert_eq!(repaired, format!("{prefix}{marker}()"));
     }
 
     #[test]
