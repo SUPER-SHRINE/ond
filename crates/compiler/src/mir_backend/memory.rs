@@ -5,6 +5,9 @@ pub(super) fn address(e: &mut Emitter, reg: u8, offset: u32) {
 }
 pub(super) fn read(e: &mut Emitter, reg: u8, base: u8, offset: u32, ty: layout::ScalarLayout) {
     let (base, imm) = access_address(e, base, offset, ty);
+    read_indexed(e, reg, base, 0, imm, ty);
+}
+fn read_indexed(e: &mut Emitter, reg: u8, base: u8, index: u8, imm: i16, ty: layout::ScalarLayout) {
     e.emit(
         match ty.size {
             1 => 4,
@@ -13,30 +16,43 @@ pub(super) fn read(e: &mut Emitter, reg: u8, base: u8, offset: u32, ty: layout::
         },
         reg,
         base,
-        0,
+        index,
         imm,
     );
     if ty.size == 8 {
-        e.emit(7, reg + 1, base, 0, imm + 4);
+        e.emit(7, reg + 1, base, index, imm + 4);
     }
     ops::normalize(e, reg, ty);
 }
 pub(super) fn write(e: &mut Emitter, reg: u8, base: u8, offset: u32, ty: layout::ScalarLayout) {
     let (base, imm) = access_address(e, base, offset, ty);
-    e.emit(store_opcode(ty), reg, base, 0, imm);
+    write_indexed(e, reg, base, 0, imm, ty);
+}
+fn write_indexed(
+    e: &mut Emitter,
+    reg: u8,
+    base: u8,
+    index: u8,
+    imm: i16,
+    ty: layout::ScalarLayout,
+) {
+    e.emit(store_opcode(ty), reg, base, index, imm);
     if ty.size == 8 {
-        e.emit(11, if reg == 0 { 0 } else { reg + 1 }, base, 0, imm + 4);
+        e.emit(11, if reg == 0 { 0 } else { reg + 1 }, base, index, imm + 4);
     }
 }
 fn access_address(e: &mut Emitter, base: u8, offset: u32, ty: layout::ScalarLayout) -> (u8, i16) {
-    let last = if ty.size == 8 { 4 } else { 0 };
-    if offset <= i16::MAX as u32 - last {
+    if offset <= max_direct_offset(ty) {
         (base, offset as i16)
     } else {
         e.immediate(3, offset);
         e.emit(0, 3, base, 3, 0);
         (3, 0)
     }
+}
+fn max_direct_offset(ty: layout::ScalarLayout) -> u32 {
+    // Both word accesses of a 64-bit element must fit the signed immediate.
+    i16::MAX as u32 - if ty.size == 8 { 4 } else { 0 }
 }
 pub(super) fn store_opcode(ty: layout::ScalarLayout) -> u32 {
     match ty.size {
@@ -58,6 +74,70 @@ pub(super) fn copy(
     }
     Ok(())
 }
+/// Compress a transfer between private slots with the same scalar array type.
+pub(super) fn copy_private_array(
+    e: &mut Emitter,
+    types: &mir::TypeTable,
+    ty: mir::TypeId,
+    span: Span,
+) -> Result<(), Diagnostic> {
+    use mir::TypeKind::*;
+    if let Some(Array { length, element }) = types.underlying_kind(ty)
+        && matches!(
+            types.underlying_kind(*element),
+            Some(Bool | U8 | I8 | U16 | I16 | U32 | I32 | F32 | Q16 | U64 | I64 | F64 | Q32)
+        )
+    {
+        let scalar = layout::scalar(types, *element, span)?;
+        if let Some(loop_bytes) = copy_loop_end(*length, scalar) {
+            // r4/r5 keep the evaluated addresses, r1/r2 carry the payload.
+            // r3 is the byte index, r12 the bound, and both are dead afterward.
+            let body = e.label();
+            e.immediate(3, 0);
+            e.immediate(12, loop_bytes);
+            e.bind(body);
+            copy_indexed_elements(e, 4, scalar);
+            e.emit(0, 3, 3, 0, (4 * scalar.size) as i16);
+            e.emit(13, 1, 3, 12, 0);
+            e.near_branch(1, body, span);
+            copy_indexed_elements(e, length % 4, scalar);
+            return Ok(());
+        }
+    }
+    copy(e, types, ty, span)
+}
+
+fn copy_loop_end(length: u32, scalar: layout::ScalarLayout) -> Option<u32> {
+    length.checked_mul(scalar.size)?;
+    let first_far = max_direct_offset(scalar) / scalar.size + 1;
+    if length <= first_far {
+        return None;
+    }
+
+    let iterations = length / 4;
+    let loop_bytes = iterations * 4 * scalar.size;
+    let loop_control_steps = 1 + Emitter::immediate_words(loop_bytes) + u64::from(iterations) * 3;
+    // Place/slot setup and typed payload (including the tail) are unchanged.
+    // For each far element the unrolled read and write independently form
+    // base+offset. Count their actual immediate and ADD instructions.
+    let address_steps = (first_far..length)
+        .map(|index| 2 * (Emitter::immediate_words(index * scalar.size) + 1))
+        .sum::<u64>();
+
+    // Unrolled Text has one word per step. Looped Text contains the setup,
+    // a single body with control, and the tail. At least two executions of
+    // that body make Text strictly smaller when dynamic steps do not grow.
+    (iterations >= 2 && loop_control_steps <= address_steps).then_some(loop_bytes)
+}
+
+fn copy_indexed_elements(e: &mut Emitter, count: u32, scalar: layout::ScalarLayout) {
+    for element in 0..count {
+        let offset = (element * scalar.size) as i16;
+        read_indexed(e, 1, 4, 3, offset, scalar);
+        write_indexed(e, 1, 5, 3, offset, scalar);
+    }
+}
+
 impl Context<'_> {
     pub(super) fn copy_slots(
         &mut self,
