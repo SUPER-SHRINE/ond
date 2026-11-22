@@ -35,6 +35,9 @@ mod numeric_wide_tests;
 mod ops;
 #[cfg(test)]
 mod ordered_tests;
+mod private_array_copy;
+#[cfg(test)]
+mod private_array_copy_tests;
 mod quotient_reuse;
 #[cfg(test)]
 mod quotient_reuse_tests;

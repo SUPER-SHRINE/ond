@@ -15,9 +15,41 @@ pub(super) fn lower(
     f: &Function,
     emitter: &mut Emitter,
 ) -> Result<function::PendingFunctionDebug, Diagnostic> {
+    lower_using(project, globals, f, emitter, function::lower)
+}
+
+#[cfg(test)]
+pub(super) fn lower_without_private_array_copies(
+    project: &mir::Project,
+    globals: &[mir::Global],
+    f: &Function,
+    emitter: &mut Emitter,
+) -> Result<function::PendingFunctionDebug, Diagnostic> {
+    lower_using(
+        project,
+        globals,
+        f,
+        emitter,
+        function::lower_without_private_array_copies,
+    )
+}
+
+fn lower_using(
+    project: &mir::Project,
+    globals: &[mir::Global],
+    f: &Function,
+    emitter: &mut Emitter,
+    fallback: impl FnOnce(
+        &mir::Project,
+        &Function,
+        &mut Emitter,
+    ) -> Result<function::PendingFunctionDebug, Diagnostic>,
+) -> Result<function::PendingFunctionDebug, Diagnostic> {
     let Some(plan) = Plan::new(&project.types, globals, f) else {
-        return function::lower(project, f, emitter);
+        return fallback(project, f, emitter);
     };
+    // The raw induction plan only accepts scalar locals and requires ordered
+    // accesses. Neither path below can have a private array copy plan.
     let mut baseline = Emitter::default();
     let mut layout_before = function::EmittedLayout::default();
     let before = function::lower_body(project, f, &mut baseline, None, Some(&mut layout_before))?;

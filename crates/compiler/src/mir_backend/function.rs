@@ -50,7 +50,7 @@ pub(super) fn lower_body(
     induction: Option<&raw_induction::Plan>,
     emitted: Option<&mut EmittedLayout>,
 ) -> Result<PendingFunctionDebug, Diagnostic> {
-    lower_body_using(p, f, e, induction, emitted, &quotient_reuse::plan(f))
+    lower_body_using(p, f, e, induction, emitted, &quotient_reuse::plan(f), true)
 }
 
 #[cfg(test)]
@@ -59,7 +59,16 @@ pub(super) fn lower_without_quotient_reuse(
     f: &mir::Function,
     e: &mut Emitter,
 ) -> Result<PendingFunctionDebug, Diagnostic> {
-    lower_body_using(p, f, e, None, None, &quotient_reuse::Plan::new())
+    lower_body_using(p, f, e, None, None, &quotient_reuse::Plan::new(), true)
+}
+
+#[cfg(test)]
+pub(super) fn lower_without_private_array_copies(
+    p: &mir::Project,
+    f: &mir::Function,
+    e: &mut Emitter,
+) -> Result<PendingFunctionDebug, Diagnostic> {
+    lower_body_using(p, f, e, None, None, &quotient_reuse::plan(f), false)
 }
 
 fn lower_body_using(
@@ -69,6 +78,7 @@ fn lower_body_using(
     induction: Option<&raw_induction::Plan>,
     mut emitted: Option<&mut EmittedLayout>,
     quotients: &quotient_reuse::Plan,
+    optimize_private_copies: bool,
 ) -> Result<PendingFunctionDebug, Diagnostic> {
     let signature = mir::FunctionType {
         parameters: f
@@ -79,7 +89,14 @@ fn lower_body_using(
         returns: f.returns.clone(),
     };
     let abi = layout::abi(&p.types, &signature, f.span)?;
-    let frame = Frame::new(f, &p.types, &abi)?;
+    let mut aggregates = super::local_aggregate::LocalAggregates::new(&p.types, f, &abi);
+    // Keep the existing small-aggregate optimization and its original frame.
+    let private_copies = if optimize_private_copies && aggregates.is_none() {
+        private_array_copy::Plan::new(&p.types, f, &abi)
+    } else {
+        private_array_copy::Plan::default()
+    };
+    let frame = Frame::new(f, &p.types, &abi, &private_copies)?;
     if induction.is_some() && !raw_induction::Plan::storage_available(&frame) {
         return Err(error(f.span, "no private word for raw address induction"));
     }
@@ -188,7 +205,6 @@ fn lower_body_using(
         induction: induction.is_some(),
     };
     let proven_bounds = super::bounds::proven_checks(&p.types, f);
-    let mut aggregates = super::local_aggregate::LocalAggregates::new(&p.types, f, &cx.abi);
     for b in &f.blocks {
         cx.e.bind(cx.labels[b.id.0 as usize]);
         let block_start = cx.e.words.len();
@@ -199,8 +215,18 @@ fn lower_body_using(
                 continue;
             }
             cx.previous = cx.retained.take();
+            if private_copies.eliminated_stores.contains(&i.id) {
+                continue;
+            }
             let start = cx.e.offset(i.span)?;
-            if !aggregates.as_mut().is_some_and(|a| a.emit(&mut cx, i)) {
+            if let Some(&value) = private_copies.copies.get(&i.id) {
+                let mir::InstructionKind::AggregateCopy { destination, .. } = &i.kind else {
+                    unreachable!("planned aggregate copy");
+                };
+                // The ValueId already captures the RHS. Keep the destination
+                // access and source range at the original copy.
+                cx.store(destination, value, i.span)?;
+            } else if !aggregates.as_mut().is_some_and(|a| a.emit(&mut cx, i)) {
                 cx.instruction(i, quotients.get(&i.id).copied())?;
             }
             let end = cx.e.offset(i.span)?;
@@ -298,6 +324,32 @@ impl Context<'_> {
     pub(super) fn ty(&self, id: mir::ValueId) -> mir::TypeId {
         self.f.values[id.0 as usize].ty
     }
+    fn store(
+        &mut self,
+        place: &mir::Place,
+        value: mir::ValueId,
+        span: Span,
+    ) -> Result<(), Diagnostic> {
+        self.place(place, span)?;
+        self.e.emit(0, 5, 4, 0, 0);
+        if layout::aggregate(&self.p.types, place.ty) {
+            memory::address(self.e, 4, self.frame.value(value));
+            memory::copy(self.e, &self.p.types, place.ty, span)?;
+        } else {
+            self.load(value, 1);
+            if layout::words(&self.p.types, place.ty) == 2 {
+                self.load_word(value, 1, 2);
+            }
+            memory::write(
+                self.e,
+                1,
+                5,
+                0,
+                layout::scalar(&self.p.types, place.ty, span)?,
+            );
+        }
+        Ok(())
+    }
     fn instruction(
         &mut self,
         i: &mir::Instruction,
@@ -354,24 +406,7 @@ impl Context<'_> {
                 );
             }
             I::Store { place, value, .. } => {
-                self.place(place, i.span)?;
-                self.e.emit(0, 5, 4, 0, 0);
-                if layout::aggregate(&self.p.types, place.ty) {
-                    memory::address(self.e, 4, self.frame.value(*value));
-                    memory::copy(self.e, &self.p.types, place.ty, i.span)?;
-                } else {
-                    self.load(*value, 1);
-                    if layout::words(&self.p.types, place.ty) == 2 {
-                        self.load_word(*value, 1, 2);
-                    }
-                    memory::write(
-                        self.e,
-                        1,
-                        5,
-                        0,
-                        layout::scalar(&self.p.types, place.ty, i.span)?,
-                    );
-                }
+                self.store(place, *value, i.span)?;
             }
             I::AggregateCopy {
                 destination,
