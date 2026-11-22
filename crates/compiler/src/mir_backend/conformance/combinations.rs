@@ -94,7 +94,12 @@ fn size(p: &mir::Project, name: &str) -> u32 {
         returns: f.returns.clone(),
     };
     let abi = layout::abi(&p.types, &signature, f.span).unwrap();
-    Frame::new(f, &p.types, &abi).unwrap().size
+    let copies = private_array_copy::Plan::new(&p.types, f, &abi);
+    assert!(
+        copies.copies.is_empty(),
+        "the fixture uses only scalar locals"
+    );
+    Frame::new(f, &p.types, &abi, &copies).unwrap().size
 }
 
 #[test]

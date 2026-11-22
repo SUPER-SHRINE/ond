@@ -147,49 +147,37 @@ fn source_fault_never_starts_destination_and_write_fault_does_not_rollback() {
 }
 #[test]
 fn overlapping_aggregate_copy_uses_pre_write_snapshot() {
-    let (mut bus, fault) = run(
-        "package main\nfunc main(){var p=536870912 as *[3]u8;var q=536870913 as *[3]u8;*q=*p;}",
-        None,
-    );
-    assert!(!fault);
-    assert_eq!(
-        bus.trace,
-        vec![
-            Access {
+    for (offset, assignment) in [
+        (0, "*p=*p"),
+        (0, "var q=536870912 as *[3]u8;*q=*p"),
+        (1, "var q=536870913 as *[3]u8;*q=*p"),
+    ] {
+        let source =
+            format!("package main\nfunc main(){{var p=536870912 as *[3]u8;{assignment};}}");
+        let (mut bus, fault) = run(&source, None);
+        assert!(!fault);
+        let all: Vec<_> = (0..3)
+            .map(|offset| Access {
                 write: false,
-                offset: 0,
-                width: 1
-            },
-            Access {
-                write: false,
-                offset: 1,
-                width: 1
-            },
-            Access {
-                write: false,
-                offset: 2,
-                width: 1
-            },
-            Access {
+                offset,
+                width: 1,
+            })
+            .chain((offset..offset + 3).map(|offset| Access {
                 write: true,
-                offset: 1,
-                width: 1
-            },
-            Access {
-                write: true,
-                offset: 2,
-                width: 1
-            },
-            Access {
-                write: true,
-                offset: 3,
-                width: 1
-            }
-        ]
-    );
-    assert_eq!(bus.inner.read8(BASE + 1).unwrap(), 11);
-    assert_eq!(bus.inner.read8(BASE + 2).unwrap(), 0xcc);
-    assert_eq!(bus.inner.read8(BASE + 3).unwrap(), 1234u16 as u8);
+                offset,
+                width: 1,
+            }))
+            .collect();
+        assert_eq!(bus.trace, all, "{assignment}");
+        assert_eq!(bus.inner.read8(BASE + offset).unwrap(), 11);
+        assert_eq!(bus.inner.read8(BASE + offset + 1).unwrap(), 0xcc);
+        assert_eq!(bus.inner.read8(BASE + offset + 2).unwrap(), 1234u16 as u8);
+        for failing_access in [1, 4] {
+            let (bus, fault) = run(&source, Some(all[failing_access]));
+            assert!(fault, "{assignment}");
+            assert_eq!(bus.trace, all[..=failing_access], "{assignment}");
+        }
+    }
 }
 #[test]
 fn bool_load_normalizes_and_bool_store_uses_one_byte() {
