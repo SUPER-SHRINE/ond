@@ -1,6 +1,7 @@
 //! Encoding and fixed-footprint near/far branch fixups.
 use super::*;
 use crate::kagura_encoding::{self as encoding, word};
+use ond_protocol::debug::DebugOperation;
 #[derive(Default)]
 pub(super) struct Emitter {
     pub words: Vec<u32>,
@@ -81,6 +82,37 @@ impl Emitter {
             .rev()
             .take_while(|relocation| relocation.offset >= offset)
             .any(|relocation| relocation.kind == RelocationKind::CallSlot)
+    }
+    /// Memory instructions in a straight-line aggregate transfer.
+    pub fn aggregate_accesses(
+        &self,
+        start: u32,
+        end: u32,
+    ) -> impl Iterator<Item = (u32, DebugOperation)> + '_ {
+        let first = (start / 4) as usize;
+        debug_assert!(self.branches.last().is_none_or(|branch| branch.0 < first));
+        debug_assert!(!self.has_call_since(start));
+        let first_relocation = self.relocations.partition_point(|r| r.offset < start);
+        let mut literals = self.relocations[first_relocation..]
+            .iter()
+            .filter(|r| r.kind == RelocationKind::Abs32)
+            .map(|r| r.offset)
+            .peekable();
+        (start..end)
+            .step_by(4)
+            .zip(&self.words[first..(end / 4) as usize])
+            .filter_map(move |(pc, word)| {
+                // A symbolic place emits a load followed by an address literal.
+                if literals.next_if_eq(&pc).is_some() {
+                    return None;
+                }
+                let operation = match word >> 28 {
+                    4 | 5 | 7 => DebugOperation::MemoryRead,
+                    8 | 9 | 11 => DebugOperation::MemoryWrite,
+                    _ => return None,
+                };
+                Some((pc, operation))
+            })
     }
     pub fn load(&mut self, reg: u8, offset: u32) {
         self.stack_access(7, reg, offset);
