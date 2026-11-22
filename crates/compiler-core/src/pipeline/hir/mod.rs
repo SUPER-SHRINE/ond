@@ -5,7 +5,7 @@ use crate::project::{LoadedProject, PackageId};
 use crate::source::Span;
 use std::collections::{BTreeMap, BTreeSet};
 
-mod array_layout;
+mod aggregate_layout;
 mod body;
 mod body_names;
 mod cache;
@@ -942,7 +942,7 @@ fn lower_context_with_generation(
         &loaded.sources,
         &mut diagnostics,
     );
-    array_layout::validate(&types, &mut diagnostics);
+    aggregate_layout::validate(&mut types, &type_universe, &mut diagnostics);
 
     validation::validate_project(loaded, ast, selected, &packages, &symbols, &mut diagnostics);
 

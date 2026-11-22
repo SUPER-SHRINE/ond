@@ -219,7 +219,7 @@ Ond Language v1とKagura v1の組み合わせで、[`ond compile`](../../build/c
 - 固定長配列と推論長配列に共通して、長さ `N` は整数で `0 <= N <= 2^32-1` とする
   - 配列要素の有効な index は `0 <= index < N` とする
   - `N = 0` の配列に有効な index はない
-- Kagura targetの配列型のbyte size上限、適用箇所、paddingとゼロサイズの扱いは[Data Layout](../../targets/kagura-v1/machine.md#5-data-layout)に従う
+- Kagura targetの配列型とstruct型のsize上限、適用箇所、paddingとゼロサイズの扱いは[Data Layout](../../targets/kagura-v1/machine.md#5-data-layout)に従う
 - 配列の長さはコンパイル時定数でなければならない
 - 配列のindex演算は[operator解決](./expressions.md#user-defined-operator)を先に行い、builtinを選んだ場合に以下の配列access規則を適用する
 - builtin配列アクセスは`array[index]`とする

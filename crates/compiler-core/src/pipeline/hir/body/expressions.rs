@@ -162,9 +162,14 @@ impl BodyLowerer<'_> {
                 span,
             } => {
                 let ty = self.resolve_type(ty)?;
-                let (size, align) = match self.types.size_align(ty) {
+                let (size, align) = match self.types.size_align_with_cause(ty) {
                     Ok(layout) => layout,
-                    Err(message) => return self.fail(*span, message),
+                    Err((cause, message)) => {
+                        if message == "struct layout overflow" && self.failure.is_none() {
+                            self.types.record_struct_layout_query(cause, *span);
+                        }
+                        return self.fail(*span, message);
+                    }
                 };
                 (
                     hir::ExprKind::Integer(u64::from(if *alignment { align } else { size })),

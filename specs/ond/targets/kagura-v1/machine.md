@@ -105,21 +105,22 @@ mainから戻った際の制御経路は[link.exit](../../build/packages.md#comp
 - 浮動小数点型は[定義された格納bits](../../language/v1/expressions.md#floating-point-arithmetic)、固定小数点型は[格納整数のbits](../../language/v1/types.md#型)をlittle-endianで配置する
 - `*T` は 32-bit bus address で、`nil` は `0x00000000` とする
 - `[N]T` は header のない連続した `N` 要素とし、alignment は `alignof(T)`、size は `N * sizeof(T)` とする
-- 固定長配列の `N * sizeof(T)` が `2^32-1` byte を超える場合は compile error とする
-  - 積は数学的な整数として判定し、32 bit への切り詰めや折り返しを行わない
-  - 推論長配列も長さの確定後に同じ上限を適用する
-  - 要素が defined type、struct、配列の場合も、padding を含む要素型の size を使う
-  - 未使用の型宣言、pointer の参照先、generic の具体化結果も検査する
-  - `N = 0` または `sizeof(T) = 0` の積は `0` とし、入れ子に含まれる各配列型もそれぞれ検査する
-- struct field は宣言順に置き、各 field をその alignment へ揃える
-  - struct の alignment は field の最大値、size はその alignment の倍数へ切り上げる
+  - 要素型の size には padding を含む
+  - `N = 0` または `sizeof(T) = 0` の積は `0` とする
+- struct field は宣言順に置く
+  - 各 field の開始 offset は、直前の field の開始 offset と size の和（先頭 field では `0`）を、その field の alignment の倍数へ切り上げた値とする
+  - struct の alignment は field の alignment の最大値とし、size は最後の field の開始 offset と size の和を struct の alignment の倍数へ切り上げた byte 数とする
+- 配列型と struct 型の size は `2^32-1` byte 以下でなければならず、上限を超える型は compile error とする
+  - 配列の積、struct の field 位置、size と末尾 padding は数学的な整数で計算して判定する
+  - 推論長配列には長さの確定後、generic の型には具体化後に適用する
+  - 値の生成や layout 問い合わせの有無にかかわらず、未使用の型宣言、pointer の参照先、入れ子の型を含め、各型に適用する
 - zero-size型のsize/alignment、addressable storageとheap結果は[ゼロサイズの境界](#32-ゼロサイズとaggregate-access)に従う
 - padding byte の値は観測可能な意味を持たない
 
 全型の zero value は全 byte が `0` の表現とする。
 
 例えば `[4294967295]u8` の size は上限内だが、`[1073741824]u32` の size は `2^32` byte なので型として拒否する。\
-上限内の配列型であっても、実際の storage 配置や heap 確保が成功するとは限らない。
+型の size 上限とは別に、実際の storage 配置と heap 確保には[メモリ管理](../../language/v1/execution.md#メモリ管理)の規則が適用される。
 
 ## 6. Raw Pointer Access
 <!-- ond-spec-id: targets/kagura-v1/raw-pointer-access -->
