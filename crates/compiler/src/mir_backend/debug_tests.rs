@@ -1,7 +1,148 @@
 use super::{tests::Fixture, *};
 use crate::ir::object::{Object, RelocationKind, Section, SectionKind};
 use kagura::Bus;
-use ond_protocol::debug::{DebugOperation, ReturnAddressLocation};
+use ond_protocol::debug::{DebugOperation, ReturnAddressLocation, SourceLocation};
+
+#[test]
+fn aggregate_transfer_debug_ranges_match_linked_memory_instructions() {
+    let fixture = Fixture::new(
+        "package main
+type Mixed struct { flag: bool; half: u16; value: f64 }
+var Global: Mixed
+func snapshot() {
+    var local: Mixed
+    local = Global
+    Global = local
+}
+func direct() {
+    var src: [5]u8
+    var dst: [5]u8
+    dst = src
+}
+func small(flag: bool) {
+    var src: [2]bool
+    src[1] = flag
+    var dst: [2]bool
+    dst = src
+}
+func one() {
+    var src: [1]bool
+    var dst: [1]bool
+    dst = src
+}
+func main() {}",
+    );
+    let compilation = crate::compile_project(&fixture.0).unwrap();
+    let metadata = crate::program::ProgramMetadata::from_mir(&compilation.mir).unwrap();
+    let mut objects = vec![crate::test_support::startup_object(
+        &metadata.initializers,
+        &metadata.entry_symbol,
+    )];
+    objects.extend(compilation.objects);
+    let linked = crate::linker::link_objects_with_debug(
+        &objects,
+        &compilation.debug_objects,
+        &crate::linker::LinkPlan {
+            read_only: None,
+            memory_base: 0x4000_1000,
+            memory_size: 65536,
+            stack_size: 8192,
+            entry_symbol: "__ond.entry".into(),
+            heap_base_symbol: "__ond_heap_base".into(),
+            stack_bottom_symbol: "__ond_stack_bottom".into(),
+        },
+    )
+    .unwrap();
+    let section = linked
+        .image
+        .sections
+        .iter()
+        .find(|section| section.kind == SectionKind::Text)
+        .unwrap();
+    let mut mismatches = Vec::new();
+    for (name, line, column, expected_counts) in [
+        // Mixed transfers use a byte, a halfword, and two words per direction.
+        // The static place also uses a literal load for the address of Global.
+        ("main.snapshot", 6, 13, [5, 4]),
+        ("main.snapshot", 6, 5, [12, 12]),
+        ("main.snapshot", 7, 14, [4, 4]),
+        ("main.snapshot", 7, 5, [13, 12]),
+        // The direct assignment emits one transfer at the destination instead of three.
+        ("main.direct", 12, 11, [5, 5]),
+        ("main.direct", 12, 5, [5, 5]),
+        // The small aggregate path materializes a known leaf from a scalar value slot.
+        ("main.small", 18, 11, [1, 2]),
+        ("main.small", 18, 5, [2, 4]),
+        // A one-instruction aggregate Load ties the enclosing range's width.
+        ("main.one", 23, 11, [0, 1]),
+    ] {
+        let location = SourceLocation {
+            path: "main.ond".into(),
+            line,
+            column,
+        };
+        let mut source_ranges = linked
+            .debug
+            .ranges
+            .iter()
+            .filter(|range| range.function == name && range.source.as_ref() == Some(&location));
+        let first = source_ranges.next().unwrap();
+        let (start, end) = source_ranges.fold((first.start, first.end), |(start, end), range| {
+            (start.min(range.start), end.max(range.end))
+        });
+        let function = linked
+            .debug
+            .functions
+            .iter()
+            .find(|f| f.symbol == name)
+            .unwrap();
+        let (object, symbol) = objects
+            .iter()
+            .find_map(|object| {
+                let symbol = object.symbols.iter().find(|symbol| symbol.name == name)?;
+                Some((object, symbol))
+            })
+            .unwrap();
+        let object_base = function.address - symbol.offset;
+        let mut counts = [0, 0];
+        let mut incorrect = 0;
+        for pc in (start..end).step_by(4) {
+            if object.relocations.iter().any(|relocation| {
+                relocation.section == SectionKind::Text
+                    && relocation.kind == RelocationKind::Abs32
+                    && object_base + relocation.offset == pc
+            }) {
+                continue;
+            }
+            let offset = (pc - section.load_address) as usize;
+            let word = u32::from_le_bytes(section.data[offset..offset + 4].try_into().unwrap());
+            let (index, expected) = match word >> 28 {
+                4 | 5 | 7 => (0, DebugOperation::MemoryRead),
+                8 | 9 | 11 => (1, DebugOperation::MemoryWrite),
+                _ => continue,
+            };
+            counts[index] += 1;
+            let range = linked
+                .debug
+                .ranges
+                .iter()
+                .filter(|range| range.start <= pc && pc < range.end)
+                .min_by_key(|range| range.end - range.start)
+                .unwrap();
+            if range.operation != expected || range.source.as_ref() != Some(&location) {
+                incorrect += 1;
+            }
+        }
+        assert_eq!(counts, expected_counts, "{name}:{line}:{column}");
+        if incorrect > 0 {
+            mismatches.push((name, line, column, incorrect));
+        }
+    }
+    assert!(
+        mismatches.is_empty(),
+        "incorrect access ranges: {mismatches:?}"
+    );
+}
 
 #[test]
 fn numeric_helper_call_slots_have_call_ranges_and_preserve_other_classifications() {

@@ -231,6 +231,17 @@ fn lower_body_using(
             }
             let end = cx.e.offset(i.span)?;
             let operation = instruction_operation(i, cx.e.has_call_since(start));
+            let aggregate_transfer = match &i.kind {
+                mir::InstructionKind::Load { place, .. }
+                | mir::InstructionKind::Store { place, .. } => {
+                    layout::aggregate(&p.types, place.ty)
+                }
+                mir::InstructionKind::AggregateCopy { .. } => true,
+                _ => false,
+            };
+            if aggregate_transfer {
+                cx.record_aggregate_accesses(start, end, operation, i.span);
+            }
             if !matches!(i.kind, mir::InstructionKind::InlineAssembly { .. }) {
                 cx.record_range(start, end, operation, None, i.span);
             }
@@ -282,6 +293,27 @@ pub(super) struct Context<'a> {
     previous: Option<mir::ValueId>,
 }
 impl Context<'_> {
+    fn record_aggregate_accesses(
+        &mut self,
+        start: u32,
+        end: u32,
+        enclosing: DebugOperation,
+        span: Span,
+    ) {
+        // Emit overrides first so a single-instruction transfer also wins the width tie.
+        self.ranges.extend(
+            self.e
+                .aggregate_accesses(start, end)
+                .filter(|(_, operation)| *operation != enclosing)
+                .map(|(pc, operation)| PendingDebugRange {
+                    start: pc - self.function_start,
+                    end: pc - self.function_start + 4,
+                    operation,
+                    message: None,
+                    span,
+                }),
+        );
+    }
     pub(super) fn record_range(
         &mut self,
         start: u32,
