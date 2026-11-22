@@ -24,6 +24,6 @@ func main() {
 ## 型をoperandにする
 
 括弧内には値ではなく型を書きます。\
-field配置とpaddingの規則はtargetのdata layoutに従います。
+型のsize上限、field配置、paddingの規則は[Data Layout](../../../../specs/ond/targets/kagura-v1/machine.md#5-data-layout)を参照してください。
 
-共通manifestとcompile/linkは[最初のプログラム](../../getting-started/first-program.md)、builtinとlayoutは[組み込み仕様](../../../../specs/ond/language/v1/builtins.md#組み込み構文)を参照してください。
+共通manifestとcompile/linkは[最初のプログラム](../../getting-started/first-program.md)、builtinは[組み込み仕様](../../../../specs/ond/language/v1/builtins.md#組み込み構文)で確認できます。

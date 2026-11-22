@@ -121,6 +121,10 @@ impl Diagnostics {
         self.items.extend(diagnostics.items);
     }
 
+    pub(crate) fn retain(&mut self, keep: impl FnMut(&Diagnostic) -> bool) {
+        self.items.retain(keep);
+    }
+
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }

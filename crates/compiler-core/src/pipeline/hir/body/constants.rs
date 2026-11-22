@@ -159,6 +159,8 @@ impl BodyLowerer<'_> {
         let saved_constants = std::mem::take(&mut self.constants);
         let saved_null_terminated_constants = std::mem::take(&mut self.null_terminated_constants);
         self.package_id = package_id;
+        // Validate struct layout at the declaration, before caller substitutions.
+        let layout_recording = self.types.set_struct_layout_site_recording(false);
         let value = (|| {
             let ty = match annotation {
                 Some(ref ty) => Some(self.resolve_type(ty)?),
@@ -166,6 +168,8 @@ impl BodyLowerer<'_> {
             };
             self.constant_expr(&source, ty)
         })();
+        self.types
+            .set_struct_layout_site_recording(layout_recording);
         self.package_id = saved_package;
         self.names = saved_names;
         self.constants = saved_constants;

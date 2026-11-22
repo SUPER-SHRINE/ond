@@ -4,6 +4,7 @@ use crate::diagnostic::{Diagnostic, Diagnostics, Label};
 use crate::ir::{ast, hir};
 use crate::source::Span;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use super::body::lower_typed_body_with_substitutions;
 use super::types::{
@@ -48,6 +49,7 @@ pub(super) fn instantiate_generic_functions(
         else {
             break;
         };
+        types.set_struct_layout_specialization(Some(&symbol));
         let specialization = universe.iter().find_map(|package| {
             package
                 .specializations
@@ -397,12 +399,33 @@ pub(super) fn instantiate_generic_functions(
         }));
         generated.insert(symbol);
     }
+    types.set_struct_layout_specialization(None);
     if failed_diagnostics.is_empty() {
         return;
     }
     let uses = collect_generic_uses(universe);
     for (symbol, description, diagnostic) in failed_diagnostics {
         report_generic_diagnostic(diagnostics, diagnostic, &symbol, &uses, &description);
+    }
+}
+
+pub(super) fn report_layout_diagnostics(
+    universe: &[TypePackage],
+    diagnostics: &mut Diagnostics,
+    errors: Vec<(Arc<str>, Diagnostic)>,
+) {
+    if errors.is_empty() {
+        return;
+    }
+    let uses = collect_generic_uses(universe);
+    for (symbol, diagnostic) in errors {
+        report_generic_diagnostic(
+            diagnostics,
+            diagnostic,
+            &symbol,
+            &uses,
+            "generic specialization",
+        );
     }
 }
 

@@ -1,4 +1,4 @@
-//! Fixed arrays must fit the 32-bit byte-size limit before MIR lowering.
+//! Fixed arrays and structs must fit the 32-bit byte-size limit before MIR lowering.
 use crate::test_support::compile;
 
 #[test]
@@ -143,19 +143,177 @@ fn recursive_pointer_elements_are_checked_after_resolution() {
 }
 
 #[test]
-fn array_validation_does_not_impose_a_standalone_struct_size_policy() {
-    let huge = "type Huge struct { first: [4294967295]u8; last: u8 }";
-    for declaration in [
-        "",
-        "type Empty [0]Huge",
-        "type Empty [1][0]Huge",
-        "type Empty [4294967295][0]Huge",
+fn struct_layout_limit_accepts_u32_max_and_zero_length_wrappers() {
+    let source = "package main
+type Largest struct { first: [4294967294]u8; last: u8 }
+type Empty [0]Largest
+type NestedEmpty [1][0]Largest
+type RepeatedEmpty [4294967295][0]Largest
+func main() {}
+";
+    let result = compile(source, None).unwrap();
+    for (name, size) in [
+        ("main.Largest", u32::MAX),
+        ("main.Empty", 0),
+        ("main.NestedEmpty", 0),
+        ("main.RepeatedEmpty", 0),
     ] {
-        let source = format!("package main\n{huge}\n{declaration}\nfunc main() {{}}\n");
-        compile(&source, None).unwrap_or_else(|error| panic!("{source}: {error}"));
+        let ty = result.hir.types.find_named(name).unwrap();
+        assert_eq!(result.hir.types.size_align(ty), Ok((size, 1)));
     }
-    let source = format!("package main\n{huge}\ntype TooLarge [1]Huge\nfunc main() {{}}\n");
-    crate::test_support::reject(&source, None, "array layout overflow", "[1]Huge");
+}
+
+#[test]
+fn struct_layout_limit_checks_field_sizes_and_padding_without_values() {
+    for (type_prefix, structure) in [
+        ("", "struct { first: [4294967295]u8; last: u8 }"),
+        // A zero-length field adds no bytes but still aligns its start.
+        ("", "struct { first: [4294967295]u8; last: [0]u16 }"),
+        // The last field ends at u32::MAX before final alignment.
+        (
+            "",
+            "struct { first: [4294967292]u8; second: u16; last: u8 }",
+        ),
+        ("*", "struct { first: [4294967295]u8; last: u8 }"),
+        ("[0]", "struct { first: [4294967295]u8; last: u8 }"),
+    ] {
+        let source =
+            format!("package main\ntype Unused {type_prefix}{structure}\nfunc main() {{}}\n");
+        crate::test_support::reject(&source, None, "struct layout overflow", structure);
+    }
+}
+
+#[test]
+fn struct_layout_limit_checks_concrete_generic_structs() {
+    let structure = "struct { first: [4294967295]u8; last: T }";
+    for declaration in ["", "type Pointer *Buffer[struct {}]"] {
+        let source =
+            format!("package main\ntype Buffer[T] {structure}\n{declaration}\nfunc main() {{}}\n");
+        compile(&source, None).unwrap();
+    }
+    let source = format!(
+        "package main\ntype Buffer[T] {structure}\ntype Pointer *Buffer[u8]\nfunc main() {{}}\n"
+    );
+    let error = compile(&source, None).expect_err(&source);
+    let [diagnostic] = error.diagnostics() else {
+        panic!("one concrete struct layout error expected: {error}");
+    };
+    assert_eq!(diagnostic.message, "struct layout overflow");
+    let primary = diagnostic.primary.span;
+    assert_eq!(&source[primary.start..primary.end], "Buffer[u8]");
+    let [related] = diagnostic.related.as_slice() else {
+        panic!("one generic definition position expected: {error}");
+    };
+    assert_eq!(&source[related.span.start..related.span.end], structure);
+}
+
+#[test]
+fn struct_layout_diagnostics_keep_sites_after_type_interning() {
+    let plain = "struct { first: [4294967295]u8; last: u8 }";
+    let generic = "struct { first: [4294967295]u8; last: T }";
+    let source = format!(
+        "package main\ntype Plain {plain}\ntype Buffer[T] [0]{generic}\n\
+         type First *Buffer[u8]\ntype Second Buffer[u8]\nfunc main() {{}}\n"
+    );
+    let error = compile(&source, None).expect_err(&source);
+    let mut expected = vec![source.find(plain).unwrap()];
+    expected.extend(source.match_indices("Buffer[u8]").map(|(offset, _)| offset));
+    let mut primary_offsets = Vec::new();
+    for diagnostic in error.diagnostics() {
+        assert_eq!(diagnostic.message, "struct layout overflow");
+        let primary = diagnostic.primary.span;
+        primary_offsets.push(primary.start);
+        if &source[primary.start..primary.end] == "Buffer[u8]" {
+            let [related] = diagnostic.related.as_slice() else {
+                panic!("one generic definition position expected: {error}");
+            };
+            assert_eq!(&source[related.span.start..related.span.end], generic);
+        } else {
+            assert_eq!(&source[primary.start..primary.end], plain);
+            assert!(diagnostic.related.is_empty());
+        }
+    }
+    primary_offsets.sort_unstable();
+    assert_eq!(primary_offsets, expected);
+}
+
+#[test]
+fn struct_layout_diagnostics_follow_nested_generic_type_requests() {
+    let structure = "struct { first: [4294967295]u8; last: T }";
+    let source = format!(
+        "package main\ntype Inner[T] {structure}\ntype Outer[T] [0]Inner[T]\n\
+         type First *Outer[u8]\ntype Second Outer[u8]\nfunc main() {{}}\n"
+    );
+    let error = compile(&source, None).expect_err(&source);
+    let mut primary_offsets = Vec::new();
+    for diagnostic in error.diagnostics() {
+        assert_eq!(diagnostic.message, "struct layout overflow");
+        let primary = diagnostic.primary.span;
+        assert_eq!(&source[primary.start..primary.end], "Outer[u8]");
+        primary_offsets.push(primary.start);
+        let related = diagnostic
+            .related
+            .iter()
+            .map(|label| &source[label.span.start..label.span.end])
+            .collect::<Vec<_>>();
+        assert_eq!(related, [structure, "Inner[T]"]);
+    }
+    primary_offsets.sort_unstable();
+    let expected = source.match_indices("Outer[u8]").map(|(offset, _)| offset);
+    assert!(primary_offsets.into_iter().eq(expected));
+}
+
+#[test]
+fn struct_layout_limit_only_checks_selected_generic_operator_signatures() {
+    let source = "package main
+type Buffer[T] [1]T
+operator (self: Buffer[T]) [](index: *struct { first: [4294967295]u8; last: T }) -> T { return self[0 as u32] }
+func probe(buffer: Buffer[u8], index: u32) -> u8 { return buffer[index] }
+func main() {}
+";
+    compile(source, None).unwrap();
+
+    let selected_source = "package main
+type Buffer[T] [1]T
+operator (self: Buffer[T]) - () -> *struct { first: [4294967295]u8; last: T } { return nil }
+func probe(buffer: Buffer[u8]) { _ = -buffer }
+func main() {}
+";
+    let error = compile(selected_source, None).expect_err("selected operator must be checked");
+    let [diagnostic] = error.diagnostics() else {
+        panic!("one concrete struct layout error expected: {error}");
+    };
+    assert_eq!(diagnostic.message, "struct layout overflow");
+}
+
+#[test]
+fn struct_layout_limit_checks_package_constants_in_their_declared_scope() {
+    let structure = "struct { first: [4294967295]u8; last: Element }";
+    for main_body in ["", "Use[u8]()"] {
+        let source = format!(
+            "package main\ntype Element struct {{}}\nconst Word: u32 = sizeof(*{structure})\n\
+             func Use[Element]() {{ _ = Word }}\nfunc main() {{ {main_body} }}\n"
+        );
+        compile(&source, None).unwrap();
+        crate::test_support::reject(
+            &source.replace("type Element struct {}", "type Element u8"),
+            None,
+            "struct layout overflow",
+            structure,
+        );
+    }
+}
+
+#[test]
+fn struct_layout_limit_checks_declarations_first_reached_during_constant_replay() {
+    let structure = "struct { first: [4294967295]u8; last: u8 }";
+    for name in ["A", "Z"] {
+        let source = format!(
+            "package main\ntype {name} [Word]u8\ntype TooBig {structure}\n\
+             const Word: u32 = sizeof(*TooBig)\nfunc main() {{}}\n"
+        );
+        crate::test_support::reject(&source, None, "struct layout overflow", structure);
+    }
 }
 
 #[test]
@@ -199,9 +357,9 @@ fn array_validation_reuses_shared_struct_layouts() {
         compile(&source("struct {}", 64, declaration), None).unwrap();
     }
     compile(&source("u8", 31, "type Unused [1]S31"), None).unwrap();
-    compile(&source("u8", 64, "type Unused [0]S64"), None).unwrap();
-    let rejected = source("u8", 64, "type Unused [1]S64");
-    crate::test_support::reject(&rejected, None, "array layout overflow", "[1]S64");
+    compile(&source("u8", 31, "type Unused [0]S31"), None).unwrap();
+    let rejected = source("u8", 31, "type Unused [2]S31");
+    crate::test_support::reject(&rejected, None, "array layout overflow", "[2]S31");
 }
 
 #[test]
