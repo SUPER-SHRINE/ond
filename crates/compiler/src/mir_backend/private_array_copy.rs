@@ -18,52 +18,13 @@ impl Plan {
             .locals
             .iter()
             .any(|l| l.kind == mir::LocalKind::Temporary && is_array(l.ty))
-            || f.locals.iter().any(|l| l.address_taken)
-            || abi.hidden.is_some()
-            || f.parameters
-                .iter()
-                .any(|id| layout::aggregate(types, f.locals[id.0 as usize].ty))
         {
             return plan;
         }
 
         let mut references = vec![0usize; f.locals.len()];
-        let mut count_private_place = |place: &Place, access| {
-            let PlaceBase::Local(id) = place.base else {
-                return false;
-            };
-            if access != AccessKind::Local
-                || !place
-                    .projections
-                    .iter()
-                    .all(|p| matches!(p, Projection::Field { .. } | Projection::Index { .. }))
-            {
-                return false;
-            }
-            references[id.0 as usize] += 1;
-            true
-        };
-        // Restrict the whole function so a raw address, call or asm cannot
-        // access a private slot that moves or disappears.
-        for inst in f.blocks.iter().flat_map(|b| &b.instructions) {
-            let private = match &inst.kind {
-                I::Load { place, access } | I::Store { place, access, .. } => {
-                    count_private_place(place, *access)
-                }
-                I::AggregateCopy {
-                    source,
-                    destination,
-                    access,
-                } => {
-                    count_private_place(source, *access)
-                        && count_private_place(destination, *access)
-                }
-                I::AddressOf(_) | I::Call { .. } | I::InlineAssembly { .. } => false,
-                _ => true,
-            };
-            if !private {
-                return plan;
-            }
+        if !private_places(types, f, abi, |id| references[id.0 as usize] += 1) {
+            return plan;
         }
 
         for pair in f.blocks.iter().flat_map(|b| b.instructions.windows(2)) {
@@ -101,4 +62,50 @@ impl Plan {
         }
         plan
     }
+}
+
+// The whole function must keep the stack slots private, including across
+// calls, asm, and raw or ordered memory accesses.
+pub(super) fn private_places(
+    types: &mir::TypeTable,
+    f: &mir::Function,
+    abi: &layout::AbiPlan,
+    mut visit: impl FnMut(mir::LocalId),
+) -> bool {
+    if f.locals.iter().any(|l| l.address_taken)
+        || abi.hidden.is_some()
+        || f.parameters
+            .iter()
+            .any(|id| layout::aggregate(types, f.locals[id.0 as usize].ty))
+    {
+        return false;
+    }
+    let mut private = |place: &Place, access| {
+        let PlaceBase::Local(id) = place.base else {
+            return false;
+        };
+        if access != AccessKind::Local
+            || !place
+                .projections
+                .iter()
+                .all(|p| matches!(p, Projection::Field { .. } | Projection::Index { .. }))
+        {
+            return false;
+        }
+        visit(id);
+        true
+    };
+    f.blocks
+        .iter()
+        .flat_map(|b| &b.instructions)
+        .all(|inst| match &inst.kind {
+            I::Load { place, access } | I::Store { place, access, .. } => private(place, *access),
+            I::AggregateCopy {
+                source,
+                destination,
+                access,
+            } => private(source, *access) && private(destination, *access),
+            I::AddressOf(_) | I::Call { .. } | I::InlineAssembly { .. } => false,
+            _ => true,
+        })
 }

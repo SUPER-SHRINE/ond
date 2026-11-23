@@ -34,6 +34,22 @@ pub(super) fn lower_without_private_array_copies(
     )
 }
 
+#[cfg(test)]
+pub(super) fn lower_without_private_copy_loops(
+    project: &mir::Project,
+    globals: &[mir::Global],
+    f: &Function,
+    emitter: &mut Emitter,
+) -> Result<function::PendingFunctionDebug, Diagnostic> {
+    lower_using(
+        project,
+        globals,
+        f,
+        emitter,
+        function::lower_without_private_copy_loops,
+    )
+}
+
 fn lower_using(
     project: &mir::Project,
     globals: &[mir::Global],

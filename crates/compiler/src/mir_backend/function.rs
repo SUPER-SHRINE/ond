@@ -35,6 +35,32 @@ pub(super) struct EmittedBlock {
     pub end: usize,
 }
 
+enum PrivateArrayCopies {
+    Standard,
+    #[cfg(test)]
+    NoForwarding,
+    #[cfg(test)]
+    NoLoops,
+}
+
+impl PrivateArrayCopies {
+    fn forward(&self) -> bool {
+        match self {
+            #[cfg(test)]
+            Self::NoForwarding => false,
+            _ => true,
+        }
+    }
+
+    fn looped(&self) -> bool {
+        match self {
+            #[cfg(test)]
+            Self::NoLoops => false,
+            _ => true,
+        }
+    }
+}
+
 pub(super) fn lower(
     p: &mir::Project,
     f: &mir::Function,
@@ -50,7 +76,15 @@ pub(super) fn lower_body(
     induction: Option<&raw_induction::Plan>,
     emitted: Option<&mut EmittedLayout>,
 ) -> Result<PendingFunctionDebug, Diagnostic> {
-    lower_body_using(p, f, e, induction, emitted, &quotient_reuse::plan(f), true)
+    lower_body_using(
+        p,
+        f,
+        e,
+        induction,
+        emitted,
+        &quotient_reuse::plan(f),
+        PrivateArrayCopies::Standard,
+    )
 }
 
 #[cfg(test)]
@@ -59,7 +93,15 @@ pub(super) fn lower_without_quotient_reuse(
     f: &mir::Function,
     e: &mut Emitter,
 ) -> Result<PendingFunctionDebug, Diagnostic> {
-    lower_body_using(p, f, e, None, None, &quotient_reuse::Plan::new(), true)
+    lower_body_using(
+        p,
+        f,
+        e,
+        None,
+        None,
+        &quotient_reuse::Plan::new(),
+        PrivateArrayCopies::Standard,
+    )
 }
 
 #[cfg(test)]
@@ -68,7 +110,32 @@ pub(super) fn lower_without_private_array_copies(
     f: &mir::Function,
     e: &mut Emitter,
 ) -> Result<PendingFunctionDebug, Diagnostic> {
-    lower_body_using(p, f, e, None, None, &quotient_reuse::plan(f), false)
+    lower_body_using(
+        p,
+        f,
+        e,
+        None,
+        None,
+        &quotient_reuse::plan(f),
+        PrivateArrayCopies::NoForwarding,
+    )
+}
+
+#[cfg(test)]
+pub(super) fn lower_without_private_copy_loops(
+    p: &mir::Project,
+    f: &mir::Function,
+    e: &mut Emitter,
+) -> Result<PendingFunctionDebug, Diagnostic> {
+    lower_body_using(
+        p,
+        f,
+        e,
+        None,
+        None,
+        &quotient_reuse::plan(f),
+        PrivateArrayCopies::NoLoops,
+    )
 }
 
 fn lower_body_using(
@@ -78,7 +145,7 @@ fn lower_body_using(
     induction: Option<&raw_induction::Plan>,
     mut emitted: Option<&mut EmittedLayout>,
     quotients: &quotient_reuse::Plan,
-    optimize_private_copies: bool,
+    array_copies: PrivateArrayCopies,
 ) -> Result<PendingFunctionDebug, Diagnostic> {
     let signature = mir::FunctionType {
         parameters: f
@@ -91,7 +158,7 @@ fn lower_body_using(
     let abi = layout::abi(&p.types, &signature, f.span)?;
     let mut aggregates = super::local_aggregate::LocalAggregates::new(&p.types, f, &abi);
     // Keep the existing small-aggregate optimization and its original frame.
-    let private_copies = if optimize_private_copies && aggregates.is_none() {
+    let private_copies = if array_copies.forward() && aggregates.is_none() {
         private_array_copy::Plan::new(&p.types, f, &abi)
     } else {
         private_array_copy::Plan::default()
@@ -190,6 +257,14 @@ fn lower_body_using(
     if let Some(code) = &mut emitted {
         code.prologue_end = e.words.len();
     }
+    let private_copy_loops = array_copies.looped()
+        && f.locals.iter().any(|l| {
+            matches!(
+                p.types.underlying_kind(l.ty),
+                Some(mir::TypeKind::Array { .. })
+            )
+        })
+        && private_array_copy::private_places(&p.types, f, &abi, |_| {});
     let mut cx = Context {
         p,
         f,
@@ -203,6 +278,7 @@ fn lower_body_using(
         retained: None,
         previous: None,
         induction: induction.is_some(),
+        private_copy_loops,
     };
     let proven_bounds = super::bounds::proven_checks(&p.types, f);
     for b in &f.blocks {
@@ -291,6 +367,7 @@ pub(super) struct Context<'a> {
     pub(super) retained: Option<mir::ValueId>,
     pub(super) induction: bool,
     previous: Option<mir::ValueId>,
+    private_copy_loops: bool,
 }
 impl Context<'_> {
     fn record_aggregate_accesses(
@@ -356,6 +433,13 @@ impl Context<'_> {
     pub(super) fn ty(&self, id: mir::ValueId) -> mir::TypeId {
         self.f.values[id.0 as usize].ty
     }
+    fn copy_aggregate(&mut self, ty: mir::TypeId, span: Span) -> Result<(), Diagnostic> {
+        if self.private_copy_loops {
+            memory::copy_private_array(self.e, &self.p.types, ty, span)
+        } else {
+            memory::copy(self.e, &self.p.types, ty, span)
+        }
+    }
     fn store(
         &mut self,
         place: &mir::Place,
@@ -366,7 +450,7 @@ impl Context<'_> {
         self.e.emit(0, 5, 4, 0, 0);
         if layout::aggregate(&self.p.types, place.ty) {
             memory::address(self.e, 4, self.frame.value(value));
-            memory::copy(self.e, &self.p.types, place.ty, span)?;
+            self.copy_aggregate(place.ty, span)?;
         } else {
             self.load(value, 1);
             if layout::words(&self.p.types, place.ty) == 2 {
@@ -426,7 +510,7 @@ impl Context<'_> {
                 self.place(place, i.span)?;
                 if layout::aggregate(&self.p.types, place.ty) {
                     memory::address(self.e, 5, self.frame.value(i.results[0]));
-                    memory::copy(self.e, &self.p.types, place.ty, i.span)?;
+                    self.copy_aggregate(place.ty, i.span)?;
                     return Ok(());
                 }
                 memory::read(
@@ -447,11 +531,11 @@ impl Context<'_> {
             } => {
                 self.place(source, i.span)?;
                 memory::address(self.e, 5, self.frame.scratch);
-                memory::copy(self.e, &self.p.types, source.ty, i.span)?;
+                self.copy_aggregate(source.ty, i.span)?;
                 self.place(destination, i.span)?;
                 self.e.emit(0, 5, 4, 0, 0);
                 memory::address(self.e, 4, self.frame.scratch);
-                memory::copy(self.e, &self.p.types, source.ty, i.span)?;
+                self.copy_aggregate(source.ty, i.span)?;
             }
             I::InlineAssembly {
                 program,

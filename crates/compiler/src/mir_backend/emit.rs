@@ -39,17 +39,30 @@ impl Emitter {
         self.emit(12, 0, condition, 0, 0);
     }
     pub fn immediate(&mut self, reg: u8, bits: u32) {
-        let low = bits as i16;
-        if low as i32 as u32 == bits {
-            self.emit(0, reg, 0, 0, low);
-        } else {
-            let high = (bits.wrapping_sub(low as i32 as u32) >> 16) as i16;
+        let (low, high) = Self::immediate_parts(bits);
+        if let Some(high) = high {
             self.emit(0, reg, 0, 0, high);
             self.emit(2, reg, reg, 0, 16);
             if low != 0 {
                 self.emit(0, reg, reg, 0, low);
             }
+        } else {
+            self.emit(0, reg, 0, 0, low);
         }
+    }
+    pub fn immediate_words(bits: u32) -> u64 {
+        let (low, high) = Self::immediate_parts(bits);
+        if high.is_some() {
+            2 + u64::from(low != 0)
+        } else {
+            1
+        }
+    }
+    fn immediate_parts(bits: u32) -> (i16, Option<i16>) {
+        let low = bits as i16;
+        let high = (low as i32 as u32 != bits)
+            .then(|| (bits.wrapping_sub(low as i32 as u32) >> 16) as i16);
+        (low, high)
     }
     pub fn symbol(&mut self, reg: u8, name: &str, span: Span) -> Result<(), Diagnostic> {
         // Inline address literal: capture PC, load literal, skip its data word.
@@ -83,14 +96,28 @@ impl Emitter {
             .take_while(|relocation| relocation.offset >= offset)
             .any(|relocation| relocation.kind == RelocationKind::CallSlot)
     }
-    /// Memory instructions in a straight-line aggregate transfer.
+    /// Memory instructions in an aggregate transfer with no expandable fixups.
     pub fn aggregate_accesses(
         &self,
         start: u32,
         end: u32,
     ) -> impl Iterator<Item = (u32, DebugOperation)> + '_ {
         let first = (start / 4) as usize;
-        debug_assert!(self.branches.last().is_none_or(|branch| branch.0 < first));
+        let last = (end / 4) as usize;
+        // A resolved near branch only patches the immediate of its existing
+        // JZ. Far branches may insert a load and unmarked literal after this scan.
+        debug_assert!(
+            self.branches
+                .iter()
+                .rev()
+                .skip_while(|branch| branch.0 >= last)
+                .take_while(|branch| branch.0 >= first)
+                .all(|&(at, label, _, near)| near
+                    && self.labels[label].is_some_and(|target| {
+                        (first..last).contains(&target)
+                            && i16::try_from(target as i64 - at as i64 - 1).is_ok()
+                    }))
+        );
         debug_assert!(!self.has_call_since(start));
         let first_relocation = self.relocations.partition_point(|r| r.offset < start);
         let mut literals = self.relocations[first_relocation..]
@@ -100,7 +127,7 @@ impl Emitter {
             .peekable();
         (start..end)
             .step_by(4)
-            .zip(&self.words[first..(end / 4) as usize])
+            .zip(&self.words[first..last])
             .filter_map(move |(pc, word)| {
                 // A symbolic place emits a load followed by an address literal.
                 if literals.next_if_eq(&pc).is_some() {

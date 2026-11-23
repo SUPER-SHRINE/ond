@@ -38,6 +38,8 @@ mod ordered_tests;
 mod private_array_copy;
 #[cfg(test)]
 mod private_array_copy_tests;
+#[cfg(test)]
+mod private_copy_loop_tests;
 mod quotient_reuse;
 #[cfg(test)]
 mod quotient_reuse_tests;
