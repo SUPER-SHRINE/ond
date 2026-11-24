@@ -45,6 +45,9 @@ mod quotient_reuse;
 mod quotient_reuse_tests;
 mod raw_induction;
 mod readonly;
+mod return_relay;
+#[cfg(test)]
+mod return_relay_tests;
 pub mod runtime;
 #[cfg(test)]
 mod test_build_tests;

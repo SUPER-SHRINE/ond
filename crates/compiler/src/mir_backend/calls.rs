@@ -1,5 +1,6 @@
 //! ABI marshaling. Argument copies, snapshots and return areas never overlap.
 use super::{function::Context, memory, *};
+use ond_protocol::debug::DebugOperation;
 impl Context<'_> {
     pub(super) fn call(
         &mut self,
@@ -84,25 +85,36 @@ impl Context<'_> {
             _ => unreachable!(),
         }
         if abi.hidden.is_some() {
-            for (value, offset) in i.results.iter().zip(abi.return_offsets) {
-                if layout::aggregate(&self.p.types, self.ty(*value)) {
-                    self.copy_slots(
-                        returns + offset,
-                        self.frame.value(*value),
-                        self.ty(*value),
-                        i.span,
-                    )?;
-                } else {
-                    memory::address(self.e, 4, returns + offset);
-                    memory::read(
-                        self.e,
-                        1,
-                        4,
-                        0,
-                        layout::scalar(&self.p.types, self.ty(*value), i.span)?,
-                    );
-                    self.store_result(*value, 1);
+            let relay = self.return_relay.filter(|relay| relay.call == i.id);
+            // Start after the call slot, which the linker can rewrite.
+            let start = relay.map(|_| self.e.offset(i.span)).transpose()?;
+            if let Some(relay) = relay.filter(|_| self.emit_return_relay) {
+                relay.read_child(self.e, returns);
+            } else {
+                for (value, offset) in i.results.iter().zip(abi.return_offsets) {
+                    if layout::aggregate(&self.p.types, self.ty(*value)) {
+                        self.copy_slots(
+                            returns + offset,
+                            self.frame.value(*value),
+                            self.ty(*value),
+                            i.span,
+                        )?;
+                    } else {
+                        memory::address(self.e, 4, returns + offset);
+                        memory::read(
+                            self.e,
+                            1,
+                            4,
+                            0,
+                            layout::scalar(&self.p.types, self.ty(*value), i.span)?,
+                        );
+                        self.store_result(*value, 1);
+                    }
                 }
+            }
+            if let Some(start) = start {
+                let end = self.e.offset(i.span)?;
+                self.record_aggregate_accesses(start, end, DebugOperation::Call, i.span);
             }
         } else {
             let mut r = 1;
@@ -138,27 +150,32 @@ impl Context<'_> {
         span: Span,
     ) -> Result<(), Diagnostic> {
         if self.abi.hidden.is_some() {
-            for (n, value) in values.iter().enumerate() {
-                self.e.load(5, self.frame.incoming[0]);
-                self.e.immediate(2, self.abi.return_offsets[n]);
-                self.e.emit(0, 5, 5, 2, 0);
-                if layout::aggregate(&self.p.types, self.ty(*value)) {
-                    memory::address(self.e, 4, self.frame.value(*value));
-                    memory::copy(self.e, &self.p.types, self.ty(*value), span)?;
-                } else {
-                    self.load(*value, 1);
-                    let ty = layout::scalar(&self.p.types, self.ty(*value), span)?;
-                    if ty.size == 8 {
-                        self.load_word(*value, 1, 2);
-                    }
-                    memory::write(self.e, 1, 5, 0, ty);
-                    // Narrow Direct-1 slots can start at a non-word-aligned record offset.
-                    // Preserve the natural alignment and canonical zero upper ABI bits.
-                    let byte = layout::scalar(&self.p.types, mir::TypeId::U8, span)?;
-                    for offset in ty.size..4 {
-                        memory::write(self.e, 0, 5, offset, byte);
+            let relay = self.return_relay;
+            let start = relay.map(|_| self.e.offset(span)).transpose()?;
+            if let Some(relay) = relay.filter(|_| self.emit_return_relay) {
+                relay.write_parent(self.e, self.frame.incoming[0]);
+            } else {
+                for (n, value) in values.iter().enumerate() {
+                    self.e.load(5, self.frame.incoming[0]);
+                    self.e.immediate(2, self.abi.return_offsets[n]);
+                    self.e.emit(0, 5, 5, 2, 0);
+                    if layout::aggregate(&self.p.types, self.ty(*value)) {
+                        memory::address(self.e, 4, self.frame.value(*value));
+                        memory::copy(self.e, &self.p.types, self.ty(*value), span)?;
+                    } else {
+                        self.load(*value, 1);
+                        let ty = layout::scalar(&self.p.types, self.ty(*value), span)?;
+                        if ty.size == 8 {
+                            self.load_word(*value, 1, 2);
+                        }
+                        memory::write(self.e, 1, 5, 0, ty);
+                        memory::zero_upper_slot_bytes(self.e, ty);
                     }
                 }
+            }
+            if let Some(start) = start {
+                let end = self.e.offset(span)?;
+                self.record_aggregate_accesses(start, end, DebugOperation::Source, span);
             }
         } else {
             let mut reg = 1;

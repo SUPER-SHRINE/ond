@@ -61,6 +61,12 @@ pub(super) fn store_opcode(ty: layout::ScalarLayout) -> u32 {
         _ => 11,
     }
 }
+/// Narrow Direct-1 return slots use natural alignment and zero upper bytes.
+pub(super) fn zero_upper_slot_bytes(e: &mut Emitter, ty: layout::ScalarLayout) {
+    for offset in ty.size..4 {
+        e.emit(8, 0, 5, 0, offset as i16);
+    }
+}
 /// Source/destination must be disjoint or identical. Arbitrary alias uses a snapshot first.
 pub(super) fn copy(
     e: &mut Emitter,

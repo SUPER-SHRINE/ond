@@ -35,15 +35,17 @@ pub(super) struct EmittedBlock {
     pub end: usize,
 }
 
-enum PrivateArrayCopies {
+enum LoweringVariant {
     Standard,
     #[cfg(test)]
     NoForwarding,
     #[cfg(test)]
     NoLoops,
+    #[cfg(test)]
+    NoReturnRelay,
 }
 
-impl PrivateArrayCopies {
+impl LoweringVariant {
     fn forward(&self) -> bool {
         match self {
             #[cfg(test)]
@@ -56,6 +58,14 @@ impl PrivateArrayCopies {
         match self {
             #[cfg(test)]
             Self::NoLoops => false,
+            _ => true,
+        }
+    }
+
+    fn emit_return_relay(&self) -> bool {
+        match self {
+            #[cfg(test)]
+            Self::NoReturnRelay => false,
             _ => true,
         }
     }
@@ -83,7 +93,7 @@ pub(super) fn lower_body(
         induction,
         emitted,
         &quotient_reuse::plan(f),
-        PrivateArrayCopies::Standard,
+        LoweringVariant::Standard,
     )
 }
 
@@ -100,7 +110,7 @@ pub(super) fn lower_without_quotient_reuse(
         None,
         None,
         &quotient_reuse::Plan::new(),
-        PrivateArrayCopies::Standard,
+        LoweringVariant::Standard,
     )
 }
 
@@ -117,7 +127,7 @@ pub(super) fn lower_without_private_array_copies(
         None,
         None,
         &quotient_reuse::plan(f),
-        PrivateArrayCopies::NoForwarding,
+        LoweringVariant::NoForwarding,
     )
 }
 
@@ -134,7 +144,24 @@ pub(super) fn lower_without_private_copy_loops(
         None,
         None,
         &quotient_reuse::plan(f),
-        PrivateArrayCopies::NoLoops,
+        LoweringVariant::NoLoops,
+    )
+}
+
+#[cfg(test)]
+pub(super) fn lower_without_return_relay(
+    p: &mir::Project,
+    f: &mir::Function,
+    e: &mut Emitter,
+) -> Result<PendingFunctionDebug, Diagnostic> {
+    lower_body_using(
+        p,
+        f,
+        e,
+        None,
+        None,
+        &quotient_reuse::plan(f),
+        LoweringVariant::NoReturnRelay,
     )
 }
 
@@ -145,7 +172,7 @@ fn lower_body_using(
     induction: Option<&raw_induction::Plan>,
     mut emitted: Option<&mut EmittedLayout>,
     quotients: &quotient_reuse::Plan,
-    array_copies: PrivateArrayCopies,
+    variant: LoweringVariant,
 ) -> Result<PendingFunctionDebug, Diagnostic> {
     let signature = mir::FunctionType {
         parameters: f
@@ -158,7 +185,7 @@ fn lower_body_using(
     let abi = layout::abi(&p.types, &signature, f.span)?;
     let mut aggregates = super::local_aggregate::LocalAggregates::new(&p.types, f, &abi);
     // Keep the existing small-aggregate optimization and its original frame.
-    let private_copies = if array_copies.forward() && aggregates.is_none() {
+    let private_copies = if variant.forward() && aggregates.is_none() {
         private_array_copy::Plan::new(&p.types, f, &abi)
     } else {
         private_array_copy::Plan::default()
@@ -257,7 +284,7 @@ fn lower_body_using(
     if let Some(code) = &mut emitted {
         code.prologue_end = e.words.len();
     }
-    let private_copy_loops = array_copies.looped()
+    let private_copy_loops = variant.looped()
         && f.locals.iter().any(|l| {
             matches!(
                 p.types.underlying_kind(l.ty),
@@ -265,6 +292,9 @@ fn lower_body_using(
             )
         })
         && private_array_copy::private_places(&p.types, f, &abi, |_| {});
+    // The test baseline emits the original transfers for the same candidate
+    // and records matching operation/source information for those transfers.
+    let return_relay = return_relay::Plan::new(p, f, &abi);
     let mut cx = Context {
         p,
         f,
@@ -279,6 +309,8 @@ fn lower_body_using(
         previous: None,
         induction: induction.is_some(),
         private_copy_loops,
+        return_relay: return_relay.as_ref(),
+        emit_return_relay: variant.emit_return_relay(),
     };
     let proven_bounds = super::bounds::proven_checks(&p.types, f);
     for b in &f.blocks {
@@ -368,9 +400,11 @@ pub(super) struct Context<'a> {
     pub(super) induction: bool,
     previous: Option<mir::ValueId>,
     private_copy_loops: bool,
+    pub(super) return_relay: Option<&'a return_relay::Plan>,
+    pub(super) emit_return_relay: bool,
 }
 impl Context<'_> {
-    fn record_aggregate_accesses(
+    pub(super) fn record_aggregate_accesses(
         &mut self,
         start: u32,
         end: u32,
