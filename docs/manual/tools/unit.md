@@ -9,9 +9,9 @@
 `ond-unit` は Ond compiler の CLI を使って対象 project を compile、link します。\
 Kagura VM は `ond-unit` に含まれ、MMIO 設定を使って実機 device を置き換えられます。\
 `ond` と `ond-unit` の両方を PATH から実行できるようにしてください。\
-配布版では同じ release の組み合わせを使います。\
-たとえば `ond-unit` 0.4.0 には `ond` 0.4.0 を使います。\
-ソースから使う場合は Ond repository の root で次を実行し、生成される両方の実行ファイルを PATH から利用できるようにします。
+配布版では同じリリースの実行ファイルを組み合わせます。\
+たとえば `ond-unit` 0.5.0 に対応するのは `ond` 0.5.0 です。\
+ソースから使う場合は Ond リポジトリのルートで次を実行し、生成される両方の実行ファイルを PATH から利用できるようにしてください。
 
 ```console
 cargo build -p ond-cli -p ond-unit --locked
