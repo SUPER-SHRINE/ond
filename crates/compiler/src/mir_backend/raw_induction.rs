@@ -50,6 +50,22 @@ pub(super) fn lower_without_private_copy_loops(
     )
 }
 
+#[cfg(test)]
+pub(super) fn lower_with_discarded_call_results(
+    project: &mir::Project,
+    globals: &[mir::Global],
+    f: &Function,
+    emitter: &mut Emitter,
+) -> Result<function::PendingFunctionDebug, Diagnostic> {
+    lower_using(
+        project,
+        globals,
+        f,
+        emitter,
+        function::lower_with_discarded_call_results,
+    )
+}
+
 fn lower_using(
     project: &mir::Project,
     globals: &[mir::Global],
