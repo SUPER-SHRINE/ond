@@ -9,6 +9,9 @@ mod calls;
 mod conformance;
 #[cfg(test)]
 mod debug_tests;
+mod discarded_call_results;
+#[cfg(test)]
+mod discarded_call_results_tests;
 mod emit;
 mod frame;
 #[cfg(test)]

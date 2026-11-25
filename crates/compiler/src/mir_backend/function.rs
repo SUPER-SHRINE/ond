@@ -43,6 +43,8 @@ enum LoweringVariant {
     NoLoops,
     #[cfg(test)]
     NoReturnRelay,
+    #[cfg(test)]
+    KeepDiscardedCallResults,
 }
 
 impl LoweringVariant {
@@ -66,6 +68,14 @@ impl LoweringVariant {
         match self {
             #[cfg(test)]
             Self::NoReturnRelay => false,
+            _ => true,
+        }
+    }
+
+    fn omit_discarded_call_results(&self) -> bool {
+        match self {
+            #[cfg(test)]
+            Self::KeepDiscardedCallResults => false,
             _ => true,
         }
     }
@@ -162,6 +172,23 @@ pub(super) fn lower_without_return_relay(
         None,
         &quotient_reuse::plan(f),
         LoweringVariant::NoReturnRelay,
+    )
+}
+
+#[cfg(test)]
+pub(super) fn lower_with_discarded_call_results(
+    p: &mir::Project,
+    f: &mir::Function,
+    e: &mut Emitter,
+) -> Result<PendingFunctionDebug, Diagnostic> {
+    lower_body_using(
+        p,
+        f,
+        e,
+        None,
+        None,
+        &quotient_reuse::plan(f),
+        LoweringVariant::KeepDiscardedCallResults,
     )
 }
 
@@ -295,6 +322,7 @@ fn lower_body_using(
     // The test baseline emits the original transfers for the same candidate
     // and records matching operation/source information for those transfers.
     let return_relay = return_relay::Plan::new(p, f, &abi);
+    let discarded_call_results = discarded_call_results::Plan::new(p, f, &abi);
     let mut cx = Context {
         p,
         f,
@@ -311,6 +339,8 @@ fn lower_body_using(
         private_copy_loops,
         return_relay: return_relay.as_ref(),
         emit_return_relay: variant.emit_return_relay(),
+        discarded_call_results: discarded_call_results.as_ref(),
+        omit_discarded_call_results: variant.omit_discarded_call_results(),
     };
     let proven_bounds = super::bounds::proven_checks(&p.types, f);
     for b in &f.blocks {
@@ -402,6 +432,8 @@ pub(super) struct Context<'a> {
     private_copy_loops: bool,
     pub(super) return_relay: Option<&'a return_relay::Plan>,
     pub(super) emit_return_relay: bool,
+    pub(super) discarded_call_results: Option<&'a discarded_call_results::Plan>,
+    pub(super) omit_discarded_call_results: bool,
 }
 impl Context<'_> {
     pub(super) fn record_aggregate_accesses(

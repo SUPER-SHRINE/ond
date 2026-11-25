@@ -86,8 +86,13 @@ impl Context<'_> {
         }
         if abi.hidden.is_some() {
             let relay = self.return_relay.filter(|relay| relay.call == i.id);
+            let discarded = self
+                .discarded_call_results
+                .filter(|plan| plan.calls.contains(&i.id));
             // Start after the call slot, which the linker can rewrite.
-            let start = relay.map(|_| self.e.offset(i.span)).transpose()?;
+            let start = (relay.is_some() || discarded.is_some())
+                .then(|| self.e.offset(i.span))
+                .transpose()?;
             if let Some(relay) = relay.filter(|_| self.emit_return_relay) {
                 relay.read_child(self.e, returns);
             } else {
@@ -108,7 +113,11 @@ impl Context<'_> {
                             0,
                             layout::scalar(&self.p.types, self.ty(*value), i.span)?,
                         );
-                        self.store_result(*value, 1);
+                        if !self.omit_discarded_call_results
+                            || discarded.is_none_or(|plan| plan.used[value.0 as usize])
+                        {
+                            self.store_result(*value, 1);
+                        }
                     }
                 }
             }
