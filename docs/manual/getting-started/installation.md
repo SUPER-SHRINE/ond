@@ -2,8 +2,8 @@
 
 ## Windowsインストーラーで導入する
 
-[GitHub Releases](https://github.com/SUPER-SHRINE/ond/releases)から利用するversionの`ond-<version>-windows-x86_64-setup.exe`を取得します。\
-たとえば0.4.0のinstaller名は`ond-0.4.0-windows-x86_64-setup.exe`です。
+[GitHub Releases](https://github.com/SUPER-SHRINE/ond/releases)から利用する版の`ond-<version>-windows-x86_64-setup.exe`を取得してください。\
+0.5.0のインストーラー名は`ond-0.5.0-windows-x86_64-setup.exe`です。
 
 install後は新しいPowerShellまたはterminalを開き、`ond --help`でusageが表示されることを確認してください。\
 Windows installerではcompilerとLanguage Serverに加え、Ond unit test runner（`ond-unit`）も導入します。
@@ -19,17 +19,17 @@ installerが追加したPATH項目も削除されます。
 
 ## Linux向けバイナリで導入する
 
-Linux x86_64（glibc）向けの配布archiveは[GitHub Releases](https://github.com/SUPER-SHRINE/ond/releases)から取得できます。\
-利用するversionの`ond-<version>-linux-x86_64.tar.gz`を選びます。\
-たとえば0.4.0のarchive名は`ond-0.4.0-linux-x86_64.tar.gz`です。
+Linux x86_64（glibc）向けの配布アーカイブは[GitHub Releases](https://github.com/SUPER-SHRINE/ond/releases)から取得できます。\
+利用する版の`ond-<version>-linux-x86_64.tar.gz`を選んでください。\
+0.5.0のアーカイブ名は`ond-0.5.0-linux-x86_64.tar.gz`です。
 
 archive内の`ond`、`ond-lsp`、および`ond-unit`を取り出し、PATHの通った`/usr/local/bin`へ配置します。\
 以下の例ではversionに合わせてarchive名と作業directoryを読み替えてください。
 
 ```sh
-mkdir -p ond-0.4.0
-tar -xzf ond-0.4.0-linux-x86_64.tar.gz -C ond-0.4.0
-sudo install -m 755 ond-0.4.0/ond ond-0.4.0/ond-lsp ond-0.4.0/ond-unit /usr/local/bin/
+mkdir -p ond-0.5.0
+tar -xzf ond-0.5.0-linux-x86_64.tar.gz -C ond-0.5.0
+sudo install -m 755 ond-0.5.0/ond ond-0.5.0/ond-lsp ond-0.5.0/ond-unit /usr/local/bin/
 ond --help
 ```
 

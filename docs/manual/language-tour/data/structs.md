@@ -28,4 +28,9 @@ struct literalではfield名を指定します。\
 \
 fieldを省略した場合、そのfieldは型のzero valueになります。
 
+## 構造体のサイズを調べる
+
+構造体の占有サイズは`sizeof(T)`で確認できます。\
+Kagura向けの[サイズ上限](../../../../specs/ond/targets/kagura-v1/machine.md#5-data-layout)は、末尾のパディングを含むサイズに対する制約です。
+
 共通manifestとcompile/linkは[最初のプログラム](../../getting-started/first-program.md)、structの型規則は[型仕様](../../../../specs/ond/language/v1/types.md#配列とstruct)を参照してください。

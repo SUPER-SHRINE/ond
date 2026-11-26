@@ -97,6 +97,9 @@ ignore = [".git", ".ond", "target", "generated/kagura", "*", "*data[old]"]
 `*`と`*data[old]`は、その名前をfilesystemが許容する環境で使うliteral directory名を表します。\
 文字の解釈、存在しないdirectoryの扱いと入力の成立条件は[source探索境界](../../../specs/ond/build/packages.md#source探索境界)を参照してください。
 
+独自の`ignore`一覧でも`.git`と`target`を除外したい場合は、例のように一覧に含めてください。\
+`.ond`は引き続き探索から外れます。
+
 ## Dependencies
 
 依存登録nameごとに`dependencies.<name>`へ依存値を置きます。
