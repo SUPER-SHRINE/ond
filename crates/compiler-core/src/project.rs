@@ -63,6 +63,12 @@ pub fn load_project_with_overrides_and_exclusions(
         return Err(FrontendError::new(diagnostics.into_vec()));
     }
     let project_name = project_name(&manifest_path)?;
+    let mut effective_excluded_dirs = manifest_excluded_dirs(&manifest_path, &root)?;
+    for path in excluded_dirs {
+        if !effective_excluded_dirs.contains(path) {
+            effective_excluded_dirs.push(path.clone());
+        }
+    }
 
     let mut sources = SourceDb::default();
     let mut files_by_package = BTreeMap::<String, Vec<FileId>>::new();
@@ -70,7 +76,7 @@ pub fn load_project_with_overrides_and_exclusions(
 
     let options = SourceLoadOptions {
         overrides,
-        excluded_dirs,
+        excluded_dirs: &effective_excluded_dirs,
     };
     collect_ond_files(
         &root,
@@ -114,7 +120,7 @@ pub fn load_project_with_overrides_and_exclusions(
         });
     }
 
-    let ignored_paths = excluded_dirs
+    let ignored_paths = effective_excluded_dirs
         .iter()
         .filter_map(|path| path.strip_prefix(&root).ok())
         .filter(|path| *path != Path::new("."))
@@ -166,6 +172,49 @@ pub(crate) fn project_name(path: &Path) -> Result<String, FrontendError> {
         )));
     }
     Ok(name)
+}
+
+#[derive(Deserialize)]
+struct ManifestSourceDiscovery {
+    resolve: Option<ManifestResolve>,
+}
+
+#[derive(Deserialize)]
+struct ManifestResolve {
+    #[serde(default = "default_source_ignores")]
+    ignore: Vec<PathBuf>,
+}
+
+fn default_source_ignores() -> Vec<PathBuf> {
+    [".git", ".ond", "target"]
+        .into_iter()
+        .map(PathBuf::from)
+        .collect()
+}
+
+fn manifest_excluded_dirs(
+    manifest_path: &Path,
+    root: &Path,
+) -> Result<Vec<PathBuf>, FrontendError> {
+    let text = fs::read_to_string(manifest_path).map_err(|error| {
+        manifest_error(format!(
+            "failed to read `{}`: {error}",
+            manifest_path.display()
+        ))
+    })?;
+    let manifest: ManifestSourceDiscovery = toml::from_str(&text).map_err(|error| {
+        manifest_error(format!(
+            "invalid manifest `{}`: {error}",
+            manifest_path.display()
+        ))
+    })?;
+    Ok(manifest
+        .resolve
+        .map(|resolve| resolve.ignore)
+        .unwrap_or_else(default_source_ignores)
+        .into_iter()
+        .map(|relative| root.join(relative))
+        .collect())
 }
 
 fn manifest_error(message: String) -> FrontendError {
@@ -318,10 +367,7 @@ fn read_source_file(
 }
 
 fn should_skip_dir(path: &Path) -> bool {
-    matches!(
-        path.file_name().and_then(|name| name.to_str()),
-        Some(".git" | ".ond" | "target" | ".idea")
-    )
+    path.file_name().and_then(|name| name.to_str()) == Some(".ond")
 }
 
 fn path_to_logical(path: &Path) -> String {

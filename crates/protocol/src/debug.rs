@@ -89,6 +89,7 @@ pub enum DebugOperation {
     DivisionByZero,
     SignedDivisionOverflow,
     InvalidConversion,
+    FixedPointOverflow,
     StackOverflow,
     ExplicitTrap,
 }
@@ -102,6 +103,7 @@ crate::enum_wire::string_enum!(
     DivisionByZero,
     SignedDivisionOverflow,
     InvalidConversion,
+    FixedPointOverflow,
     StackOverflow,
     ExplicitTrap
 );

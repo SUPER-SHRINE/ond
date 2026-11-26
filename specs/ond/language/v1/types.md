@@ -44,10 +44,20 @@ v1の型は以下の組み込み型と構成型である。
 | `i16` | 16 | -32768〜32767 |
 | `u32` | 32 | 0〜4294967295 |
 | `i32` | 32 | -2147483648〜2147483647 |
+| `u64` | 64 | 0〜18446744073709551615 |
+| `i64` | 64 | -9223372036854775808〜9223372036854775807 |
 
-- `u8`, `u16`, `u32`
-- `i8`, `i16`, `i32`
-- `f32`
+| 固定小数点型 | 格納幅 N | 小数部 F | 符号bitを含む整数部 |
+| --- | ---: | ---: | ---: |
+| `q16` | 32 | 16 | 16 |
+| `q32` | 64 | 32 | 32 |
+
+固定小数点型の格納bitsをN bitのtwo's-complement整数Aとして解釈し、値をA × 2^-Fとする。\
+Aの範囲は-2^(N-1)から2^(N-1)-1までであり、最小刻みは2^-Fとなる。
+
+ほかの組み込み型と構成型を次に示す。
+
+- 浮動小数点型 `f32`、`f64`
 - `bool`
 - `*T`
 - `func(T1, T2) -> R`
@@ -131,28 +141,64 @@ box := Box[u32]{value: Identity[u32](7)}
 - 要素型・field型・参照先型・parameter型・戻り値型の比較では、defined typeの区別を維持する
   - 比較する各構成型に宣言固有identityを適用する
 
-整数リテラルの既定型は `i32` とする。\
-整数型が文脈から決まる場合、[整数定数の値要求境界](./expressions.md#integer-constant-arithmetic)で正確値の範囲を検査する。\
-浮動小数点リテラルの既定型は `f32` とする。\
-字句は[字句章](./lexical.md#source形式)に従い、compile-time に `f32` で表現できない値は compile error とする。
+[字句章](./lexical.md#source形式)の整数リテラルの既定型は `i32`、浮動小数点リテラルの既定型は `f32` とする。\
+宣言、代入、引数、戻り値、または演算の要求型が数値型なら、型が未確定の整数リテラルをその型で評価する。\
+型が未確定の浮動小数点リテラルには、同じ文脈が与える浮動小数点型または固定小数点型を使う。
+
+明示変換の直接のoperandが未確定の数値リテラルで、変換先が浮動小数点型または固定小数点型なら、その型をリテラルの文脈とする。\
+リテラルだけを囲む括弧にも同じ文脈が届く。\
+固定小数点型の文脈では、リテラルだけを括弧で囲むか単項`+`、`-`で修飾する式を、符号を反映した正確なリテラル値として一度量子化する。\
+例えば `(-32768.0) as q16` はq16の最小値になり、`-32768.0 as q16` はpostfixの変換が先にかかるため正の32768で範囲外となる。\
+例えば `0.1 as f64` は十進の正確値1/10を一度だけbinary64へ丸める。\
+型の確定した変数、定数、変換結果をoperandとするときは、その型が表す値から下記の変換を行う。
+
+整数型の要求境界では[整数定数の範囲検査](./expressions.md#integer-constant-arithmetic)を適用する。\
+浮動小数点型のリテラルは[浮動小数点規則](./expressions.md#floating-point-arithmetic)、固定小数点型のリテラルは[固定小数点規則](./expressions.md#fixed-point-arithmetic)に従う。
 
 型変換は `value as T` と書く。\
 次の変換には明示的な型変換が必要である。
 
-- 異なる整数型の間
-- 整数型と `f32` の間
-- 整数とポインタの間
+- 異なる数値型（整数、浮動小数点、固定小数点）の間
+- 整数型とraw pointer型の間（[targetのaddress変換](../../targets/kagura-v1/machine.md#6-raw-pointer-access)）
 
 評価される定数変換の結果を表現できない場合はコンパイルエラーとする。\
 短絡評価により値が評価されない部分では、定数変換の範囲検査も省略する。\
 名前解決と型検査は両辺について行う。\
 実行時の整数間変換は、source型の幅と符号で解釈した数学的整数値vに対し、変換先の幅Mのbit patternをv mod 2^M（0以上2^M未満）とする。\
 結果値はこのbit patternを変換先型の符号で解釈し、[整数表現](./expressions.md#integer-arithmetic)に従う。\
-整数からf32への変換は整数の数学値nに対し、n<0ならs=1、他はs=0、m=abs(n)として[binary32のR(s,m)](./expressions.md#floating-point-arithmetic)を1回適用する。\
-f32から整数は、有限値を0方向へ切り捨てた整数nを先に求め、そのnが変換先型の範囲内ならnを返す。\
-NaN、Inf、またはnが範囲外の場合はcompile-timeならcompile error、runtimeならtargetのfaultとなる。
+整数間以外の数値変換には次の規則を適用する。\
+同じunderlying型同士の変換は値の格納bitsを保持する。\
+異なるunderlying型を持つ数値defined type間の変換には、sourceと変換先のunderlying型の規則を適用する。
+
+| 変換先 | source値 | 結果と成立条件 |
+| --- | --- | --- |
+| 整数型 | 有限値 | 値を0方向へ切り捨て、その整数が変換先型の範囲内なら受理 |
+| 固定小数点型 | 有限値 | [変換先の量子化](./expressions.md#fixed-point-arithmetic)を適用し、丸めた格納整数が変換先型の範囲内なら受理 |
+| 浮動小数点型 | 有限値 | [変換先のR](./expressions.md#floating-point-arithmetic)を1回適用し、有限値なら受理 |
+| 浮動小数点型 | InfまたはNaN | 同符号のInf、または変換先のcanonical quiet NaN |
+| 整数型または固定小数点型 | InfまたはNaN | 不成立 |
+
+浮動小数点型への変換では、浮動小数点のzeroとzeroへ丸められる値の符号を保持する。\
+整数または固定小数点のzeroは+0へ変換する。\
+成立しない変換は、定数評価ではcompile error、実行時には[変換fault](../../targets/kagura-v1/machine.md#faultと観測結果)となる。
 
 Kagura target における型のサイズ、alignment、zero value は [Ond for Kagura Machine Profile v1](../../targets/kagura-v1/machine.md) に従う。
+
+### 狭い整数とf32の実行時往復変換
+<!-- ond-spec-id: type-system/narrow-f32-roundtrip -->
+
+Ond Language v1とKagura v1の組み合わせで、[`ond compile`](../../build/commands.md#ond-compile)は次の条件をすべて満たす実行時の往復変換を省く。
+
+- 変換元と最終変換先は同一の組み込み型`T`であり、`T`は`u8`、`i8`、`u16`、`i16`のいずれか
+- 最終変換の入力は、`T`の値を組み込み型`f32`へ変換した直接の結果
+
+例えば`(value as f32) as T`で`value`が条件を満たす型の実行時の値の場合、最終変換の結果は元の`value`である。\
+この4型の全値はbinary32で正確に表現でき、最終変換で元の値に戻る。\
+最初の変換結果を他の処理が参照する場合は、それらの参照に対してその変換を保持する。\
+参照が残らない場合は、最初の変換も省く。
+
+入力を生成する処理の評価回数、順序、副作用と、[型同一性および定数変換の診断](#型同一性)を維持する。\
+変換を省いた場合のstack容量とfaultの観測は[Kagura ABIのStack Overflow](../../targets/kagura-v1/abi.md#7-stack-overflow)に従う。
 
 ## `nil`とpointer
 <!-- ond-spec-id: type-system/nil-and-pointers -->
@@ -173,7 +219,7 @@ Kagura target における型のサイズ、alignment、zero value は [Ond for 
 - 固定長配列と推論長配列に共通して、長さ `N` は整数で `0 <= N <= 2^32-1` とする
   - 配列要素の有効な index は `0 <= index < N` とする
   - `N = 0` の配列に有効な index はない
-- Kagura targetの配列型のbyte size上限、適用箇所、paddingとゼロサイズの扱いは[Data Layout](../../targets/kagura-v1/machine.md#5-data-layout)に従う
+- Kagura targetの配列型とstruct型のsize上限、適用箇所、paddingとゼロサイズの扱いは[Data Layout](../../targets/kagura-v1/machine.md#5-data-layout)に従う
 - 配列の長さはコンパイル時定数でなければならない
 - 配列のindex演算は[operator解決](./expressions.md#user-defined-operator)を先に行い、builtinを選んだ場合に以下の配列access規則を適用する
 - builtin配列アクセスは`array[index]`とする
@@ -181,6 +227,7 @@ Kagura target における型のサイズ、alignment、zero value は [Ond for 
 - 配列長取得は[builtin len](./builtins.md#41-配列に対する-len)に従う
 - 定数 index が `0 <= index < N` を満たさない場合はコンパイルエラーとする
 - 実行時に決まる index には bounds check を生成し、範囲外なら回復不能なtrapで停止する
+  - 計算済みindexをその型の幅と符号で判定し、範囲内と確認した後でaddress計算に用いる
 - 配列読取り、address取得と代入のbounds check時点は[評価と代入の順序](./statements.md#静的成立条件)に従う
 - compiler は index が範囲内だと証明できる場合だけ runtime bounds check を省略できる
 - struct は `type Name struct { field: T }` と宣言し、`value.field` で field へアクセスする

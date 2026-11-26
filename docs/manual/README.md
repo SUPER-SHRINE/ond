@@ -1,6 +1,6 @@
 # ユーザー向けドキュメント
 
-この案内はOnd 0.4.0を対象とします。
+この案内はOnd 0.5.0を対象とします。
 
 仕様の一般規則は[Specs](../../specs/README.md)を参照してください。
 
@@ -15,7 +15,7 @@
 
 - 値
   - [整数](language-tour/values/integers.md)
-  - [f32](language-tour/values/floats.md)
+  - [小数の値](language-tour/values/floats.md)
   - [真偽値](language-tour/values/booleans.md)
   - [文字列リテラル](language-tour/values/string-literals.md)
   - [nil](language-tour/values/nil.md)

@@ -64,7 +64,7 @@ roles fieldはhash計算用であり、PackageArtifact、Object、CompilationMan
 source hashは選択前の原文全bytesを対象とし、非選択部分の編集もsource内容の変更として扱う。
 
 TypeExprは次の外部tag表現とし、構成要素の順序を型同一性の規則に対応づける。\
-primitiveは`"Bool"`、`"U8"`、`"I8"`、`"U16"`、`"I16"`、`"U32"`、`"I32"`、`"F32"`とする。
+primitiveは`"Bool"`、`"U8"`、`"I8"`、`"U16"`、`"I16"`、`"U32"`、`"I32"`、`"U64"`、`"I64"`、`"F32"`、`"F64"`、`"Q16"`、`"Q32"`とする。
 
 | TypeExpr | 意味 |
 | --- | --- |
@@ -133,7 +133,8 @@ NormalizedInterface.exportsのbinding集合は[公開interface](../artifacts.md#
 NormalizedExportは同節のExportと同じ外部tagを使い、TypeRefをTypeExpr、ValueをNormalizedValueへ置換する。\
 NormalizedValueKindはwire ValueKindと同じunit/scalar variantを持ち、Compositeだけ`{"Composite":[[u32,NormalizedValue],...]}`として再帰する。\
 Compositeの対はindex昇順、zero valueの要素は省略し、全要素がzeroならkindを`"Zero"`に統一する。\
-整数0、false、typed nil、f32の+0も指定型のzero表現ならZeroへ統一し、f32の-0はFloat32 payload `2147483648`で保持する。\
+整数と固定小数点のzero、浮動小数点の+0、およびfalseとtyped nilはZeroへ統一する。\
+浮動小数点の-0はFloat32 payload `2147483648`、またはFloat64 payload `9223372036854775808`で保持する。\
 scalar payloadと型の整合は[型付きwire Value](../artifacts.md#公開interface)と同じ成立条件に従う。
 
 Generationの各集合列はelementのcanonical JSON bytesのbyte辞書順に並べ、同一elementを重複収録しない。\

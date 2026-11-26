@@ -1,4 +1,7 @@
 //! O0 MIR-only Kagura backend, with demand-driven MIR runtime helpers. No AST fallback.
+mod bounds;
+#[cfg(test)]
+mod bounds_tests;
 #[cfg(test)]
 mod branch_tests;
 mod calls;
@@ -6,6 +9,9 @@ mod calls;
 mod conformance;
 #[cfg(test)]
 mod debug_tests;
+mod discarded_call_results;
+#[cfg(test)]
+mod discarded_call_results_tests;
 mod emit;
 mod frame;
 #[cfg(test)]
@@ -18,21 +24,39 @@ mod globals;
 mod heap_tests;
 mod inline_asm;
 pub mod layout;
+mod local_aggregate;
+#[cfg(test)]
+mod local_aggregate_tests;
 mod memory;
 #[cfg(test)]
 mod memory_tests;
 mod numeric;
 #[cfg(test)]
 mod numeric_tests;
+#[cfg(test)]
+mod numeric_wide_tests;
 mod ops;
 #[cfg(test)]
 mod ordered_tests;
+mod private_array_copy;
+#[cfg(test)]
+mod private_array_copy_tests;
+#[cfg(test)]
+mod private_copy_loop_tests;
+mod quotient_reuse;
+#[cfg(test)]
+mod quotient_reuse_tests;
+mod raw_induction;
 mod readonly;
+mod return_relay;
+#[cfg(test)]
+mod return_relay_tests;
 pub mod runtime;
 #[cfg(test)]
 mod test_build_tests;
 #[cfg(test)]
 mod tests;
+mod wide;
 use crate::{
     diagnostic::{Diagnostic, FrontendError},
     ir::object::*,
@@ -104,6 +128,23 @@ pub fn codegen_selected_with_debug(
         &std::collections::BTreeMap<crate::source::FileId, String>,
     )>,
 ) -> Result<CodegenOutput, FrontendError> {
+    codegen_selected_using(project, selected, debug_sources, raw_induction::lower)
+}
+
+fn codegen_selected_using(
+    project: &mir::Project,
+    selected: &std::collections::BTreeSet<String>,
+    debug_sources: Option<(
+        &crate::source::SourceDb,
+        &std::collections::BTreeMap<crate::source::FileId, String>,
+    )>,
+    lower: impl Fn(
+        &mir::Project,
+        &[mir::Global],
+        &mir::Function,
+        &mut emit::Emitter,
+    ) -> Result<function::PendingFunctionDebug, Diagnostic>,
+) -> Result<CodegenOutput, FrontendError> {
     mir::validate_project(project).map_err(|e| {
         FrontendError::new(vec![error(
             Span::synthetic(),
@@ -129,7 +170,7 @@ pub fn codegen_selected_with_debug(
             symbols.extend(rodata_symbols);
             for f in package.functions.iter().chain(package.initializer.iter()) {
                 let start = emitter.offset(f.span)?;
-                let pending = function::lower(project, f, &mut emitter)?;
+                let pending = lower(project, &package.globals, f, &mut emitter)?;
                 let size = emitter.offset(f.span)? - start;
                 let source = debug_sources
                     .and_then(|(sources, paths)| source_location(sources, paths, f.span));

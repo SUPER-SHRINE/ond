@@ -19,11 +19,9 @@ func main() {
 
 ## operand型
 
-整数は同じ整数型同士で比較します。\
+数値は同じ型同士で比較します。\
 \
-`bool`、同じraw pointer型、同じfunction pointer型は等値比較ができます。\
-\
-`f32`にも適用できます。
+`bool`、同じraw pointer型、同じfunction pointer型は等値比較ができます。
 
 この例の共通manifestとcompile/link手順は[最初のプログラム](../../../getting-started/first-program.md)を参照してください。
 

@@ -46,7 +46,7 @@ commandは`-h`/`--help`以外の位置引数とoptionを受理しない。
 `ond compile [PROJECT] [--role NAME] [-o FILE|-] [-v]`
 
 PROJECT省略時はcurrent directoryを選び、[manifestとsource探索](./packages.md#manifestとsource探索)に従ってprojectと依存sourceを収集する。\
-compileは実行projectを対象とする。
+compileは実行projectを対象とし、Kagura v1用のコード生成に[狭い整数とf32の実行時往復変換](../language/v1/types.md#狭い整数とf32の実行時往復変換)の規則を適用する。
 
 | Option/入力 | 契約 |
 | --- | --- |
@@ -59,6 +59,8 @@ compileは実行projectを対象とする。
 package `.ondpkg`の保存先はcompile.cache-dirとする。\
 相対引数pathは呼出時current directory基準、設定の相対pathはond.tomlの親directory基準である。\
 source入力はprojectのfile集合、成果物schemaは[artifact契約](../artifacts.md#packageartifactとcompilationmanifest)に従う。
+
+Kagura v1の通常のcompileには、[非公開ローカル集約値のRAM access省略](../targets/kagura-v1/machine.md#34-非公開ローカル集約値)、[ループ内のraw pointer address計算の置換](../targets/kagura-v1/machine.md#ループ内のraw-pointer-address計算)、[整数剰余計算での商の再利用](../targets/kagura-v1/machine.md#整数剰余計算での商の再利用)を適用できる。
 
 ### ond link
 <!-- ond-spec-id: build/link-command -->

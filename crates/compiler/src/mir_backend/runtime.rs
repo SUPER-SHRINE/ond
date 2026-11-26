@@ -24,6 +24,16 @@ pub enum Helper {
     F32ToU32,
     F32ToI32,
     F32Neg,
+    Binary64,
+    Compare64,
+    Neg64,
+    Fixed,
+    ConvertWide,
+    Mul64,
+    UDiv64,
+    URem64,
+    IDiv64,
+    IRem64,
     UDiv,
     URem,
     IDiv,
@@ -33,7 +43,7 @@ pub enum Helper {
     New,
 }
 impl Helper {
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 32] = [
         Self::F32Add,
         Self::F32Sub,
         Self::F32Mul,
@@ -49,6 +59,16 @@ impl Helper {
         Self::F32ToU32,
         Self::F32ToI32,
         Self::F32Neg,
+        Self::Binary64,
+        Self::Compare64,
+        Self::Neg64,
+        Self::Fixed,
+        Self::ConvertWide,
+        Self::Mul64,
+        Self::UDiv64,
+        Self::URem64,
+        Self::IDiv64,
+        Self::IRem64,
         Self::UDiv,
         Self::URem,
         Self::IDiv,
@@ -74,6 +94,16 @@ impl Helper {
             Self::F32ToU32 => "__ond_f32_to_u32",
             Self::F32ToI32 => "__ond_f32_to_i32",
             Self::F32Neg => "__ond_f32_neg",
+            Self::Binary64 => "__ond_binary64",
+            Self::Compare64 => "__ond_compare64",
+            Self::Neg64 => "__ond_neg64",
+            Self::Fixed => "__ond_fixed",
+            Self::ConvertWide => "__ond_convert_wide",
+            Self::Mul64 => "__ond_mul64",
+            Self::UDiv64 => "__ond_udiv64",
+            Self::URem64 => "__ond_urem64",
+            Self::IDiv64 => "__ond_idiv64",
+            Self::IRem64 => "__ond_irem64",
             Self::UDiv => "__ond_udiv",
             Self::URem => "__ond_urem",
             Self::IDiv => "__ond_idiv",
@@ -91,6 +121,25 @@ impl Helper {
     pub fn signature(self) -> mir::FunctionType {
         use mir::TypeId as T;
         match self {
+            Self::Binary64 | Self::Compare64 | Self::Neg64 | Self::Fixed | Self::ConvertWide => {
+                let parameters = match self {
+                    Self::Binary64 | Self::Compare64 => vec![T::U64, T::U64, T::U32],
+                    Self::Neg64 => vec![T::U64],
+                    Self::Fixed => vec![T::U64, T::U64, T::U32, T::U32],
+                    Self::ConvertWide => vec![T::U64, T::U32, T::U32],
+                    _ => unreachable!(),
+                };
+                return mir::FunctionType {
+                    parameters,
+                    returns: vec![T::U64],
+                };
+            }
+            Self::Mul64 | Self::UDiv64 | Self::URem64 | Self::IDiv64 | Self::IRem64 => {
+                return mir::FunctionType {
+                    parameters: vec![T::U64; 2],
+                    returns: vec![T::U64],
+                };
+            }
             Self::IDiv | Self::IRem => {
                 return mir::FunctionType {
                     parameters: vec![T::I32; 2],
@@ -148,6 +197,14 @@ fn objects_with_debug(helpers: &[Helper]) -> Result<CodegenOutput, FrontendError
         include_str!("../runtime_support.ond"),
         "\n",
         include_str!("runtime/integer.ond"),
+        "\n",
+        include_str!("runtime/wide_integer.ond"),
+        "\n",
+        include_str!("runtime/wide_float.ond"),
+        "\n",
+        include_str!("runtime/fixed.ond"),
+        "\n",
+        include_str!("runtime/conversion.ond"),
         "\n",
         include_str!("runtime/heap.ond")
     ))?;

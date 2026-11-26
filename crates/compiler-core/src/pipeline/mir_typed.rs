@@ -7,14 +7,19 @@ use crate::{
     mir,
     source::Span,
 };
+use std::collections::BTreeSet;
 
-pub(crate) fn lower_to_mir(hir: &hir::Project) -> Result<mir::Project, FrontendError> {
+pub(crate) fn lower_to_mir(
+    hir: &hir::Project,
+    elide_narrow_roundtrips: bool,
+) -> Result<mir::Project, FrontendError> {
+    let lower_function = |function| lower_function(&hir.types, function, elide_narrow_roundtrips);
     let mut packages = Vec::new();
     for package in &hir.packages {
         let mut functions = Vec::new();
         for item in &package.items {
             if let hir::Item::Func(function) = item {
-                functions.push(lower_function(&hir.types, function)?);
+                functions.push(lower_function(function)?);
             }
         }
         packages.push(mir::Package {
@@ -60,7 +65,7 @@ pub(crate) fn lower_to_mir(hir: &hir::Project) -> Result<mir::Project, FrontendE
             initializer: package
                 .initializer
                 .as_ref()
-                .map(|function| lower_function(&hir.types, function))
+                .map(lower_function)
                 .transpose()?,
         });
     }
@@ -79,6 +84,9 @@ fn lower_static_value(
         hir::ExprKind::Zero => mir::StaticValueKind::Zero,
         hir::ExprKind::Integer(value) => mir::StaticValueKind::Integer(*value),
         hir::ExprKind::Float32(value) => mir::StaticValueKind::Float32(*value),
+        hir::ExprKind::Float64(value) | hir::ExprKind::Fixed(value) => {
+            mir::StaticValueKind::NumericBits(*value)
+        }
         hir::ExprKind::Bool(value) => mir::StaticValueKind::Bool(*value),
         hir::ExprKind::Nil => mir::StaticValueKind::Nil,
         hir::ExprKind::Function(symbol) => {
@@ -114,6 +122,7 @@ fn lower_static_value(
 fn lower_function(
     types: &crate::semantic::TypeTable,
     function: &hir::FuncItem,
+    elide_narrow_roundtrips: bool,
 ) -> Result<mir::Function, FrontendError> {
     let (locals, parameters) = match &function.body {
         hir::Body::Typed(body) => {
@@ -158,6 +167,7 @@ fn lower_function(
         defer_flags: Vec::new(),
         return_block: None,
         return_values: Vec::new(),
+        direct_float_casts: elide_narrow_roundtrips.then(BTreeSet::new),
     };
     let entry = builder.new_block(function.span);
     builder.current = Some(entry);
@@ -232,7 +242,7 @@ fn lower_function(
             function.span,
         );
     }
-    Ok(mir::Function {
+    let mut lowered = mir::Function {
         name: function.canonical_name.clone(),
         parameters,
         returns: function.signature.returns.clone(),
@@ -241,7 +251,11 @@ fn lower_function(
         span: function.span,
         entry: mir::BlockId(0),
         blocks: builder.blocks,
-    })
+    };
+    if let Some(direct_float_casts) = builder.direct_float_casts {
+        mir::elide_narrow_f32_roundtrips(&mut lowered, &direct_float_casts);
+    }
+    Ok(lowered)
 }
 
 struct FunctionBuilder<'a> {
@@ -255,6 +269,7 @@ struct FunctionBuilder<'a> {
     defer_flags: Vec<mir::LocalId>,
     return_block: Option<mir::BlockId>,
     return_values: Vec<mir::ValueId>,
+    direct_float_casts: Option<BTreeSet<mir::ValueId>>,
 }
 
 impl FunctionBuilder<'_> {
@@ -368,7 +383,8 @@ impl FunctionBuilder<'_> {
                             continue;
                         }
                         if matches!(op, ast::BinaryOp::Div | ast::BinaryOp::Rem)
-                            && self.types.is_integer(place.ty)
+                            && (self.types.is_integer(place.ty)
+                                || self.types.fixed_fraction(place.ty).is_some())
                         {
                             self.emit_effect(
                                 mir::InstructionKind::Check(mir::Check::NonZero { value: *rhs }),
@@ -389,13 +405,7 @@ impl FunctionBuilder<'_> {
                                 op: select_binary_op(self.types, *op, place.ty)?,
                                 lhs,
                                 rhs: *rhs,
-                                overflow: if matches!(op, ast::BinaryOp::Div | ast::BinaryOp::Rem)
-                                    && self.types.is_integer(place.ty)
-                                {
-                                    mir::OverflowBehavior::Checked
-                                } else {
-                                    mir::OverflowBehavior::Wrap
-                                },
+                                overflow: arithmetic_overflow(self.types, *op, place.ty),
                             },
                             *span,
                         );
@@ -472,7 +482,8 @@ impl FunctionBuilder<'_> {
                     } else {
                         let ty = self.values[lhs.0 as usize].ty;
                         if matches!(op, ast::BinaryOp::Div | ast::BinaryOp::Rem)
-                            && self.types.is_integer(ty)
+                            && (self.types.is_integer(ty)
+                                || self.types.fixed_fraction(ty).is_some())
                         {
                             self.emit_effect(
                                 mir::InstructionKind::Check(mir::Check::NonZero { value: *rhs }),
@@ -485,7 +496,7 @@ impl FunctionBuilder<'_> {
                                 op: select_binary_op(self.types, *op, ty)?,
                                 lhs: *lhs,
                                 rhs: *rhs,
-                                overflow: mir::OverflowBehavior::Wrap,
+                                overflow: arithmetic_overflow(self.types, *op, ty),
                             },
                             *span,
                         )
@@ -670,6 +681,12 @@ impl FunctionBuilder<'_> {
                     ty: expr.ty,
                 })
             }
+            hir::ExprKind::Float64(bits) | hir::ExprKind::Fixed(bits) => {
+                mir::InstructionKind::Constant(mir::Constant::NumericBits {
+                    bits: *bits,
+                    ty: expr.ty,
+                })
+            }
             hir::ExprKind::Float32(bits) => {
                 mir::InstructionKind::Constant(mir::Constant::Float32 {
                     bits: *bits,
@@ -692,9 +709,13 @@ impl FunctionBuilder<'_> {
             hir::ExprKind::Unary { op, operand } => {
                 let operand = self.lower_expr(operand)?;
                 let op = match op {
+                    ast::UnaryOp::Minus if self.types.fixed_fraction(expr.ty).is_some() => {
+                        mir::UnaryOp::FixedNegate
+                    }
                     ast::UnaryOp::Minus => mir::UnaryOp::Negate,
                     ast::UnaryOp::BitNot => mir::UnaryOp::BitNot,
                     ast::UnaryOp::Not => mir::UnaryOp::LogicalNot,
+                    ast::UnaryOp::Plus if self.types.is_float(expr.ty) => mir::UnaryOp::FloatPlus,
                     ast::UnaryOp::Plus => return Some(operand),
                     _ => return None,
                 };
@@ -744,7 +765,8 @@ impl FunctionBuilder<'_> {
                 let lhs = self.lower_expr(lhs)?;
                 let rhs = self.lower_expr(rhs)?;
                 if matches!(op, ast::BinaryOp::Div | ast::BinaryOp::Rem)
-                    && self.types.is_integer(lhs_type(self, lhs)?)
+                    && (self.types.is_integer(lhs_type(self, lhs)?)
+                        || self.types.fixed_fraction(lhs_type(self, lhs)?).is_some())
                 {
                     self.emit_effect(
                         mir::InstructionKind::Check(mir::Check::NonZero { value: rhs }),
@@ -766,31 +788,32 @@ impl FunctionBuilder<'_> {
                     op: select_binary_op(self.types, *op, lhs_type(self, lhs)?)?,
                     lhs,
                     rhs,
-                    overflow: if matches!(op, ast::BinaryOp::Div | ast::BinaryOp::Rem)
-                        && self.types.is_integer(lhs_type(self, lhs)?)
-                    {
-                        mir::OverflowBehavior::Checked
-                    } else {
-                        mir::OverflowBehavior::Wrap
-                    },
+                    overflow: arithmetic_overflow(self.types, *op, lhs_type(self, lhs)?),
                 }
             }
             hir::ExprKind::Cast { value } => {
+                // Unary plus may lower to its operand. Record directness before lowering.
+                let direct_float_cast = value.ty == mir::TypeId::F32
+                    && matches!(value.kind, hir::ExprKind::Cast { .. });
                 let value = self.lower_expr(value)?;
-                let behavior = if matches!(
-                    self.types.underlying_kind(lhs_type(self, value)?),
-                    Some(crate::semantic::TypeKind::F32)
-                ) && self.types.is_integer(expr.ty)
+                let from = lhs_type(self, value)?;
+                let behavior = mir::cast_behavior(self.types, from, expr.ty);
+                let result = self.emit_value(
+                    expr.ty,
+                    mir::InstructionKind::Cast {
+                        value,
+                        to: expr.ty,
+                        behavior,
+                    },
+                    expr.span,
+                );
+                if direct_float_cast
+                    && behavior == mir::CastBehavior::Checked
+                    && let Some(casts) = &mut self.direct_float_casts
                 {
-                    mir::CastBehavior::Checked
-                } else {
-                    mir::CastBehavior::Infallible
-                };
-                mir::InstructionKind::Cast {
-                    value,
-                    to: expr.ty,
-                    behavior,
+                    casts.insert(result);
                 }
+                return Some(result);
             }
         };
         Some(self.emit_value(expr.ty, kind, expr.span))
@@ -1051,17 +1074,31 @@ fn lhs_type(builder: &FunctionBuilder<'_>, value: mir::ValueId) -> Option<mir::T
     builder.values.get(value.0 as usize).map(|value| value.ty)
 }
 
+fn arithmetic_overflow(
+    types: &crate::semantic::TypeTable,
+    op: ast::BinaryOp,
+    ty: mir::TypeId,
+) -> mir::OverflowBehavior {
+    use ast::BinaryOp::*;
+    if (matches!(op, Div | Rem) && types.is_integer(ty))
+        || (matches!(op, Add | Sub | Mul | Div | Rem) && types.fixed_fraction(ty).is_some())
+    {
+        mir::OverflowBehavior::Checked
+    } else {
+        mir::OverflowBehavior::Wrap
+    }
+}
+
 fn select_binary_op(
     types: &crate::semantic::TypeTable,
     op: ast::BinaryOp,
     ty: mir::TypeId,
 ) -> Option<mir::BinaryOp> {
-    use crate::semantic::TypeKind;
     use ast::BinaryOp as Ast;
     use mir::BinaryOp as Mir;
 
-    let signed = types.is_signed_integer(ty);
-    let float = matches!(types.underlying_kind(ty), Some(TypeKind::F32));
+    let signed = types.is_signed_integer(ty) || types.fixed_fraction(ty).is_some();
+    let float = types.is_float(ty);
     Some(match op {
         Ast::Add if float => Mir::FloatAdd,
         Ast::Sub if float => Mir::FloatSubtract,

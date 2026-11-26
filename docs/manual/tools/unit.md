@@ -9,9 +9,9 @@
 `ond-unit` は Ond compiler の CLI を使って対象 project を compile、link します。\
 Kagura VM は `ond-unit` に含まれ、MMIO 設定を使って実機 device を置き換えられます。\
 `ond` と `ond-unit` の両方を PATH から実行できるようにしてください。\
-配布版では同じ release の組み合わせを使います。\
-たとえば `ond-unit` 0.4.0 には `ond` 0.4.0 を使います。\
-ソースから使う場合は Ond repository の root で次を実行し、生成される両方の実行ファイルを PATH から利用できるようにします。
+配布版では同じリリースの実行ファイルを組み合わせます。\
+たとえば `ond-unit` 0.5.0 に対応するのは `ond` 0.5.0 です。\
+ソースから使う場合は Ond リポジトリのルートで次を実行し、生成される両方の実行ファイルを PATH から利用できるようにしてください。
 
 ```console
 cargo build -p ond-cli -p ond-unit --locked
@@ -186,7 +186,7 @@ source = { path = "sample/checks/cases/api.ond", line = 5, column = 17 }
 | Ond fault | 確認する内容 |
 | --- | --- |
 | `BoundsCheck` | 配列や slice の index が有効範囲外になった |
-| `DivisionByZero` | 整数除算の divisor が0になった |
+| `DivisionByZero` | 整数または固定小数点の除算・剰余で除数が0だった |
 | `SignedDivisionOverflow` | 符号付き除算の結果が表現範囲を超えた |
 | `InvalidConversion` | 検査付き型変換の値が変換可能範囲外になった |
 | `StackOverflow` | 関数呼び出しに必要な stack 領域が足りなかった |
@@ -194,6 +194,10 @@ source = { path = "sample/checks/cases/api.ond", line = 5, column = 17 }
 
 たとえば bounds check の失敗は CPU 上では `InvalidInstruction` として報告され、debug metadata の操作から `BoundsCheck` と判定されます。\
 CPU の種類だけから Ond の意味分類を推測することはありません。
+
+実行時の固定小数点演算のオーバーフローは debug metadata に `FixedPointOverflow` と記録されます。\
+`ond-unit` の `cases.expect_fault` では、`cpu_kind = "InvalidInstruction"` に関数名やソース位置を組み合わせて照合してください。\
+`ond_kind` に指定できる値は[期待フォルトの仕様](../../../specs/ond/tools/unit.md#113-期待-fault)に定められています。
 
 `function` には debug metadata の完全修飾 symbol を指定します。\
 上の例では package path と関数名を連結した `sample/checks/cases.Reject` が関数名です。\

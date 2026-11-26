@@ -1,11 +1,12 @@
 //! Encoding and fixed-footprint near/far branch fixups.
 use super::*;
 use crate::kagura_encoding::{self as encoding, word};
+use ond_protocol::debug::DebugOperation;
 #[derive(Default)]
 pub(super) struct Emitter {
     pub words: Vec<u32>,
     labels: Vec<Option<usize>>,
-    branches: Vec<(usize, usize, Span)>,
+    branches: Vec<(usize, usize, Span, bool)>,
     relocations: Vec<Relocation>,
 }
 impl Emitter {
@@ -28,18 +29,40 @@ impl Emitter {
         self.labels[label] = Some(self.words.len());
     }
     pub fn branch(&mut self, condition: u8, target: usize, span: Span) {
-        self.branches.push((self.words.len(), target, span));
+        self.branches.push((self.words.len(), target, span, false));
         // r12/r13 must be dead on the taken edge. The island is always skipped
         // on fallthrough, and its reserved size is included in every label.
         self.words.extend(encoding::local_slot(condition));
     }
+    pub fn near_branch(&mut self, condition: u8, target: usize, span: Span) {
+        self.branches.push((self.words.len(), target, span, true));
+        self.emit(12, 0, condition, 0, 0);
+    }
     pub fn immediate(&mut self, reg: u8, bits: u32) {
-        // Base 256 digits avoid sign-extending the low half of a 32-bit constant.
-        self.emit(0, reg, 0, 0, (bits >> 24) as i16);
-        for shift in [16, 8, 0] {
-            self.emit(2, reg, reg, 0, 8);
-            self.emit(0, reg, reg, 0, ((bits >> shift) & 255) as i16);
+        let (low, high) = Self::immediate_parts(bits);
+        if let Some(high) = high {
+            self.emit(0, reg, 0, 0, high);
+            self.emit(2, reg, reg, 0, 16);
+            if low != 0 {
+                self.emit(0, reg, reg, 0, low);
+            }
+        } else {
+            self.emit(0, reg, 0, 0, low);
         }
+    }
+    pub fn immediate_words(bits: u32) -> u64 {
+        let (low, high) = Self::immediate_parts(bits);
+        if high.is_some() {
+            2 + u64::from(low != 0)
+        } else {
+            1
+        }
+    }
+    fn immediate_parts(bits: u32) -> (i16, Option<i16>) {
+        let low = bits as i16;
+        let high = (low as i32 as u32 != bits)
+            .then(|| (bits.wrapping_sub(low as i32 as u32) >> 16) as i16);
+        (low, high)
     }
     pub fn symbol(&mut self, reg: u8, name: &str, span: Span) -> Result<(), Diagnostic> {
         // Inline address literal: capture PC, load literal, skip its data word.
@@ -73,11 +96,59 @@ impl Emitter {
             .take_while(|relocation| relocation.offset >= offset)
             .any(|relocation| relocation.kind == RelocationKind::CallSlot)
     }
+    /// Memory instructions in an aggregate transfer with no expandable fixups.
+    pub fn aggregate_accesses(
+        &self,
+        start: u32,
+        end: u32,
+    ) -> impl Iterator<Item = (u32, DebugOperation)> + '_ {
+        let first = (start / 4) as usize;
+        let last = (end / 4) as usize;
+        // A resolved near branch only patches the immediate of its existing
+        // JZ. Far branches may insert a load and unmarked literal after this scan.
+        debug_assert!(
+            self.branches
+                .iter()
+                .rev()
+                .skip_while(|branch| branch.0 >= last)
+                .take_while(|branch| branch.0 >= first)
+                .all(|&(at, label, _, near)| near
+                    && self.labels[label].is_some_and(|target| {
+                        (first..last).contains(&target)
+                            && i16::try_from(target as i64 - at as i64 - 1).is_ok()
+                    }))
+        );
+        debug_assert!(!self.has_call_since(start));
+        let first_relocation = self.relocations.partition_point(|r| r.offset < start);
+        let mut literals = self.relocations[first_relocation..]
+            .iter()
+            .filter(|r| r.kind == RelocationKind::Abs32)
+            .map(|r| r.offset)
+            .peekable();
+        (start..end)
+            .step_by(4)
+            .zip(&self.words[first..last])
+            .filter_map(move |(pc, word)| {
+                // A symbolic place emits a load followed by an address literal.
+                if literals.next_if_eq(&pc).is_some() {
+                    return None;
+                }
+                let operation = match word >> 28 {
+                    4 | 5 | 7 => DebugOperation::MemoryRead,
+                    8 | 9 | 11 => DebugOperation::MemoryWrite,
+                    _ => return None,
+                };
+                Some((pc, operation))
+            })
+    }
     pub fn load(&mut self, reg: u8, offset: u32) {
         self.stack_access(7, reg, offset);
     }
     pub fn store(&mut self, reg: u8, offset: u32) {
         self.stack_access(11, reg, offset);
+    }
+    pub fn store_scalar(&mut self, reg: u8, offset: u32, ty: layout::ScalarLayout) {
+        self.stack_access(memory::store_opcode(ty), reg, offset);
     }
     /// Large accesses reserve r13 (r12 when the data register is r13).
     /// In particular, storing an incoming stack argument in r12 must preserve it.
@@ -115,13 +186,38 @@ impl Emitter {
         self.emit(12, 0, reg, 0, 1);
         self.trap();
     }
-    pub fn finish(mut self) -> Result<(Vec<u8>, Vec<Relocation>), Diagnostic> {
+    pub fn can_append(&self, resolved: &Self) -> bool {
+        self.words
+            .len()
+            .checked_add(resolved.words.len())
+            .is_some_and(|len| len <= (u32::MAX / 4) as usize)
+    }
+
+    // Relative fixups have already been applied to this function. Relocations
+    // still use section offsets and must be rebased when concatenating.
+    pub fn append_resolved(&mut self, mut resolved: Self, span: Span) -> Result<(), Diagnostic> {
+        debug_assert!(resolved.branches.is_empty());
+        let start = self.offset(span)?;
+        if !self.can_append(&resolved) {
+            return Err(error(span, "text exceeds 32-bit size"));
+        }
+        for relocation in &mut resolved.relocations {
+            relocation.offset += start;
+        }
+        self.words.append(&mut resolved.words);
+        self.relocations.append(&mut resolved.relocations);
+        Ok(())
+    }
+
+    pub fn resolve(mut self) -> Result<Self, Diagnostic> {
         self.offset(Span::synthetic())?;
-        for (at, target, span) in self.branches {
+        for (at, target, span, near) in self.branches.drain(..) {
             let target = self.labels[target].ok_or_else(|| error(span, "unbound block label"))?;
             let delta = target as i64 - at as i64 - 1;
             let imm = if let Ok(imm) = i16::try_from(delta) {
                 imm
+            } else if near {
+                return Err(error(span, "local short branch exceeds its reserved range"));
             } else {
                 // Modular byte delta plus captured PC gives the final address
                 // at any placement; the enclosing text size was checked above.
@@ -132,9 +228,18 @@ impl Emitter {
             };
             self.words[at] = (self.words[at] & 0xffff0000) | imm as u16 as u32;
         }
+        Ok(self)
+    }
+
+    pub fn finish(self) -> Result<(Vec<u8>, Vec<Relocation>), Diagnostic> {
+        let resolved = self.resolve()?;
         Ok((
-            self.words.into_iter().flat_map(u32::to_le_bytes).collect(),
-            self.relocations,
+            resolved
+                .words
+                .into_iter()
+                .flat_map(u32::to_le_bytes)
+                .collect(),
+            resolved.relocations,
         ))
     }
 }

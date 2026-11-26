@@ -15,15 +15,17 @@ impl BodyLowerer<'_> {
         rhs: TypeId,
         span: crate::source::Span,
     ) -> Option<hir::Expr> {
-        if !self.types.is_integer(operand)
-            && !matches!(self.types.underlying_kind(operand), Some(TypeKind::F32))
-        {
-            return self.fail(span, "increment or decrement requires an integer or f32");
+        if !self.types.is_numeric(operand) {
+            return self.fail(span, "increment or decrement requires a numeric type");
         }
         let kind = if self.types.is_integer(rhs) {
             hir::ExprKind::Integer(1)
         } else if matches!(self.types.underlying_kind(rhs), Some(TypeKind::F32)) {
             hir::ExprKind::Float32(1.0f32.to_bits())
+        } else if self.types.is_float(rhs) {
+            hir::ExprKind::Float64(1.0f64.to_bits())
+        } else if let Some(fraction) = self.types.fixed_fraction(rhs) {
+            hir::ExprKind::Fixed(1 << fraction)
         } else {
             return self.fail(span, "increment or decrement operand type mismatch");
         };
@@ -41,9 +43,11 @@ impl BodyLowerer<'_> {
         op: ast::BinaryOp,
     ) -> Option<(hir::ValueList, Option<hir::Call>)> {
         let integer = self.types.is_integer(target.ty);
-        let float = matches!(self.types.underlying_kind(target.ty), Some(TypeKind::F32));
+        let fixed = self.types.fixed_fraction(target.ty).is_some();
+        let float = self.types.is_float(target.ty);
         let builtin = integer
-            || float
+            || fixed && op == ast::BinaryOp::Rem
+            || (float || fixed)
                 && matches!(
                     op,
                     ast::BinaryOp::Add

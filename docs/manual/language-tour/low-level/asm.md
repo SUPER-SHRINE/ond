@@ -60,4 +60,7 @@ func main() {
 命令本文はKagura v1固有です。\
 この例の`ADD`はKagura命令構文に従い、他のtargetに共通するOnd構文ではありません。
 
+変数をレジスターへ直接渡せるのは、[Kagura ABIの`Direct-1`分類](../../../../specs/ond/targets/kagura-v1/abi.md#3-value-classification)に該当する型です。\
+`u64`や`f64`の値を命令列で読み書きする場合は、その値を指すポインターを渡してください。
+
 共通manifestとcompile/linkは[最初のプログラム](../../getting-started/first-program.md)、bindingは[inline assembly仕様](../../../../specs/ond/language/v1/inline-assembly.md)、命令形式は[Kagura v1仕様](../../../../specs/ond/targets/kagura-v1/inline-assembly.md)を参照してください。

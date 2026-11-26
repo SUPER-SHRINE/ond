@@ -61,6 +61,96 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn narrow_f32_roundtrip_is_applied_by_normal_compile_and_reflected_in_debug_info() {
+    use ond_protocol::{debug::DebugOperation, object::RelocationKind};
+
+    let f = Fixture::new();
+    f.put(
+        "main.ond",
+        "package main
+        func roundtrip(x:i16)->i16{return (x as f32) as i16}
+        func to_float(x:i16)->f32{return x as f32}
+        func to_int(x:f32)->i16{return x as i16}
+        func main(){_ = roundtrip(-7);_ = to_int(to_float(-5))}",
+    );
+    let compiler = compiler_identity().unwrap();
+    let built = compile(f.request(), &compiler).unwrap();
+    let root = built
+        .manifest
+        .packages
+        .iter()
+        .find(|p| p.package == "test")
+        .unwrap();
+    let artifact = cache::read_artifact(root).unwrap();
+    for (name, calls, invalid) in [
+        ("main.roundtrip", 0, false),
+        ("main.to_float", 1, false),
+        ("main.to_int", 1, true),
+    ] {
+        let function = artifact
+            .debug
+            .functions
+            .iter()
+            .find(|f| f.symbol == name)
+            .unwrap();
+        assert_eq!(
+            artifact
+                .object
+                .relocations
+                .iter()
+                .filter(|r| {
+                    r.kind == RelocationKind::CallSlot
+                        && (function.offset..function.offset + function.size).contains(&r.offset)
+                })
+                .count(),
+            calls,
+            "{name}"
+        );
+        assert_eq!(
+            artifact.debug.ranges.iter().any(|r| {
+                r.function == name && r.operation == DebugOperation::InvalidConversion
+            }),
+            invalid,
+            "{name}"
+        );
+    }
+    let linked = link_with_debug(request_link(built.manifest)).unwrap();
+    let function = linked
+        .debug
+        .functions
+        .iter()
+        .find(|f| f.symbol == "main.roundtrip")
+        .unwrap();
+    assert!(function.frame_size > 0);
+    assert!(
+        function
+            .unwind
+            .iter()
+            .any(|row| row.cfa_sp_offset == function.frame_size)
+    );
+    assert!(linked.debug.ranges.iter().any(|r| {
+        r.function == function.symbol && r.operation == DebugOperation::StackOverflow
+    }));
+    assert!(!linked.debug.ranges.iter().any(|r| {
+        r.function == function.symbol
+            && matches!(
+                r.operation,
+                DebugOperation::Call | DebugOperation::InvalidConversion
+            )
+    }));
+
+    f.put(
+        "main.ond",
+        "package main\nconst Value = ((65536 as u16) as f32) as u16\nfunc main(){}",
+    );
+    let errors = compile(f.request(), &compiler).unwrap_err();
+    assert!(
+        errors.iter().any(|error| error.contains("out of range")),
+        "{errors:?}"
+    );
+}
+
+#[test]
 fn diamond_cache_rebuilds_reverse_dependents_even_for_body_only_change() {
     let f = Fixture::new();
     let cold = compile(f.request(), "test-compiler").unwrap();
@@ -811,6 +901,112 @@ fn relative_project_requests_keep_ignore_paths_canonical() {
     request.project_root = f.0.strip_prefix(&cwd).unwrap().to_path_buf();
     compile(request, &compiler_identity().unwrap())
         .expect("relative root uses the same absolute ignore boundary");
+}
+
+#[test]
+fn source_discovery_uses_manifest_ignore_for_root_sources() {
+    let f = Fixture::new();
+    f.put(
+        "target/generated.ond",
+        "package target\nfunc Value() -> i32 { return 42 }\n",
+    );
+    f.put(".ond/generated.ond", "invalid source");
+    f.put("nested/ond.toml", "[project]\nname = \"nested\"\n");
+    f.put("nested/ignored.ond", "invalid source");
+
+    f.put(
+        "ond.toml",
+        "[project]\nname = \"test\"\n[resolve]\nignore = []\n",
+    );
+    f.put(
+        "main.ond",
+        "package main\nimport \"test/target\"\nfunc main() { var _ = target.Value() }\n",
+    );
+    let included = compile(f.request(), "test-compiler").unwrap();
+    assert!(
+        included
+            .manifest
+            .packages
+            .iter()
+            .any(|package| package.package == "test/target")
+    );
+    assert!(
+        !included
+            .manifest
+            .packages
+            .iter()
+            .any(|package| package.package.contains(".ond"))
+    );
+    assert!(
+        !included
+            .manifest
+            .packages
+            .iter()
+            .any(|package| package.package.contains("nested"))
+    );
+
+    f.put("ond.toml", "[project]\nname = \"test\"\n");
+    f.put("main.ond", "package main\nfunc main() {}\n");
+    let default = compile(f.request(), "test-compiler").unwrap();
+    assert!(
+        !default
+            .manifest
+            .packages
+            .iter()
+            .any(|package| package.package == "test/target")
+    );
+
+    f.put(
+        "ond.toml",
+        "[project]\nname = \"test\"\n[resolve]\nignore = [\"target\"]\n",
+    );
+    let ignored = compile(f.request(), "test-compiler").unwrap();
+    assert!(
+        !ignored
+            .manifest
+            .packages
+            .iter()
+            .any(|package| package.package == "test/target")
+    );
+}
+
+#[test]
+fn dependency_source_discovery_uses_its_own_manifest_ignore() {
+    let f = Fixture::new();
+    f.put(
+        "ond.toml",
+        "[project]\nname = \"test\"\n[dependencies]\nlib = { path = \"library\" }\n",
+    );
+    f.put(
+        "main.ond",
+        "package main\nimport \"shared/target\"\nfunc main() { var _ = target.Value() }\n",
+    );
+    f.put(
+        "library/ond.toml",
+        "[project]\nname = \"shared\"\n[resolve]\nignore = []\n",
+    );
+    f.put(
+        "library/target/target.ond",
+        "package target\nfunc Value() -> i32 { return 42 }\n",
+    );
+
+    let built = compile(f.request(), "test-compiler").unwrap();
+    assert!(
+        built
+            .manifest
+            .packages
+            .iter()
+            .any(|package| package.package == "shared/target")
+    );
+
+    f.put(
+        "library/ond.toml",
+        "[project]\nname = \"shared\"\n[resolve]\nignore = [\"target\"]\n",
+    );
+    assert!(compile(f.request(), "test-compiler").is_err());
+
+    f.put("library/ond.toml", "[project]\nname = \"shared\"\n");
+    assert!(compile(f.request(), "test-compiler").is_err());
 }
 
 #[test]

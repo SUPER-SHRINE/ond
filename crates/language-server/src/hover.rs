@@ -247,7 +247,10 @@ fn render_hover(
     range_source: &SourceFile,
 ) -> Value {
     let comment = documentation_for(target, declaration_source);
-    let mut value = format!("```ond\n{}\n```", target.signature);
+    let mut value = format!(
+        "```ond\n{}\n```",
+        compact_signature_spacing(&target.signature)
+    );
     if let Some(comment) = comment {
         value.push_str("\n\n");
         value.push_str(&comment);
@@ -265,6 +268,89 @@ fn render_hover(
             "end": range_end
         }
     })
+}
+
+fn compact_signature_spacing(signature: &str) -> String {
+    let mut compact = String::with_capacity(signature.len());
+    let mut chars = signature.char_indices().peekable();
+    let mut quote = None;
+    let mut line_comment = false;
+    let mut block_comment = false;
+    let mut escaped = false;
+
+    while let Some((index, ch)) = chars.next() {
+        if line_comment {
+            compact.push(ch);
+            line_comment = ch != '\n';
+            continue;
+        }
+        if block_comment {
+            compact.push(ch);
+            if ch == '*' && chars.peek().is_some_and(|(_, next)| *next == '/') {
+                let (_, slash) = chars.next().expect("peeked comment terminator");
+                compact.push(slash);
+                block_comment = false;
+            }
+            continue;
+        }
+        if let Some(delimiter) = quote {
+            compact.push(ch);
+            if delimiter != '`' && escaped {
+                escaped = false;
+            } else if delimiter != '`' && ch == '\\' {
+                escaped = true;
+            } else if ch == delimiter {
+                quote = None;
+            }
+            continue;
+        }
+
+        if ch == '"' || ch == '`' {
+            quote = Some(ch);
+            compact.push(ch);
+            continue;
+        }
+        if ch == '/' {
+            match chars.peek().map(|(_, next)| *next) {
+                Some('/') => line_comment = true,
+                Some('*') => {
+                    block_comment = true;
+                    let (_, star) = chars.next().expect("peeked comment opener");
+                    compact.push(ch);
+                    compact.push(star);
+                    continue;
+                }
+                _ => {}
+            }
+            compact.push(ch);
+            continue;
+        }
+        if ch == ' ' || ch == '\t' {
+            let start = index;
+            let mut end = index + ch.len_utf8();
+            while let Some((next_index, next)) = chars.peek() {
+                if *next != ' ' && *next != '\t' {
+                    break;
+                }
+                end = *next_index + next.len_utf8();
+                chars.next();
+            }
+            if compact.ends_with('\n') || compact.ends_with('\r') {
+                compact.push_str(&signature[start..end]);
+            } else if !compact.ends_with([' ', '\t'])
+                && signature[end..]
+                    .chars()
+                    .next()
+                    .is_some_and(|next| next != '\n' && next != '\r')
+            {
+                compact.push(' ');
+            }
+            continue;
+        }
+        compact.push(ch);
+    }
+
+    compact
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -689,7 +775,7 @@ mod tests {
     use compiler::source::SourceDb;
     use serde_json::Value;
 
-    use super::{hover_for_file, hover_for_project};
+    use super::{compact_signature_spacing, hover_for_file, hover_for_project};
     use crate::protocol::Position;
 
     fn hover_json(text: &str, line: u32, character: u32) -> Option<Value> {
@@ -703,6 +789,25 @@ mod tests {
     fn formats_function_types_with_optional_parameter_names() {
         let text = "package main\nvar callback: func(i32, flag: bool) -> i32\n";
         assert!(hover(text, 1, 5).contains("func(i32, flag: bool) -> i32"));
+    }
+
+    #[test]
+    fn compacts_aligned_spaces_in_declaration_hovers() {
+        let text = "package main\nvar (\n HOGE:     u32 = 1\n HOGEHOGE: u32 = 2\n)\n";
+
+        let value = hover_at(text, "HOGE", 0).expect("declaration hover");
+        let signature = value["contents"]["value"].as_str().unwrap();
+        assert!(signature.contains("HOGE: u32 = 1"));
+        assert!(!signature.contains("HOGE:     u32"));
+    }
+
+    #[test]
+    fn signature_spacing_preserves_literals_comments_and_indentation() {
+        let signature = "var (\n\tname:   string = \"a  b\\\" c\" // keep   this\n\ttext:  string = `raw  text`\n\tblock: string = /* ordinary   comment */ `raw\n  text`\n\tslash: string = /*/ keep   this */ `raw  text`\n)";
+        assert_eq!(
+            compact_signature_spacing(signature),
+            "var (\n\tname: string = \"a  b\\\" c\" // keep   this\n\ttext: string = `raw  text`\n\tblock: string = /* ordinary   comment */ `raw\n  text`\n\tslash: string = /*/ keep   this */ `raw  text`\n)"
+        );
     }
 
     #[test]

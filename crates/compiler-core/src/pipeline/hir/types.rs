@@ -91,13 +91,18 @@ pub(super) enum GenericSpecialization {
     },
 }
 
+struct ActiveType {
+    arguments: Vec<crate::semantic::TypeId>,
+    request: Span,
+}
+
 pub(super) struct TypePackage {
     sources: std::sync::Arc<crate::source::SourceDb>,
     pub(super) import_spans: BTreeMap<(FileId, String), Span>,
     pub(super) generation: RefCell<super::generation::Collector>,
     pub(super) specializations: RefCell<BTreeMap<String, GenericSpecialization>>,
     pub(super) generic_requests: RefCell<Vec<super::generic_paths::Request>>,
-    active_types: RefCell<BTreeMap<String, Vec<crate::semantic::TypeId>>>,
+    active_types: RefCell<BTreeMap<String, ActiveType>>,
     pub(super) id: PackageId,
     pub(super) logical_path: String,
     pub(super) imports: BTreeMap<FileId, BTreeMap<String, PackageId>>,
@@ -109,6 +114,21 @@ pub(super) struct TypePackage {
     pub(super) methods: Vec<ast::FuncDecl>,
     pub(super) operators: Vec<ast::OperatorDecl>,
     pub(super) globals: BTreeMap<String, ast::VarSpec>,
+}
+
+impl TypePackage {
+    pub(super) fn generic_type_request(&self, source: Span) -> Option<Span> {
+        self.active_types
+            .borrow()
+            .iter()
+            .find_map(|(name, active)| {
+                let declaration = self.declarations[name].span;
+                (declaration.file == source.file
+                    && declaration.start <= source.start
+                    && source.end <= declaration.end)
+                    .then_some(active.request)
+            })
+    }
 }
 
 pub(super) fn collect_type_universe(
@@ -376,6 +396,8 @@ pub(super) fn resolve_defined_type(
         return None;
     }
     visiting.insert(type_id);
+    // A declaration can be reached while a constant is being reevaluated.
+    let layout_recording = types.set_struct_layout_site_recording(true);
     let underlying = resolve_type(
         package_id,
         &declaration.ty,
@@ -385,6 +407,7 @@ pub(super) fn resolve_defined_type(
         visiting,
         diagnostics,
     );
+    types.set_struct_layout_site_recording(layout_recording);
     visiting.remove(&type_id);
     if let Some(underlying) = underlying {
         types.define(type_id, TypeKind::Defined { underlying });
@@ -482,7 +505,11 @@ fn resolve_applied_type(
     // Arguments explicitly written inside an application use the caller's path.
     // The application itself enters only after resolving those arguments, so a
     // root Box[Box[u8]] does not confuse the independent inner and outer uses.
-    let first_arguments = owner.active_types.borrow().get(name).cloned();
+    let first_arguments = owner
+        .active_types
+        .borrow()
+        .get(name)
+        .map(|active| active.arguments.clone());
     if first_arguments
         .as_ref()
         .is_some_and(|first| first != &resolved_arguments)
@@ -528,10 +555,13 @@ fn resolve_applied_type(
         )
     });
     visiting.insert(type_id);
-    owner
-        .active_types
-        .borrow_mut()
-        .insert(name.to_string(), resolved_arguments.clone());
+    owner.active_types.borrow_mut().insert(
+        name.to_string(),
+        ActiveType {
+            arguments: resolved_arguments.clone(),
+            request: span,
+        },
+    );
     let substitutions = declaration
         .type_params
         .iter()
@@ -703,6 +733,11 @@ pub(super) fn resolve_type(
                 "u32" => Some(TypeId::U32),
                 "i32" => Some(TypeId::I32),
                 "f32" => Some(TypeId::F32),
+                "u64" => Some(TypeId::U64),
+                "i64" => Some(TypeId::I64),
+                "f64" => Some(TypeId::F64),
+                "q16" => Some(TypeId::Q16),
+                "q32" => Some(TypeId::Q32),
                 _ => None,
             };
             if builtin.is_some() {
@@ -906,7 +941,9 @@ pub(super) fn resolve_type(
                     span: field.span,
                 });
             }
-            Some(types.intern(TypeKind::Struct(StructType { fields: resolved }), *span))
+            let id = types.intern(TypeKind::Struct(StructType { fields: resolved }), *span);
+            super::aggregate_layout::record_struct_site(types, universe, package_id, id, *span);
+            Some(id)
         }
         ast::Type::Func { signature, span } => {
             let mut parameters = Vec::new();

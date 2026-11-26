@@ -58,6 +58,35 @@ func pointer()->*u8{return &Message[0]}
 func main(){}
 ```
 
+## グローバル配列のraw pointer走査
+<!-- ond-spec-id: conformance/kagura-regression/raw-pointer-loop -->
+
+要件は`MEM-04`、規範定義元は[raw pointer access](../../targets/kagura-v1/machine.md#6-raw-pointer-access)と[ループ内のaddress計算](../../targets/kagura-v1/machine.md#ループ内のraw-pointer-address計算)とする。\
+次の`main.ond`を通常コンパイルし、本書の共通条件で実行する。\
+初期状態の`Data`は全要素が0であり、正常終了時はOUTPUT=10、`Data`は先頭から`[1, 3, 6, 10]`とする。
+
+```ond
+package main
+var Data: [4]u32
+func visit() -> u32 {
+    var p = &Data[0]
+    var sum: u32
+    for i := 0 as u32; i < 4; i += 1 {
+        var old = p[i]
+        p[i] = old + 1
+        sum = sum + p[i] + i
+        p[i] = sum
+    }
+    return sum
+}
+func main() { *(4294934608 as u32 as *u32) = visit() }
+```
+
+fault付き検査では、`main.Data`の先頭要素への2回目の32-bit readをbusで拒否する。\
+期待する停止は`BUS_FAULT`、debug operationは`MemoryRead`、source位置は`sum = sum + p[i] + i`の`p[i]`。\
+停止までの対象accessは先頭要素のread、値1のwrite、拒否されるreadの順とする。\
+停止時は`Data=[1, 0, 0, 0]`、OUTPUT=0、EXITはSENTINELを保持する。
+
 ## Layoutの実装追跡と外部case
 <!-- ond-spec-id: conformance/kagura-regression/layout-tracking -->
 

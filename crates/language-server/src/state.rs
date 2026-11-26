@@ -12,13 +12,13 @@ use crate::completion::{
     append_builtin_type_completion_items, append_import_completion_items,
     append_indexed_symbol_completion_items, append_local_completion_items,
     append_top_level_completion_items, append_top_level_variable_completion_items,
-    completion_qualifier, completion_text_with_placeholder, completion_text_with_value_placeholder,
-    dedupe_completion_items, find_completion_selector, import_path_completion_context,
-    import_path_completion_items, keyword_completion_items, package_member_completion_items,
-    package_member_completion_items_for_alias, project_completion_base_has_known_type,
-    resolve_completion_methods, resolve_completion_struct_fields,
-    resolve_project_completion_methods, resolve_project_completion_struct_fields,
-    struct_field_completion_items,
+    completion_qualifier, completion_text_with_identifier_call, completion_text_with_placeholder,
+    completion_text_with_value_placeholder, dedupe_completion_items, find_completion_selector,
+    import_path_completion_context, import_path_completion_items, keyword_completion_items,
+    package_member_completion_items, package_member_completion_items_for_alias,
+    project_completion_base_has_known_type, resolve_completion_methods,
+    resolve_completion_struct_fields, resolve_project_completion_methods,
+    resolve_project_completion_struct_fields, struct_field_completion_items,
 };
 use crate::hover::{hover_for_file, hover_for_project};
 use crate::navigation::{definition_for_file, definition_for_project};
@@ -432,7 +432,15 @@ impl ServerState {
         });
         let value_placeholder = if completion_marker.is_none() {
             self.documents.get(path).and_then(|document| {
-                completion_text_with_value_placeholder(&document.text, line, character)
+                completion_text_with_value_placeholder(&document.text, line, character).or_else(
+                    || {
+                        if cached_index.file_failed_to_parse(path) {
+                            completion_text_with_identifier_call(&document.text, line, character)
+                        } else {
+                            None
+                        }
+                    },
+                )
             })
         } else {
             None
@@ -726,7 +734,18 @@ impl ServerState {
         append_builtin_type_completion_items(&mut items);
         let mut sources = SourceDb::default();
         let file_id = sources.add_file(path.to_path_buf(), text.to_string());
-        let Ok(file) = compiler::parse_source_file(file_id, text) else {
+        let file = compiler::parse_source_file(file_id, text).or_else(|error| {
+            if marker.is_none()
+                && value_completion.is_none()
+                && let Some(repaired) =
+                    completion_text_with_identifier_call(&document.text, line, character)
+            {
+                compiler::parse_source_file(file_id, &repaired)
+            } else {
+                Err(error)
+            }
+        });
+        let Ok(file) = file else {
             if marker.is_some() {
                 return Ok(Vec::new());
             }
@@ -758,9 +777,12 @@ impl ServerState {
 
         append_import_completion_items(&mut items, &file);
         append_top_level_completion_items(&mut items, &file);
-        let source = sources.file(file_id);
-        let offset = source.offset_at_line_col(line as usize + 1, character as usize + 1);
-        append_local_completion_items(&mut items, &file, offset);
+        if let Ok(offset) = lsp_offset(
+            &document.text,
+            &crate::protocol::Position { line, character },
+        ) {
+            append_local_completion_items(&mut items, &file, offset);
+        }
         append_builtin_function_completion_items(&mut items);
         dedupe_completion_items(items)
     }
@@ -1961,6 +1983,92 @@ mod tests {
                 .collect::<Vec<_>>();
             assert!(!labels.contains(&"A"), "{completions:?}");
             assert!(!labels.contains(&"Method"), "{completions:?}");
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn incomplete_identifier_statement_keeps_local_completion() {
+        for (project_mode, cached) in [(false, false), (true, false), (true, true)] {
+            let root = reserve_test_root(normalize_path(std::env::temp_dir().join(format!(
+                "ond-lsp-identifier-statement-{}-{}",
+                std::process::id(),
+                next_temp_root_id()
+            ))));
+            std::fs::create_dir_all(&root).unwrap();
+            if project_mode {
+                std::fs::write(root.join("ond.toml"), "[project]\nname=\"completion\"\n").unwrap();
+            }
+            let path = root.join("main.ond");
+            let uri = uri_from_path(&path).unwrap();
+            let mut state = ServerState::default();
+            let mut output = Vec::new();
+            let prefix = "package main\nfunc demo(argument: i32) {\n    var localValue = argument\n    { var hiddenLocal = argument }\n";
+            let valid =
+                format!("{prefix}    \n    var laterLocal = argument\n}}\nfunc main() {{}}\n");
+            if cached {
+                std::fs::write(&path, &valid).unwrap();
+                state
+                    .open_document(uri.clone(), valid.clone(), &mut output)
+                    .unwrap();
+                state.completions(&uri, 4, 4).unwrap();
+            }
+
+            for (statement, cursor_prefix) in [
+                ("    lo", "    lo"),
+                ("    argument", "    ar"),
+                ("    /* note */ lo", "    /* note */ lo"),
+                ("    /* 𐐀𐐀𐐀 .x */ lo", "    /* 𐐀𐐀𐐀 .x */ lo"),
+                ("    lo /* note */", "    lo"),
+                (
+                    "    /* note\n       still a comment */ lo /* another\n       comment */",
+                    "    /* note\n       still a comment */ lo",
+                ),
+                (
+                    "    { var 字𐐀 = argument; 字𐐀 }",
+                    "    { var 字𐐀 = argument; 字𐐀",
+                ),
+            ] {
+                let source = valid.replacen("    \n", &format!("{statement}\n"), 1);
+                if state.documents.contains_key(&path) {
+                    state
+                        .change_document(
+                            uri.clone(),
+                            vec![TextDocumentContentChangeEvent {
+                                text: source,
+                                range: None,
+                            }],
+                            &mut output,
+                        )
+                        .unwrap();
+                } else {
+                    std::fs::write(&path, &source).unwrap();
+                    state
+                        .open_document(uri.clone(), source, &mut output)
+                        .unwrap();
+                }
+                let line = 4 + cursor_prefix.matches('\n').count() as u32;
+                let character = cursor_prefix
+                    .rsplit('\n')
+                    .next()
+                    .unwrap()
+                    .encode_utf16()
+                    .count() as u32;
+                let items = state.completions(&uri, line, character).unwrap();
+                let labels: Vec<_> = items
+                    .iter()
+                    .filter_map(|item| item["label"].as_str())
+                    .collect();
+                for expected in ["localValue", "argument"] {
+                    assert!(
+                        labels.contains(&expected),
+                        "project={project_mode}, cached={cached}, statement={statement}: missing {expected}"
+                    );
+                }
+                assert_eq!(labels.contains(&"字𐐀"), statement.contains("字𐐀"));
+                assert!(!labels.contains(&"hiddenLocal"));
+                assert!(!labels.contains(&"laterLocal"));
+            }
             std::fs::remove_dir_all(root).unwrap();
         }
     }
@@ -3811,6 +3919,353 @@ mod tests {
         let output = String::from_utf8(output).unwrap();
         assert!(output.contains("type mismatch: expected"), "{output}");
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn hover_shows_expression_initializer_types_in_standalone_and_project_files() {
+        let root = test_project_root("hover-expression-initializer");
+        let path = root.join("main.ond");
+        let uri = uri_from_path(&path).unwrap();
+        let source = "package main
+func next() -> u16 { return 2 }
+func narrowResult() -> u8 { return 2 }
+var packageBase: u16
+const packageConstant: u16 = 2
+type Box struct { Value: u8 }
+type CallBox struct { Next: func() -> u8 }
+type Wrapper struct { Inner: Box; Callbacks: [1]func() -> u8 }
+func (box: Box) Get() -> u8 { return box.Value }
+func getCallback() -> func() -> u8 { return narrowResult }
+func computedCallee(box: CallBox, callbacks: [1]func() -> u8, wrapper: Wrapper, index: u32) {
+    fieldCall := box.Next() + 1
+    _ = fieldCall
+    indexedCall := callbacks[0]() + 1
+    _ = indexedCall
+    returnedCall := getCallback()() + 1
+    _ = returnedCall
+    nestedMethod := wrapper.Inner.Get() + 1
+    _ = nestedMethod
+    dynamicIndexCall := callbacks[index]() + 1
+    _ = dynamicIndexCall
+    dynamicFieldCall := wrapper.Callbacks[index]() + 1
+    _ = dynamicFieldCall
+}
+func pair() -> (u8, u16) { return 1, 2 }
+func reusedDemo(value: u16, other: u16) {
+    value, fresh := 2, 0
+    _ = fresh
+    reusedParameter := value + 1
+    _ = reusedParameter
+    local := 2 as u16
+    local, freshLocal := 3, 0
+    _ = freshLocal
+    reusedLocal := local + 1
+    _ = reusedLocal
+    freshPair, other := pair()
+    _ = freshPair
+    reusedPair := other + 1
+    _ = reusedPair
+}
+func callbackDemo(next: func() -> u8) {
+    parameterCall := next() + 1
+    _ = parameterCall
+}
+func demo(argument: i32, narrow: u16, count: u32, fraction: f64, fixed: q16, box: Box, p: *u8, buf: [1]u8) {
+    shortBinary := argument + 1
+    _ = shortBinary
+    narrowLeft := narrow + 1
+    _ = narrowLeft
+    narrowRight := 1 + narrow
+    _ = narrowRight
+    constantRight := narrow + (1 + 2)
+    _ = constantRight
+    constantLeft := (1 + 2) + narrow
+    _ = constantLeft
+    nestedCall := (next() + 1) * narrow
+    _ = nestedCall
+    comparison := narrow > 0 && argument != 0
+    _ = comparison
+    negated := -argument
+    _ = negated
+    bits := (narrow & 0xff) << count
+    _ = bits
+    floating := 1.25 + fraction
+    _ = floating
+    quantized := fixed % 1.5
+    _ = quantized
+    var inferred = argument + 1
+    _ = inferred
+    {
+        shortBinary := narrow + 1
+        _ = shortBinary
+    }
+    _ = shortBinary
+    {
+        narrow, shortSibling := 0 as u8, narrow + 1
+        _ = shortSibling
+        _ = narrow
+    }
+    {
+        var narrow, varSibling = 0 as u8, narrow + 1
+        _ = varSibling
+        _ = narrow
+    }
+    const outerConstant: u16 = 2
+    {
+        const outerConstant, constSibling = 0 as u8, outerConstant + 1
+        _ = constSibling
+        _ = outerConstant
+    }
+    next := narrowResult
+    shadowedCall := next() + 1
+    _ = shadowedCall
+    {
+        var narrow = box.Value
+        shadowedField := narrow + 1
+        _ = shadowedField
+    }
+    packageVarExpr := packageBase + 1
+    _ = packageVarExpr
+    packageConstExpr := packageConstant + 1
+    _ = packageConstExpr
+    fieldExpr := box.Value + 1
+    _ = fieldExpr
+    methodExpr := box.Get() + 1
+    _ = methodExpr
+    pointerExpr := *p + 1
+    _ = pointerExpr
+    indexExpr := buf[0] + 1
+    _ = indexExpr
+    layoutExpr := sizeof(u16) + 1
+    _ = layoutExpr
+    deadOperand := false && (box.Value > 300)
+    _ = deadOperand
+    outer := narrow + 1
+    _ = outer
+    {
+        outer := (outer as u8) + 1
+        _ = outer
+    }
+}
+func main() {}
+";
+        std::fs::write(&path, source).unwrap();
+
+        let mut failures = Vec::new();
+        for mode in ["standalone", "project"] {
+            if mode == "project" {
+                std::fs::write(root.join("ond.toml"), "[project]\nname = \"app\"\n").unwrap();
+            }
+            let mut state = ServerState::default();
+            let mut output = Vec::new();
+            state
+                .open_document(uri.clone(), source.to_string(), &mut output)
+                .unwrap();
+            let diagnostics = published_diagnostics(&output, &uri);
+            assert_eq!(diagnostics.last(), Some(&serde_json::json!([])), "{mode}");
+            for (name, ty) in [
+                ("shortBinary", "i32"),
+                ("narrowLeft", "u16"),
+                ("narrowRight", "u16"),
+                ("constantRight", "u16"),
+                ("constantLeft", "u16"),
+                ("nestedCall", "u16"),
+                ("comparison", "bool"),
+                ("negated", "i32"),
+                ("bits", "u16"),
+                ("floating", "f64"),
+                ("quantized", "q16"),
+                ("inferred", "i32"),
+                ("shortSibling", "u16"),
+                ("varSibling", "u16"),
+                ("constSibling", "u16"),
+                ("shadowedCall", "u8"),
+                ("parameterCall", "u8"),
+                ("shadowedField", "u8"),
+                ("packageVarExpr", "u16"),
+                ("packageConstExpr", "u16"),
+                ("fieldExpr", "u8"),
+                ("methodExpr", "u8"),
+                ("pointerExpr", "u8"),
+                ("indexExpr", "u8"),
+                ("layoutExpr", "u32"),
+                ("deadOperand", "bool"),
+                ("reusedParameter", "u16"),
+                ("reusedLocal", "u16"),
+                ("reusedPair", "u16"),
+                ("fieldCall", "u8"),
+                ("indexedCall", "u8"),
+                ("returnedCall", "u8"),
+                ("nestedMethod", "u8"),
+                ("dynamicIndexCall", "u8"),
+                ("dynamicFieldCall", "u8"),
+            ] {
+                for (line, text) in source.lines().enumerate() {
+                    if let Some(column) = text.find(name) {
+                        let ty = if name == "shortBinary" && text.starts_with("        ") {
+                            "u16"
+                        } else {
+                            ty
+                        };
+                        let expected = format!("{name}: {ty}");
+                        let hover = state.hover(&uri, line as u32, column as u32).unwrap();
+                        if !hover["contents"]["value"]
+                            .as_str()
+                            .is_some_and(|value| value.contains(&expected))
+                        {
+                            failures.push(format!(
+                                "{mode}, line {}: expected {expected}, got {hover}",
+                                line + 1
+                            ));
+                        }
+                    }
+                }
+            }
+            let (line, text) = source
+                .lines()
+                .enumerate()
+                .find(|(_, text)| text.contains("outer as u8"))
+                .unwrap();
+            let column = text.find("outer as u8").unwrap();
+            let hover = state.hover(&uri, line as u32, column as u32).unwrap();
+            if !hover["contents"]["value"]
+                .as_str()
+                .is_some_and(|value| value.contains("outer: u16"))
+            {
+                failures.push(format!(
+                    "{mode}: expected initializer outer: u16, got {hover}"
+                ));
+            }
+        }
+
+        std::fs::remove_dir_all(root).unwrap();
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    #[test]
+    fn member_completion_respects_short_declaration_reuse_and_shadowing() {
+        let root = test_project_root("completion-short-binding");
+        let path = root.join("main.ond");
+        let uri = uri_from_path(&path).unwrap();
+        let source = "package main
+type Alpha struct { AlphaField: u8 }
+type Beta struct { BetaField: u8 }
+func make() -> Alpha { return Alpha{} }
+func other() -> Beta { return Beta{} }
+func callbackPair() -> (u8, func() -> Beta) { return 0, other }
+func structPair() -> (u8, Beta) { return 0, Beta{} }
+func demo(reused: Beta) {
+    _, make := callbackPair()
+    _ = make().BetaField
+    fresh, reused := structPair()
+    _ = fresh
+    _ = reused.BetaField
+}
+func main() {}
+";
+        std::fs::write(root.join("ond.toml"), "[project]\nname = \"app\"\n").unwrap();
+        std::fs::write(&path, source).unwrap();
+        let mut state = ServerState::default();
+        let mut output = Vec::new();
+        state
+            .open_document(uri.clone(), source.to_string(), &mut output)
+            .unwrap();
+        assert_eq!(
+            published_diagnostics(&output, &uri).last(),
+            Some(&serde_json::json!([]))
+        );
+
+        let completions_at = |state: &mut ServerState, needle| {
+            let (line, text) = source
+                .lines()
+                .enumerate()
+                .find(|(_, text)| text.contains(needle))
+                .unwrap();
+            state
+                .completions(&uri, line as u32, (text.find('.').unwrap() + 1) as u32)
+                .unwrap()
+        };
+        let shadowed = completions_at(&mut state, "make().BetaField");
+        let reused = completions_at(&mut state, "reused.BetaField");
+        std::fs::remove_dir_all(root).unwrap();
+        assert!(
+            shadowed.iter().all(|item| item["label"] != "AlphaField"),
+            "{shadowed:?}"
+        );
+        assert!(
+            reused.iter().any(|item| item["label"] == "BetaField"),
+            "{reused:?}"
+        );
+    }
+
+    #[test]
+    fn hover_shows_expression_types_for_imported_package_values() {
+        let root = test_project_root("hover-imported-expression");
+        let path = root.join("main.ond");
+        let uri = uri_from_path(&path).unwrap();
+        let source = "package main
+import numbers \"app/dep\"
+func local(numbers: numbers.P) {
+    localMethodCall := numbers.Call() + 1
+    var _: u16 = localMethodCall
+}
+func main() {
+    importedVar := numbers.Base + 1
+    importedConst := numbers.Offset + 1
+    importedFieldCall := numbers.Global.Call() + 1
+    var _: u8 = importedFieldCall
+    _ = importedVar
+    _ = importedConst
+}
+";
+        std::fs::write(root.join("ond.toml"), "[project]\nname = \"app\"\n").unwrap();
+        std::fs::write(&path, source).unwrap();
+        std::fs::create_dir(root.join("dep")).unwrap();
+        std::fs::write(
+            root.join("dep").join("values.ond"),
+            "package dep
+var Base: u16
+const Offset: u16 = 2
+type S struct { Call: func() -> u8 }
+type P *S
+func (p: P) Call() -> u16 { _ = p; return 2 }
+var Global: P
+",
+        )
+        .unwrap();
+
+        let mut state = ServerState::default();
+        let mut output = Vec::new();
+        state
+            .open_document(uri.clone(), source.to_string(), &mut output)
+            .unwrap();
+        assert_eq!(
+            published_diagnostics(&output, &uri).last(),
+            Some(&serde_json::json!([]))
+        );
+        let mut hovers = Vec::new();
+        for (line, text) in source.lines().enumerate() {
+            for (name, ty) in [
+                ("importedVar", "u16"),
+                ("importedConst", "u16"),
+                ("importedFieldCall", "u8"),
+                ("localMethodCall", "u16"),
+            ] {
+                if let Some(column) = text.find(name) {
+                    let hover = state.hover(&uri, line as u32, column as u32).unwrap();
+                    hovers.push((name, ty, hover));
+                }
+            }
+        }
+        std::fs::remove_dir_all(root).unwrap();
+        for (name, ty, hover) in hovers {
+            assert!(
+                hover["contents"]["value"]
+                    .as_str()
+                    .is_some_and(|value| { value.contains(&format!("{name}: {ty}")) }),
+                "{name}: {hover}"
+            );
+        }
     }
 
     #[test]

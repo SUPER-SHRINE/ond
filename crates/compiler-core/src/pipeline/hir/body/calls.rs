@@ -270,13 +270,17 @@ impl BodyLowerer<'_> {
             },
         );
         let mut diagnostics = Diagnostics::new();
-        let signature = super::super::types::resolve_signature(
-            package_id,
-            &source_signature,
-            self.universe,
-            self.types,
-            &mut diagnostics,
-        )?;
+        // Candidate resolution can fall back to a builtin. A selected generic
+        // operator is checked when its specialization is lowered.
+        let signature = self.types.without_struct_layout_sites(|types| {
+            super::super::types::resolve_signature(
+                package_id,
+                &source_signature,
+                self.universe,
+                types,
+                &mut diagnostics,
+            )
+        })?;
         let parameters = signature
             .parameters
             .iter()
@@ -612,13 +616,15 @@ impl BodyLowerer<'_> {
             &concrete_types,
         );
         let mut diagnostics = Diagnostics::new();
-        let signature = super::super::types::resolve_signature(
-            package_id,
-            &source_signature,
-            self.universe,
-            self.types,
-            &mut diagnostics,
-        );
+        let signature = self.types.without_struct_layout_sites(|types| {
+            super::super::types::resolve_signature(
+                package_id,
+                &source_signature,
+                self.universe,
+                types,
+                &mut diagnostics,
+            )
+        });
         if let Some(diagnostic) = diagnostics.into_vec().into_iter().next() {
             self.failure = Some(diagnostic);
             return None;
@@ -991,14 +997,21 @@ impl BodyLowerer<'_> {
             )
         };
         let mut diagnostics = Diagnostics::new();
-        let signature = super::super::types::resolve_method_signature(
-            package_id,
-            &receiver_source,
-            &signature_source,
-            self.universe,
-            self.types,
-            &mut diagnostics,
-        )?;
+        let mut resolve_signature = |types: &mut crate::semantic::TypeTable| {
+            super::super::types::resolve_method_signature(
+                package_id,
+                &receiver_source,
+                &signature_source,
+                self.universe,
+                types,
+                &mut diagnostics,
+            )
+        };
+        let signature = if declaration.type_params.is_empty() {
+            resolve_signature(self.types)
+        } else {
+            self.types.without_struct_layout_sites(resolve_signature)
+        }?;
         if signature.parameters.first().map(|parameter| parameter.ty) != Some(actual_receiver) {
             return None;
         }

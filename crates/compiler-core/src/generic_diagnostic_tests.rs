@@ -184,6 +184,137 @@ func main() {
 }
 
 #[test]
+fn struct_layout_in_generic_body_reports_all_specialization_requests() {
+    let source = "package main
+func Local[T]() { var pointer: *struct { first: [4294967295]u8; last: T } }
+func Outer[T]() { Local[T]() }
+func First() { Outer[u8]() }
+func Second() { Outer[u8]() }
+func main() {}
+";
+    let error = compile(source, None).expect_err("concrete struct layout must fit in u32");
+    let [diagnostic] = error.diagnostics() else {
+        panic!("one concrete struct layout error expected: {error}");
+    };
+    assert_eq!(diagnostic.message, "struct layout overflow");
+    assert_related(
+        source,
+        &error,
+        "struct { first: [4294967295]u8; last: T }",
+        &["Local[T]()", "Outer[u8]()", "Outer[u8]()"],
+    );
+}
+
+#[test]
+fn struct_layout_in_generic_signatures_reports_each_specialization_once() {
+    for (declaration, function, call) in [
+        (
+            "func Find[T]() -> *struct { first: [4294967295]u8; last: T } { return nil }",
+            "func probe() { _ = Find[u8]() }",
+            "Find[u8]()",
+        ),
+        (
+            "func (box: Box[T]) Find() -> *struct { first: [4294967295]u8; last: T } { return nil }",
+            "func probe(box: Box[u8]) { _ = box.Find() }",
+            "box.Find()",
+        ),
+    ] {
+        let source = format!(
+            "package main\ntype Box[T] struct {{ value: T }}\n{declaration}\n{function}\nfunc main() {{}}\n"
+        );
+        let error = compile(&source, None).expect_err("concrete struct layout must fit in u32");
+        let [diagnostic] = error.diagnostics() else {
+            panic!("one concrete struct layout error expected: {error}");
+        };
+        assert_eq!(diagnostic.message, "struct layout overflow");
+        assert_related(
+            &source,
+            &error,
+            "struct { first: [4294967295]u8; last: T }",
+            &[call],
+        );
+    }
+}
+
+#[test]
+fn struct_layout_in_generic_sizeof_reports_the_invalid_type_once() {
+    let source = "package main
+func Layout[T]() { _ = sizeof(struct { first: [4294967295]u8; last: T }) }
+func First() { Layout[u8]() }
+func Second() { Layout[u8]() }
+func main() {}
+";
+    let error = compile(source, None).expect_err("concrete struct layout must fit in u32");
+    let [diagnostic] = error.diagnostics() else {
+        panic!("one concrete struct layout error expected: {error}");
+    };
+    assert_eq!(diagnostic.message, "struct layout overflow");
+    assert_related(
+        source,
+        &error,
+        "struct { first: [4294967295]u8; last: T }",
+        &["Layout[u8]()", "Layout[u8]()"],
+    );
+}
+
+#[test]
+fn struct_layout_in_a_reanchored_query_reports_the_generic_application_once() {
+    let source = "package main
+type Buffer[T] [sizeof(struct { first: [4294967295]u8; last: u8 })]T
+func Probe[T]() { var pointer: *Buffer[T] }
+func main() { Probe[u8]() }
+";
+    let error = compile(source, None).expect_err("concrete struct layout must fit in u32");
+    let [diagnostic] = error.diagnostics() else {
+        panic!(
+            "one concrete struct layout error expected: {:?}",
+            error.diagnostics()
+        );
+    };
+    assert_eq!(diagnostic.message, "struct layout overflow");
+    assert_related(
+        source,
+        &error,
+        "Buffer[T]",
+        &["struct { first: [4294967295]u8; last: u8 }", "Probe[u8]()"],
+    );
+}
+
+#[test]
+fn struct_layout_in_layout_queries_preserves_both_sites_of_an_interned_type() {
+    let structure = "struct { a: [4294967295]u8; extra: T }";
+    for operator in ["sizeof", "alignof"] {
+        let query =
+            format!("{operator}([0]struct {{ pointer: *{structure}; value: [0]{structure} }})");
+        let source = format!(
+            "package main\nfunc Layout[T]() {{ _ = {query} }}\nfunc probe() {{ Layout[u8]() }}\nfunc main() {{}}\n"
+        );
+        let error = compile(&source, None).expect_err("concrete struct layout must fit in u32");
+        assert_eq!(error.diagnostics().len(), 2, "{:?}", error.diagnostics());
+        let mut offsets = Vec::new();
+        for diagnostic in error.diagnostics() {
+            assert_eq!(diagnostic.message, "struct layout overflow");
+            let primary = diagnostic.primary.span;
+            assert_eq!(&source[primary.start..primary.end], structure);
+            offsets.push(primary.start);
+            let [related] = diagnostic.related.as_slice() else {
+                panic!("one generic request position expected: {error}");
+            };
+            assert_eq!(
+                &source[related.span.start..related.span.end],
+                "Layout[u8]()"
+            );
+        }
+        offsets.sort_unstable();
+        assert!(
+            offsets
+                .into_iter()
+                .eq(source.match_indices(structure).map(|(offset, _)| offset))
+        );
+    }
+}
+
+#[test]
 fn failed_generic_method_collects_late_requests() {
     let source = r#"package main
 type Box[T] struct { value: T }

@@ -13,6 +13,31 @@ impl BodyLowerer<'_> {
         Some(value)
     }
 
+    fn has_custom_fixed_sign(&mut self, expr: &ast::Expr, ty: crate::semantic::TypeId) -> bool {
+        if self.types.underlying_id(ty) == Some(ty) {
+            return false;
+        }
+        let ast::Expr::Unary {
+            op, expr: operand, ..
+        } = expr
+        else {
+            return false;
+        };
+        let name = if *op == ast::UnaryOp::Plus {
+            ast::OperatorName::Add
+        } else {
+            ast::OperatorName::Sub
+        };
+        let receiver = hir::Expr {
+            ty,
+            span: operand.span(),
+            kind: hir::ExprKind::Fixed(0),
+        };
+        self.unique_operator_parameter_types(name, &receiver, &[Some(ty)], expr.span())
+            .is_some()
+            || self.has_custom_fixed_sign(operand, ty)
+    }
+
     fn lower_expr_inner(
         &mut self,
         expr: &ast::Expr,
@@ -29,17 +54,57 @@ impl BodyLowerer<'_> {
             return self.constant_use(value, expected, expr.span());
         }
 
+        if let Some(ty) = expected
+            && let Some(fraction) = self.types.fixed_fraction(ty)
+            && let Some((text, negative)) = signed_literal(expr)
+            && !self.has_custom_fixed_sign(expr, ty)
+        {
+            let kind = match crate::numeric_literal::fixed(text, fraction, negative) {
+                Ok(bits) => hir::ExprKind::Fixed(bits),
+                Err(_) if self.defer_value_evaluation => hir::ExprKind::Zero,
+                Err(message) => return self.fail(expr.span(), message),
+            };
+            return Some(hir::Expr {
+                kind,
+                ty,
+                span: expr.span(),
+            });
+        }
         let (kind, ty) = match expr {
             ast::Expr::Literal(ast::Literal::Int(value, _)) => {
                 let ty = expected.unwrap_or(TypeId::I32);
-                if !self.types.is_integer(ty) {
-                    return self.fail(expr.span(), "integer literal requires an integer type");
+                if !self.types.is_numeric(ty) {
+                    return self.fail(expr.span(), "integer literal requires a numeric type");
                 }
                 let Some(value) = crate::numeric_literal::integer_exact(value) else {
                     return self.fail(expr.span(), "invalid or out-of-range integer literal");
                 };
                 use num_traits::ToPrimitive;
-                if let Some(bits) = value.to_i64() {
+                if self.types.is_float(ty) {
+                    let result = match self.types.underlying_kind(ty) {
+                        Some(TypeKind::F32) => value
+                            .to_f32()
+                            .filter(|v| v.is_finite())
+                            .map(|v| hir::ExprKind::Float32(v.to_bits())),
+                        _ => value
+                            .to_f64()
+                            .filter(|v| v.is_finite())
+                            .map(|v| hir::ExprKind::Float64(v.to_bits())),
+                    };
+                    return match result {
+                        Some(kind) => Some(hir::Expr {
+                            kind,
+                            ty,
+                            span: expr.span(),
+                        }),
+                        None => self.fail(expr.span(), "floating-point literal out of range"),
+                    };
+                }
+                if !self.types.is_signed_integer(ty)
+                    && let Some(bits) = value.to_u64()
+                {
+                    (hir::ExprKind::Integer(bits), ty)
+                } else if let Some(bits) = value.to_i64() {
                     (hir::ExprKind::Integer(bits as u64), ty)
                 } else {
                     let (_, digits) = value.to_radix_be(128);
@@ -48,17 +113,19 @@ impl BodyLowerer<'_> {
             }
             ast::Expr::Literal(ast::Literal::Float(value, _)) => {
                 let ty = expected.unwrap_or(TypeId::F32);
-                if !matches!(self.types.underlying_kind(ty), Some(TypeKind::F32)) {
-                    return self.fail(expr.span(), "float literal requires f32 type");
-                }
-                let value = match crate::numeric_literal::float(value) {
-                    Ok(value) => value,
-                    Err(message) => return self.fail(expr.span(), message),
+                let result = match self.types.underlying_kind(ty) {
+                    Some(TypeKind::F32) => crate::numeric_literal::float(value)
+                        .map(|v| hir::ExprKind::Float32(v.to_bits())),
+                    Some(TypeKind::F64) => crate::numeric_literal::double(value)
+                        .map(|v| hir::ExprKind::Float64(v.to_bits())),
+                    _ => {
+                        Err("floating-point literal requires a floating-point or fixed-point type")
+                    }
                 };
-                if !value.is_finite() {
-                    return self.fail(expr.span(), "f32 literal out of range");
+                match result {
+                    Ok(kind) => (kind, ty),
+                    Err(message) => return self.fail(expr.span(), message),
                 }
-                (hir::ExprKind::Float32(value.to_bits()), ty)
             }
             ast::Expr::Literal(ast::Literal::Bool(value, _)) => {
                 let ty = expected.unwrap_or(TypeId::BOOL);
@@ -95,9 +162,14 @@ impl BodyLowerer<'_> {
                 span,
             } => {
                 let ty = self.resolve_type(ty)?;
-                let (size, align) = match self.types.size_align(ty) {
+                let (size, align) = match self.types.size_align_with_cause(ty) {
                     Ok(layout) => layout,
-                    Err(message) => return self.fail(*span, message),
+                    Err((cause, message)) => {
+                        if message == "struct layout overflow" && self.failure.is_none() {
+                            self.types.record_struct_layout_query(cause, *span);
+                        }
+                        return self.fail(*span, message);
+                    }
                 };
                 (
                     hir::ExprKind::Integer(u64::from(if *alignment { align } else { size })),
@@ -193,10 +265,8 @@ impl BodyLowerer<'_> {
                         true
                     }
                     ast::UnaryOp::Plus | ast::UnaryOp::Minus
-                        if matches!(
-                            self.types.underlying_kind(operand.ty),
-                            Some(TypeKind::F32)
-                        ) =>
+                        if self.types.is_float(operand.ty)
+                            || self.types.fixed_fraction(operand.ty).is_some() =>
                     {
                         true
                     }
@@ -275,15 +345,26 @@ impl BodyLowerer<'_> {
                             | ast::BinaryOp::Div
                             | ast::BinaryOp::Rem
                     );
-                    let lhs_expected = (!comparison && contextual_literal(lhs))
+                    let shift = matches!(op, ast::BinaryOp::ShiftLeft | ast::BinaryOp::ShiftRight);
+                    let contextual_left = contextual_literal(lhs);
+                    let typed_right = !contextual_literal(rhs);
+                    let lhs_expected = (!comparison && contextual_left)
                         .then_some(expected)
                         .flatten();
+                    let mut known_rhs = None;
+                    let lhs_expected =
+                        if contextual_left && typed_right && !shift && lhs_expected.is_none() {
+                            let right = self.lower_expr(rhs, None)?;
+                            let ty = self.types.is_numeric(right.ty).then_some(right.ty);
+                            known_rhs = Some(right);
+                            ty
+                        } else {
+                            lhs_expected
+                        };
                     let lhs = self.lower_expr(lhs, lhs_expected)?;
-                    let known_rhs = if overloadable && !contextual_literal(rhs) {
-                        Some(self.lower_expr(rhs, None)?)
-                    } else {
-                        None
-                    };
+                    if known_rhs.is_none() && overloadable && typed_right {
+                        known_rhs = Some(self.lower_expr(rhs, None)?);
+                    }
                     let inferred = if overloadable {
                         binary_operator_name(*op)
                             .and_then(|name| {
@@ -301,8 +382,7 @@ impl BodyLowerer<'_> {
                     if overloadable
                         && known_rhs.is_none()
                         && inferred.is_none()
-                        && !self.types.is_integer(lhs.ty)
-                        && !matches!(self.types.underlying_kind(lhs.ty), Some(TypeKind::F32))
+                        && !self.types.is_numeric(lhs.ty)
                     {
                         return self.fail(expr.span(), "invalid binary operand type");
                     }
@@ -349,19 +429,22 @@ impl BodyLowerer<'_> {
                     true
                 } else {
                     match operand_kind {
-                        Some(TypeKind::F32) => matches!(
-                            op,
-                            ast::BinaryOp::Add
-                                | ast::BinaryOp::Sub
-                                | ast::BinaryOp::Mul
-                                | ast::BinaryOp::Div
-                                | ast::BinaryOp::Eq
-                                | ast::BinaryOp::Ne
-                                | ast::BinaryOp::Lt
-                                | ast::BinaryOp::Le
-                                | ast::BinaryOp::Gt
-                                | ast::BinaryOp::Ge
-                        ),
+                        Some(TypeKind::Q16 | TypeKind::Q32) if *op == ast::BinaryOp::Rem => true,
+                        Some(TypeKind::F32 | TypeKind::F64 | TypeKind::Q16 | TypeKind::Q32) => {
+                            matches!(
+                                op,
+                                ast::BinaryOp::Add
+                                    | ast::BinaryOp::Sub
+                                    | ast::BinaryOp::Mul
+                                    | ast::BinaryOp::Div
+                                    | ast::BinaryOp::Eq
+                                    | ast::BinaryOp::Ne
+                                    | ast::BinaryOp::Lt
+                                    | ast::BinaryOp::Le
+                                    | ast::BinaryOp::Gt
+                                    | ast::BinaryOp::Ge
+                            )
+                        }
                         Some(TypeKind::Bool | TypeKind::Pointer(_) | TypeKind::Function(_)) => {
                             matches!(op, ast::BinaryOp::Eq | ast::BinaryOp::Ne)
                         }
@@ -408,16 +491,20 @@ impl BodyLowerer<'_> {
             }
             ast::Expr::Cast { expr, ty, span: _ } => {
                 let ty = self.resolve_type(ty)?;
-                let literal_context = (self.types.is_integer(ty)
+                let literal_context = ((self.types.is_integer(ty)
                     && matches!(expr.as_ref(), ast::Expr::Literal(ast::Literal::Int(_, _))))
+                    || (self.types.is_float(ty)
+                        && matches!(
+                            expr.as_ref(),
+                            ast::Expr::Literal(ast::Literal::Int(_, _) | ast::Literal::Float(_, _))
+                        ))
+                    || (self.types.fixed_fraction(ty).is_some() && signed_literal(expr).is_some()))
                 .then_some(ty);
                 let value = self.lower_expr(expr, literal_context)?;
                 let source = self.types.underlying_kind(value.ty);
                 let destination = self.types.underlying_kind(ty);
-                let numeric_source =
-                    self.types.is_integer(value.ty) || matches!(source, Some(TypeKind::F32));
-                let numeric_destination =
-                    self.types.is_integer(ty) || matches!(destination, Some(TypeKind::F32));
+                let numeric_source = self.types.is_numeric(value.ty);
+                let numeric_destination = self.types.is_numeric(ty);
                 let valid = self.types.underlying_id(value.ty) == self.types.underlying_id(ty)
                     || (numeric_source && numeric_destination)
                     || (self.types.is_integer(value.ty)
@@ -584,6 +671,23 @@ pub(super) fn binary_operator_name(op: ast::BinaryOp) -> Option<ast::OperatorNam
         ast::BinaryOp::Rem => ast::OperatorName::Rem,
         _ => return None,
     })
+}
+
+fn signed_literal(source: &ast::Expr) -> Option<(&str, bool)> {
+    match source {
+        ast::Expr::Literal(ast::Literal::Int(text, _) | ast::Literal::Float(text, _)) => {
+            Some((text, false))
+        }
+        ast::Expr::Unary {
+            op: op @ (ast::UnaryOp::Plus | ast::UnaryOp::Minus),
+            expr,
+            ..
+        } => {
+            let (text, negative) = signed_literal(expr)?;
+            Some((text, negative ^ (*op == ast::UnaryOp::Minus)))
+        }
+        _ => None,
+    }
 }
 
 pub(super) fn contextual_literal(source: &ast::Expr) -> bool {

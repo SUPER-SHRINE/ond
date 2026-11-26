@@ -10,6 +10,7 @@ strict = true
 nav = [
   { "Home" = "index.md" },
   { "Release" = [
+    "docs/releases/0.5.0-notes.md",
     "docs/releases/0.4.0-notes.md",
     "docs/releases/0.3.0-notes.md",
     "docs/releases/0.2.0-notes.md",
@@ -29,7 +30,7 @@ nav = [
     { "言語ツアー" = [
       { "値" = [
         { "整数" = "docs/manual/language-tour/values/integers.md" },
-        { "f32" = "docs/manual/language-tour/values/floats.md" },
+        { "小数の値" = "docs/manual/language-tour/values/floats.md" },
         { "真偽値" = "docs/manual/language-tour/values/booleans.md" },
         { "文字列リテラル" = "docs/manual/language-tour/values/string-literals.md" },
         { "nil" = "docs/manual/language-tour/values/nil.md" },

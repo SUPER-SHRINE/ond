@@ -1,6 +1,6 @@
 # 加算 `+`
 
-二項の`+`は、同じ整数型または`f32`型の値を加算します。
+二項の`+`は、同じ数値型の値を加算します。
 
 ```ond title="main.ond"
 package main
@@ -19,10 +19,9 @@ func main() {
 
 ## 型をそろえる
 
-両方のoperandは同じ型にします。\
-\
-`f32`の加算にも`+`を使えます。
+`f32`や`f64`の浮動小数点型、`q16`や`q32`の固定小数点型でも`+`を使えます。\
+両辺の値の型をそろえてください。
 
 この例の共通manifestとcompile/link手順は[最初のプログラム](../../../getting-started/first-program.md)を参照してください。
 
-整数の演算規則は[式仕様](../../../../../specs/ond/language/v1/expressions.md#integer-arithmetic)、`f32`は[浮動小数点演算](../../../../../specs/ond/language/v1/expressions.md#floating-point-arithmetic)を参照してください。
+型ごとの規則は[整数演算](../../../../../specs/ond/language/v1/expressions.md#integer-arithmetic)、[浮動小数点演算](../../../../../specs/ond/language/v1/expressions.md#floating-point-arithmetic)、[固定小数点演算](../../../../../specs/ond/language/v1/expressions.md#fixed-point-arithmetic)に定められています。

@@ -1244,7 +1244,19 @@ fn qualify_imported_type(ty: ast::Type, alias: &ast::Ident) -> ast::Type {
             if path.segments.len() == 1
                 && matches!(
                     path.segments[0].name.as_str(),
-                    "bool" | "u8" | "u16" | "u32" | "i8" | "i16" | "i32" | "f32"
+                    "bool"
+                        | "u8"
+                        | "u16"
+                        | "u32"
+                        | "i8"
+                        | "i16"
+                        | "i32"
+                        | "f32"
+                        | "u64"
+                        | "i64"
+                        | "f64"
+                        | "q16"
+                        | "q32"
                 ) =>
         {
             ast::Type::Named(path)

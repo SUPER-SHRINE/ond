@@ -94,7 +94,7 @@ fn role_07_optional_role_input_and_complete_old_input() {
     assert_eq!(input.len(), 540, "ROLE-07.unconfigured-hash");
     assert_eq!(
         cache::hash(&input),
-        "6ab6bd11899fd905bb33b9127f979f963d96e035338d3b3b7ba37ac57d65752a"
+        "d6fff72e9563d08bb3aa314c69b0afa2a81ba1f1a3c30ff3d053b9c64fe485cf"
     );
     assert_eq!(result.manifest.packages[0].build_id, cache::hash(&input));
 }

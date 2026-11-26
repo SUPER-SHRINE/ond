@@ -85,7 +85,7 @@ pub(super) fn rows() -> Vec<Row> {
                     &["NIL-01"],
                     format!("func test() {{ var dst: {from} = 0 }}"),
                 )
-                .reject("integer literal requires an integer type", "0"),
+                .reject("integer literal requires a numeric type", "0"),
             );
         } else {
             for (order, expr) in [("left", "nil == src"), ("right", "src == nil")] {

@@ -72,6 +72,18 @@ pub(super) fn validate(
                             );
                     }
                 }
+                InstructionKind::Binary {
+                    op: BinaryOp::Add | BinaryOp::Subtract | BinaryOp::Multiply,
+                    lhs,
+                    overflow,
+                    ..
+                } if f
+                    .values
+                    .get(lhs.0 as usize)
+                    .is_some_and(|v| types.fixed_fraction(v.ty).is_some()) =>
+                {
+                    valid &= *overflow == OverflowBehavior::Checked;
+                }
                 _ => {}
             }
             let places: Vec<&Place> = match &instruction.kind {

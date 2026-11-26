@@ -1,6 +1,6 @@
 # 乗算 `*`
 
-二項の`*`は、同じ整数型または`f32`型の値を掛け合わせます。
+二項の`*`は、同じ数値型の値を掛け合わせます。
 
 ```ond title="main.ond"
 package main
@@ -19,10 +19,8 @@ func main() {
 
 ## 同じ型で計算する
 
-両方のoperandは同じ型にします。\
-\
-`f32`同士の乗算にも`*`を使えます。
+同じ浮動小数点型や同じ固定小数点型の値同士も、`*`で積を求められます。
 
 この例の共通manifestとcompile/link手順は[最初のプログラム](../../../getting-started/first-program.md)を参照してください。
 
-整数の演算規則は[式仕様](../../../../../specs/ond/language/v1/expressions.md#integer-arithmetic)、`f32`は[浮動小数点演算](../../../../../specs/ond/language/v1/expressions.md#floating-point-arithmetic)を参照してください。
+型ごとの規則は[整数演算](../../../../../specs/ond/language/v1/expressions.md#integer-arithmetic)、[浮動小数点演算](../../../../../specs/ond/language/v1/expressions.md#floating-point-arithmetic)、[固定小数点演算](../../../../../specs/ond/language/v1/expressions.md#fixed-point-arithmetic)に定められています。

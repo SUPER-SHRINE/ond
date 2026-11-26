@@ -112,7 +112,7 @@ impl Executable {
                 .map(|s| u32::from_le_bytes(s.try_into().unwrap()))
                 .ok_or_else(|| "truncated ONDX header/table".into())
         };
-        if bytes.get(..4) != Some(b"ONDX") || get(4)? != 1 || get(8)? != 1 || get(12)? != 1 {
+        if bytes.get(..4) != Some(b"ONDX") || get(4)? != 1 || get(8)? != 1 || get(12)? != 2 {
             return Err("unsupported ONDX magic/version/target/abi".into());
         }
         let image_size = get(16)?;
@@ -188,7 +188,7 @@ impl Executable {
         for (index, value) in [
             1,
             1,
-            1,
+            2,
             image_size,
             self.entry_address,
             self.initial_sp,

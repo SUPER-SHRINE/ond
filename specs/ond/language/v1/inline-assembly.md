@@ -48,11 +48,11 @@ bindingの左辺register番号は一つのasm文内で重複してはならな�
 `r0`はbinding対象にできない。
 
 `<-`と`<->`はinput binding、`->`と`<->`はoutput bindingである。\
-binding型は整数型、`bool`、`f32`、raw pointer、function pointer、およびそれらのdefined typeとする。\
+binding型は[ABI分類](../../targets/kagura-v1/abi.md#3-value-classification)のDirect-1とする。\
 array型とstruct型はbinding値として扱わず、そのaddressをraw pointerとして渡す。
 
 input valueは[ABIのDirect-1値分類](../../targets/kagura-v1/abi.md#3-value-classification)が定めるbit representationでregister幅に配置する。\
-output integerはregister下位の型幅bitを型の符号で解釈し、boolはzeroをfalse、それ以外をtrue、f32はbit pattern、pointerとfunction pointerはaddressとして解釈する。\
+output integerはregister下位の型幅bitを型の符号で解釈し、boolはzeroをfalse、それ以外をtrue、浮動小数点型と固定小数点型はそれぞれの格納bits、pointerとfunction pointerはaddressとして解釈する。\
 defined typeはunderlying typeと同じrepresentationを持つ。
 
 ## 評価と値の受渡し

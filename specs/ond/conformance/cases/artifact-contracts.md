@@ -1,7 +1,7 @@
 # 成果物・build・linkの契約case
 <!-- ond-spec-id: conformance/cases/artifact-contracts -->
 
-適用版はOnd v1、Kagura v1、artifact Contract revision 7とする。\
+適用版はOnd v1、Kagura v1、artifact Contract revision 8とする。\
 各caseは他caseから独立した入力を持ち、byte列を明記した行はBOM/末尾LFなしとする。\
 操作が型のwire読出しである場合は、その型のschemaと値条件を比較し、link・source実行の追加成功を意味しない。\
 error行は操作の失敗、link行は[CLI失敗契約](../../build/commands.md#入出力と失敗時)のlink errorを比較する。
@@ -13,7 +13,7 @@ error行は操作の失敗、link行は[CLI失敗契約](../../build/commands.md
 共有入力Aは次のPackageArtifactの全JSON bytesである。
 
 ```json
-{"build_id":"1111111111111111111111111111111111111111111111111111111111111111","compiler_id":"0000000000000000000000000000000000000000000000000000000000000000","contract":{"abi":"ond-kagura-v1","revision":7,"target":"kagura-v1"},"debug":{"functions":[],"package":"sample","ranges":[]},"dependencies":{},"imports":[],"initializer":null,"interface":{"exports":{},"package":"sample","types":[]},"object":{"name":"diagnostic","relocations":[],"sections":[],"symbols":[]},"package":"sample"}
+{"build_id":"1111111111111111111111111111111111111111111111111111111111111111","compiler_id":"0000000000000000000000000000000000000000000000000000000000000000","contract":{"abi":"ond-kagura-v2","revision":8,"target":"kagura-v1"},"debug":{"functions":[],"package":"sample","ranges":[]},"dependencies":{},"imports":[],"initializer":null,"interface":{"exports":{},"package":"sample","types":[]},"object":{"name":"diagnostic","relocations":[],"sections":[],"symbols":[]},"package":"sample"}
 ```
 
 | Case ID | 操作・入力 | 期待 |
@@ -21,7 +21,7 @@ error行は操作の失敗、link行は[CLI失敗契約](../../build/commands.md
 | ART-01.closed.accept | AをPackageArtifactとして読む | 受理 |
 | ART-01.required-null | Aからinitializer fieldを削除して読む | 必須field欠落のerror |
 | ART-01.unknown-nested | A.objectへextra:0を追加して読む | 未知fieldのerror |
-| ART-01.duplicate-decoded-key | Contractとして <code>{"revision":7,"\u0072evision":7,"target":"kagura-v1","abi":"ond-kagura-v1"}</code> を読む | decode後の重複keyのerror |
+| ART-01.duplicate-decoded-key | Contractとして <code>{"revision":8,"\u0072evision":8,"target":"kagura-v1","abi":"ond-kagura-v2"}</code> を読む | decode後の重複keyのerror |
 | ART-01.composite-tuple | ValueKindとして <code>{"Composite":[[0,{"ty":0,"kind":"Zero"}]]}</code> を読む | tuple長2として受理（Value型参照の所属検査は別操作） |
 | ART-01.composite-arity | ValueKindとして <code>{"Composite":[[0]]}</code> を読む | tuple長違反のerror |
 | ART-01.enum-case | SectionKindとして <code>"text"</code> を読む | variant綴り違反のerror |
@@ -43,7 +43,7 @@ error行は操作の失敗、link行は[CLI失敗契約](../../build/commands.md
 | HASH-01.scalar-key-order | key U+E000→0、key U+1F600→1のobject | 7b22ee8080223a302c22f09f9880223a317d | a712a1804e0980b85da1fbebfb21070144773d51ac011435af287d757b3e7dc5 |
 
 `HASH-01.file-bytes`はAをBOM/末尾LFなしで保存した486byteと、Aの末尾にLFを1byte追加した487byteを別fileとする。\
-content_hashは順に`46abc29ca81801ce7a3bfcded39db1424d1d5ba7f53490384b8dcbc2dcb005f2`、`da4b0eb92e4e1a6c9e3c5b4337f602c46c4902acb131b5f41db6ddc12ad66ea3`と比較する。\
+content_hashは順に`a51171e16aca5ead7836d219b42636b63c827ed2051bca75b7c4a6f8204a2141`、`1320ceb6256367ee0aff2e244002645fea64e9b4e37304ce38cbf80304722506`と比較する。\
 JSON値の一致を理由に同じbytesへ再encodeして比較しない。
 
 ## Manifest path

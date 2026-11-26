@@ -65,7 +65,21 @@ allocationの結果は[heap契約](#31-heap-allocator)に従う。
 aggregateのaccess対象はstructのfieldとarrayのelementであり、struct宣言順、array index昇順に再帰してscalar accessを行う。\
 aggregate copyはsource snapshotの読取完了後にdestinationへ書く。\
 途中accessがfaultした場合は完了済みwriteとMMIO副作用を保持し、その場で実行を停止する。\
-アクセス順序そのものを観測可能な契約として保持する。
+アクセス順序そのものを観測可能な契約として保持する。\
+[非公開ローカル集約値](#34-非公開ローカル集約値)に限り、その節の条件でRAM accessを省略できる。
+
+### 3.4 非公開ローカル集約値
+<!-- ond-spec-id: targets/kagura-v1/private-local-aggregate -->
+
+Kagura v1では、sourceの評価でアドレスを取得した値、pointer、MMIOやABIが参照するstorageを、各契約に従って保持する。\
+そのstorageの観測可能な書込み結果、アクセス回数・幅・順序とアクセスに伴うfault、停止前に完了した副作用を維持する。
+
+このstorageに該当しないローカル集約値、scalarやsnapshotの一時値は、その論理値と生存期間を保つ任意の場所で保持できる。\
+この範囲ではRAMへの格納を省略でき、必要な実体だけを配置し、同時に生存しない値のslotを再利用できる。\
+同じ裁量を言語の関数と演算の評価に用いる補助処理に適用する。\
+source snapshotはdestination更新前に確定し、各要素の値、浮動小数点型の格納bits、演算・変換・比較の結果とfaultを保持する。
+
+実際に使うframeは[call規約](./abi.md#6-stack-frame)、[stack容量検査](./abi.md#7-stack-overflow)、[unwind記録](../../debug-metadata/v1.md)を満たす。
 
 ## 4. Startup
 <!-- ond-spec-id: targets/kagura-v1/startup -->
@@ -82,48 +96,87 @@ mainから戻った際の制御経路は[link.exit](../../build/packages.md#comp
 | --- | ---: | ---: |
 | `u8`, `i8`, `bool` | 1 | 1 |
 | `u16`, `i16` | 2 | 2 |
-| `u32`, `i32`, `f32`, `*T`, function pointer | 4 | 4 |
+| `u32`, `i32`, `f32`, `q16`, `*T`, function pointer | 4 | 4 |
+| `u64`, `i64`, `f64`, `q32` | 8 | 4 |
 
 - guest type の最大 alignment は 4 byte とする
 - `bool` は memory 上の `0` を false、非 `0` を true とする
   - compiler は `0` または `1` を store する
-- f32は[言語のbinary32 bit pattern](../../language/v1/expressions.md#floating-point-arithmetic)をlittle-endianで配置する
+- 浮動小数点型は[定義された格納bits](../../language/v1/expressions.md#floating-point-arithmetic)、固定小数点型は[格納整数のbits](../../language/v1/types.md#型)をlittle-endianで配置する
 - `*T` は 32-bit bus address で、`nil` は `0x00000000` とする
 - `[N]T` は header のない連続した `N` 要素とし、alignment は `alignof(T)`、size は `N * sizeof(T)` とする
-- 固定長配列の `N * sizeof(T)` が `2^32-1` byte を超える場合は compile error とする
-  - 積は数学的な整数として判定し、32 bit への切り詰めや折り返しを行わない
-  - 推論長配列も長さの確定後に同じ上限を適用する
-  - 要素が defined type、struct、配列の場合も、padding を含む要素型の size を使う
-  - 未使用の型宣言、pointer の参照先、generic の具体化結果も検査する
-  - `N = 0` または `sizeof(T) = 0` の積は `0` とし、入れ子に含まれる各配列型もそれぞれ検査する
-- struct field は宣言順に置き、各 field をその alignment へ揃える
-  - struct の alignment は field の最大値、size はその alignment の倍数へ切り上げる
+  - 要素型の size には padding を含む
+  - `N = 0` または `sizeof(T) = 0` の積は `0` とする
+- struct field は宣言順に置く
+  - 各 field の開始 offset は、直前の field の開始 offset と size の和（先頭 field では `0`）を、その field の alignment の倍数へ切り上げた値とする
+  - struct の alignment は field の alignment の最大値とし、size は最後の field の開始 offset と size の和を struct の alignment の倍数へ切り上げた byte 数とする
+- 配列型と struct 型の size は `2^32-1` byte 以下でなければならず、上限を超える型は compile error とする
+  - 配列の積、struct の field 位置、size と末尾 padding は数学的な整数で計算して判定する
+  - 推論長配列には長さの確定後、generic の型には具体化後に適用する
+  - 値の生成や layout 問い合わせの有無にかかわらず、未使用の型宣言、pointer の参照先、入れ子の型を含め、各型に適用する
 - zero-size型のsize/alignment、addressable storageとheap結果は[ゼロサイズの境界](#32-ゼロサイズとaggregate-access)に従う
 - padding byte の値は観測可能な意味を持たない
 
 全型の zero value は全 byte が `0` の表現とする。
 
 例えば `[4294967295]u8` の size は上限内だが、`[1073741824]u32` の size は `2^32` byte なので型として拒否する。\
-上限内の配列型であっても、実際の storage 配置や heap 確保が成功するとは限らない。
+型の size 上限とは別に、実際の storage 配置と heap 確保には[メモリ管理](../../language/v1/execution.md#メモリ管理)の規則が適用される。
 
 ## 6. Raw Pointer Access
 <!-- ond-spec-id: targets/kagura-v1/raw-pointer-access -->
 
 - pointerはaddress値であり、対応storageは変数宣言または明示allocationによって確保する
+- 整数からraw pointerへの明示変換は、整数値vの `v mod 2^32` を符号なしaddressとする
+- raw pointerから整数への明示変換は、addressを符号なし整数値として[整数間の変換規則](../../language/v1/types.md#型同一性)を適用する
 - [operator解決](../../language/v1/expressions.md#user-defined-operator)でbuiltin raw pointer indexを選んだ場合、`*T`の`pointer[index]`の実効addressは`(pointer + index * sizeof(T)) mod 2^32`とする
   - `index` は `u32` とする
 - raw indexed accessの有効address、allocation範囲とpointer生存期間は利用側の成立前提とする
-- scalar の参照外しは型幅と同じ 1 回の bus access とする
+- 32 bit以下のscalarは型のmemory幅で1回のbus accessを行う
+- 64 bitのscalarは低位wordをaddress A、高位wordを (A + 4) mod 2^32 として、低位から順に独立した32-bit bus accessを各1回行う
+  - 両accessが完了した読取りは2 wordを合わせた値を返し、copyは読取り完了後に書込みを始める
+  - 片方だけが完了した時点でもそのaccessのwriteまたはMMIO副作用を保持する
+  - scalarのmemory access規則は通常storage、aggregateの要素、ABIのmemory returnにも適用する
 - aggregate の読み書きは field または element 単位の複数 bus access とする
 - aggregateのaccess順とsnapshot copyは[Ordered aggregate access](#33-ordered-aggregate-access)に従う
 - fault時は[ordered aggregate access](#33-ordered-aggregate-access)の完了済みwrite/MMIO保持と停止規則に従う
   - destinationへのcopy開始はsource snapshot読取りの完了後である
 - pointerによるbus accessの回数、幅、実行順を保持する
 - 有効な RAM または MMIO address は、stack、heap、startup segment と重なっていてもその実体を参照する
+  - 非公開ローカル集約値のaccessを一部省略するときのstack上のstorageは[非公開ローカル集約値](#34-非公開ローカル集約値)に従う
 - alignment違反および機種bus上で許可されないaccessはfaultとする
   - nilの値は0だが、address 0の物理的なmappingは実行環境が定義する
 - `.text`と`.rodata`への直接書込みは型検査errorとなる
   - raw pointer accessはbus mappingの物理的な読み書き規則に従う
+
+### ループ内のraw pointer address計算
+<!-- ond-spec-id: targets/kagura-v1/raw-pointer-loop-address -->
+
+Kagura v1向けのコンパイルは、同じ基点と添字を使うループ内の複数のraw pointer accessについて、要素addressを反復間で更新する形に置き換えられる。\
+この適用範囲は、基点が宣言済みの固定長グローバル配列の要素を指し、すべての到達可能な対象accessが同じ配列内に収まる場合とする。\
+各backedgeと`continue`を通る経路で基点が不変であり、同じ`u32`の歩幅で添字が更新され、対象の読取り・書込みと他の評価が基点・添字・frame上の補助値を別名経由で変更しないことを要する。\
+ループ条件によって終了するまで、正常に進む本体の全経路が共通の添字更新を通る。
+
+置換はraw pointer indexの32-bit折り返し、元の添字値とその用途、配列のbounds check、アクセスの回数・幅・実行順を保持する。\
+対象accessがfaultしたときはfaultの種別と元のsource位置に対応するdebug operationを保持し、停止前に完了した書込みとMMIO副作用を保持する。\
+ゼロ反復では対象要素の読取り・書込みを行わない。
+
+同じ関数の入力と設定で置換前後が正常に復帰する対応経路では、置換後に関数内の実行命令数が減ることを要する。\
+置換後に関数が使用するframe容量は置換前以下とする。\
+使用するframeに対して[stack容量検査](./abi.md#7-stack-overflow)を行う。
+
+## 整数剰余計算での商の再利用
+<!-- ond-spec-id: targets/kagura-v1/integer-remainder-quotient-reuse -->
+
+Kagura v1では、`u8`、`i8`、`u16`、`i16`、`u32`、`i32`のbuiltin剰余`a % b`に対し、同じ関数の評価経路で先に正常完了したbuiltin除算の商`q`を再利用できる。\
+剰余に到達する各経路で、除算と剰余の対応するoperandがそれぞれ同じ型と同じ値を持つと証明できる場合、剰余の算術処理を`a - q * b`で置き換えられる。\
+積と差は[整数演算](../../language/v1/expressions.md#integer-arithmetic)に従って剰余の型の幅で折り返す。
+
+置換の前後で対応するsource評価は、operandの型と値、その評価が入力として使うstorageの内容、同じaccessに対するbusの応答条件が等しいときに比較する。\
+置換は元のoperand評価と、sourceの評価に伴う観測可能な読取り・書込みおよび検査の回数と順序を保持する。\
+どちらの実行でも到達する処理は、演算結果、faultの成立条件・種別・順序、faultに対応する元のsource位置とdebug上の意味分類、停止前に完了した書込みとMMIO副作用を保持する。\
+算術処理の置換自体が到達する処理を変え得るのは、剰余の補助処理のframeを省いたことで[stack容量検査](./abi.md#7-stack-overflow)の成否が変わる場合に限る。
+
+sectionとheap_baseの配置は[配置契約](../../artifacts.md#配置容量と出力範囲)に従い、heapが割り当てに使う範囲は[heap allocator](#31-heap-allocator)の規則で定まる。
 
 ## 7. Project Configuration
 <!-- ond-spec-id: targets/kagura-v1/project-configuration -->
@@ -141,10 +194,11 @@ debug metadataは次の意味分類を加え、CPU fault codeを変更しない�
 | Ondの条件・観測操作 | Kagura CPU fault | debug operation |
 | --- | --- | --- |
 | builtin配列bounds check失敗 | INVALID_INSTRUCTION | BoundsCheck |
-| runtime整数の除数zero | INVALID_INSTRUCTION | DivisionByZero |
+| runtime整数または固定小数点の除数zero | INVALID_INSTRUCTION | DivisionByZero |
 | runtime signed minInt/-1 | INVALID_INSTRUCTION | SignedDivisionOverflow |
-| runtime f32→整数の不正変換 | INVALID_INSTRUCTION | InvalidConversion |
-| stack確保時の容量不足/underflow | INVALID_INSTRUCTION | StackOverflow |
+| runtimeの数値変換不成立 | INVALID_INSTRUCTION | InvalidConversion |
+| runtimeの固定小数点算術の範囲外 | INVALID_INSTRUCTION | FixedPointOverflow |
+| [stack確保時の容量不足/underflow](./abi.md#7-stack-overflow) | INVALID_INSTRUCTION | StackOverflow |
 | explicit trap | INVALID_INSTRUCTION | ExplicitTrap |
 | raw load/storeのalignment違反 | UNALIGNED_ACCESS | MemoryRead/MemoryWrite |
 | fetch/indirect jumpのPC alignment違反 | UNALIGNED_PC | 対応rangeがあればそのoperation |

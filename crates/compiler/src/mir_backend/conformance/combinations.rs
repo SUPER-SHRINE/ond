@@ -30,7 +30,7 @@ fn far_calls_large_frames_hidden_returns_stack_arguments_and_helpers_coexist() {
             var sum=a+b+c+d+e+f+g.a;return S{{a:sum,b:g.b}},sum/3
         }}
         func recur(s:S,n:u32)->S{{if n==0{{return s}};s.a=s.a+1;var q=(s.a as f32)/2.0; s.b=q as u32;return recur(s,n-1)}}
-        func padding(){{var buf:[2000]u8;buf[1999]=1}}
+        func padding(){{var buf:[34000]u8;buf[33999]=1}}
         func main(){{G=initialize();var s=S{{a:7,b:8}};var t,q=leaf(1,2,3,4,5,6,s);var r=recur(t,3);
             G.a=r.a;*({OUTPUT} as u32 as *u32) = t.a;*({} as u32 as *u32) = t.b;*({} as u32 as *u32) = q;*({} as u32 as *u32) = r.a;*({} as u32 as *u32) = r.b;*({} as u32 as *u32) = s.a;free(G)}}",
         OUTPUT+4,OUTPUT+8,OUTPUT+12,OUTPUT+16,OUTPUT+20);
@@ -94,7 +94,12 @@ fn size(p: &mir::Project, name: &str) -> u32 {
         returns: f.returns.clone(),
     };
     let abi = layout::abi(&p.types, &signature, f.span).unwrap();
-    Frame::new(f, &p.types, &abi).unwrap().size
+    let copies = private_array_copy::Plan::new(&p.types, f, &abi);
+    assert!(
+        copies.copies.is_empty(),
+        "the fixture uses only scalar locals"
+    );
+    Frame::new(f, &p.types, &abi, &copies).unwrap().size
 }
 
 #[test]

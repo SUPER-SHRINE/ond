@@ -7,7 +7,7 @@ pub(super) struct CallFrame {
 }
 pub(super) struct Frame {
     pub size: u32,
-    pub locals: Vec<u32>,
+    locals: Vec<Option<u32>>,
     pub values: Vec<u32>,
     pub edges: Vec<u32>,
     pub ra: u32,
@@ -17,7 +17,7 @@ pub(super) struct Frame {
 }
 impl Frame {
     pub fn local(&self, id: mir::LocalId) -> u32 {
-        self.locals[id.0 as usize]
+        self.locals[id.0 as usize].expect("materialized local")
     }
     pub fn value(&self, id: mir::ValueId) -> u32 {
         self.values[id.0 as usize]
@@ -26,6 +26,7 @@ impl Frame {
         f: &mir::Function,
         types: &mir::TypeTable,
         abi: &layout::AbiPlan,
+        private_copies: &private_array_copy::Plan,
     ) -> Result<Self, Diagnostic> {
         let mut cursor = 0;
         for i in f.blocks.iter().flat_map(|b| &b.instructions) {
@@ -55,7 +56,13 @@ impl Frame {
         let locals = f
             .locals
             .iter()
-            .map(|l| slot(l.ty, l.span))
+            .map(|l| {
+                if private_copies.eliminated_locals.contains(&l.id) {
+                    Ok(None)
+                } else {
+                    slot(l.ty, l.span).map(Some)
+                }
+            })
             .collect::<Result<Vec<_>, _>>()?;
         let values = f
             .values
@@ -67,15 +74,18 @@ impl Frame {
             .iter()
             .map(|v| slot(v.ty, v.span))
             .collect::<Result<Vec<_>, _>>()?;
+        // Raw address induction also uses the word padded up to the saved RA.
         let mut scratch_size = 1;
         for i in f.blocks.iter().flat_map(|b| &b.instructions) {
-            if let mir::InstructionKind::AggregateCopy { source, .. } = &i.kind {
+            if let mir::InstructionKind::AggregateCopy { source, .. } = &i.kind
+                && !private_copies.copies.contains_key(&i.id)
+            {
                 scratch_size = scratch_size.max(layout::data(types, source.ty, i.span)?.size);
             }
         }
         let scratch = reserve(&mut cursor, scratch_size, f.span)?;
         let ra = reserve(&mut cursor, 4, f.span)?;
-        let incoming = (0..f.parameters.len() + usize::from(abi.hidden.is_some()))
+        let incoming = (0..abi.arguments.len() + usize::from(abi.hidden.is_some()))
             .map(|_| reserve(&mut cursor, 4, f.span))
             .collect::<Result<Vec<_>, _>>()?;
         let mut calls = BTreeMap::new();

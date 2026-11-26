@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 use crate::project::PackageId;
 use crate::source::Span;
@@ -25,6 +26,11 @@ impl TypeId {
     pub const U32: Self = Self(5);
     pub const I32: Self = Self(6);
     pub const F32: Self = Self(7);
+    pub const U64: Self = Self(8);
+    pub const I64: Self = Self(9);
+    pub const F64: Self = Self(10);
+    pub const Q16: Self = Self(11);
+    pub const Q32: Self = Self(12);
 }
 
 impl fmt::Display for TypeId {
@@ -37,6 +43,18 @@ impl fmt::Display for TypeId {
 pub struct TypeTable {
     definitions: Vec<TypeDefinition>,
     generic_instances: BTreeMap<TypeId, GenericInstance>,
+    struct_layout_sites: Vec<StructLayoutSite>,
+    struct_layout_queries: Vec<(TypeId, Span)>,
+    records_struct_layout_sites: bool,
+    struct_layout_specialization: Option<Arc<str>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct StructLayoutSite {
+    pub(crate) id: TypeId,
+    pub(crate) span: Span,
+    pub(crate) requests: Vec<Span>,
+    pub(crate) specialization: Option<Arc<str>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -85,6 +103,10 @@ impl TypeTable {
         let mut table = Self {
             definitions: Vec::new(),
             generic_instances: BTreeMap::new(),
+            struct_layout_sites: Vec::new(),
+            struct_layout_queries: Vec::new(),
+            records_struct_layout_sites: true,
+            struct_layout_specialization: None,
         };
         for (name, kind) in [
             ("bool", TypeKind::Bool),
@@ -95,6 +117,11 @@ impl TypeTable {
             ("u32", TypeKind::U32),
             ("i32", TypeKind::I32),
             ("f32", TypeKind::F32),
+            ("u64", TypeKind::U64),
+            ("i64", TypeKind::I64),
+            ("f64", TypeKind::F64),
+            ("q16", TypeKind::Q16),
+            ("q32", TypeKind::Q32),
         ] {
             table.push(Some(name.to_string()), kind, Span::synthetic());
         }
@@ -103,6 +130,58 @@ impl TypeTable {
 
     pub fn definitions(&self) -> &[TypeDefinition] {
         &self.definitions
+    }
+
+    pub(crate) fn record_struct_layout_site(
+        &mut self,
+        id: TypeId,
+        span: Span,
+        requests: Vec<Span>,
+    ) {
+        self.struct_layout_sites.push(StructLayoutSite {
+            id,
+            span,
+            requests,
+            specialization: self.struct_layout_specialization.clone(),
+        });
+    }
+
+    pub(crate) fn set_struct_layout_specialization(&mut self, specialization: Option<&str>) {
+        self.struct_layout_specialization = specialization.map(Arc::from);
+    }
+
+    pub(crate) fn take_struct_layout_sites(&mut self) -> Vec<StructLayoutSite> {
+        std::mem::take(&mut self.struct_layout_sites)
+    }
+
+    pub(crate) fn without_struct_layout_sites<T>(
+        &mut self,
+        resolve: impl FnOnce(&mut Self) -> T,
+    ) -> T {
+        let recording = self.set_struct_layout_site_recording(false);
+        let result = resolve(self);
+        self.set_struct_layout_site_recording(recording);
+        result
+    }
+
+    pub(crate) fn records_struct_layout_sites(&self) -> bool {
+        self.records_struct_layout_sites
+    }
+
+    pub(crate) fn set_struct_layout_site_recording(&mut self, enabled: bool) -> bool {
+        std::mem::replace(&mut self.records_struct_layout_sites, enabled)
+    }
+
+    pub(crate) fn record_struct_layout_query(&mut self, id: TypeId, span: Span) {
+        if self.records_struct_layout_sites
+            && let Some(underlying) = self.underlying_id(id)
+        {
+            self.struct_layout_queries.push((underlying, span));
+        }
+    }
+
+    pub(crate) fn take_struct_layout_queries(&mut self) -> Vec<(TypeId, Span)> {
+        std::mem::take(&mut self.struct_layout_queries)
     }
 
     pub fn get(&self, id: TypeId) -> Option<&TypeDefinition> {
@@ -200,6 +279,8 @@ impl TypeTable {
                     | TypeKind::I16
                     | TypeKind::U32
                     | TypeKind::I32
+                    | TypeKind::U64
+                    | TypeKind::I64
             )
         )
     }
@@ -207,8 +288,27 @@ impl TypeTable {
     pub fn is_signed_integer(&self, id: TypeId) -> bool {
         matches!(
             self.underlying_kind(id),
-            Some(TypeKind::I8 | TypeKind::I16 | TypeKind::I32)
+            Some(TypeKind::I8 | TypeKind::I16 | TypeKind::I32 | TypeKind::I64)
         )
+    }
+
+    pub fn is_float(&self, id: TypeId) -> bool {
+        matches!(
+            self.underlying_kind(id),
+            Some(TypeKind::F32 | TypeKind::F64)
+        )
+    }
+
+    pub fn fixed_fraction(&self, id: TypeId) -> Option<u32> {
+        match self.underlying_kind(id)? {
+            TypeKind::Q16 => Some(16),
+            TypeKind::Q32 => Some(32),
+            _ => None,
+        }
+    }
+
+    pub fn is_numeric(&self, id: TypeId) -> bool {
+        self.is_integer(id) || self.is_float(id) || self.fixed_fraction(id).is_some()
     }
 
     pub fn display(&self, id: TypeId) -> TypeDisplay<'_> {
@@ -218,14 +318,26 @@ impl TypeTable {
     /// Ond v1 data layout. Kagura is a 32-bit target and every scalar has a
     /// natural alignment no greater than four bytes.
     pub fn size_align(&self, id: TypeId) -> Result<(u32, u32), &'static str> {
+        self.size_align_with_cause(id)
+            .map_err(|(_, message)| message)
+    }
+
+    pub(crate) fn size_align_with_cause(
+        &self,
+        id: TypeId,
+    ) -> Result<(u32, u32), (TypeId, &'static str)> {
         fn align(value: u32, alignment: u32) -> Option<u32> {
             value
                 .checked_add(alignment - 1)
                 .map(|value| value & !(alignment - 1))
         }
-        fn visit(table: &TypeTable, id: TypeId, depth: usize) -> Result<(u32, u32), &'static str> {
+        fn visit(
+            table: &TypeTable,
+            id: TypeId,
+            depth: usize,
+        ) -> Result<(u32, u32), (TypeId, &'static str)> {
             if depth > table.definitions.len() {
-                return Err("recursive value layout");
+                return Err((id, "recursive value layout"));
             }
             match table.underlying_kind(id) {
                 Some(TypeKind::Bool | TypeKind::U8 | TypeKind::I8) => Ok((1, 1)),
@@ -234,34 +346,36 @@ impl TypeTable {
                     TypeKind::U32
                     | TypeKind::I32
                     | TypeKind::F32
+                    | TypeKind::Q16
                     | TypeKind::Pointer(_)
                     | TypeKind::Function(_),
                 ) => Ok((4, 4)),
+                Some(TypeKind::U64 | TypeKind::I64 | TypeKind::F64 | TypeKind::Q32) => Ok((8, 4)),
                 Some(TypeKind::Array { length, element }) => {
                     let (size, alignment) = visit(table, *element, depth + 1)?;
                     Ok((
-                        size.checked_mul(*length).ok_or("array layout overflow")?,
+                        size.checked_mul(*length)
+                            .ok_or((id, "array layout overflow"))?,
                         alignment,
                     ))
                 }
                 Some(TypeKind::Struct(structure)) => {
+                    let overflow = (id, "struct layout overflow");
                     let mut size = 0u32;
                     let mut structure_alignment = 1u32;
                     for field in &structure.fields {
                         let (field_size, field_alignment) = visit(table, field.ty, depth + 1)?;
-                        size = align(size, field_alignment).ok_or("struct layout overflow")?;
-                        size = size
-                            .checked_add(field_size)
-                            .ok_or("struct layout overflow")?;
+                        size = align(size, field_alignment).ok_or(overflow)?;
+                        size = size.checked_add(field_size).ok_or(overflow)?;
                         structure_alignment = structure_alignment.max(field_alignment);
                     }
                     Ok((
-                        align(size, structure_alignment).ok_or("struct layout overflow")?,
+                        align(size, structure_alignment).ok_or(overflow)?,
                         structure_alignment,
                     ))
                 }
                 Some(TypeKind::Pending | TypeKind::Defined { .. }) | None => {
-                    Err("type layout is unavailable")
+                    Err((id, "type layout is unavailable"))
                 }
             }
         }
@@ -299,6 +413,11 @@ pub enum TypeKind {
     U32,
     I32,
     F32,
+    U64,
+    I64,
+    F64,
+    Q16,
+    Q32,
     Pointer(TypeId),
     Function(FunctionType),
     Array { length: u32, element: TypeId },
@@ -379,6 +498,11 @@ impl fmt::Display for TypeDisplay<'_> {
             TypeKind::U32 => f.write_str("u32"),
             TypeKind::I32 => f.write_str("i32"),
             TypeKind::F32 => f.write_str("f32"),
+            TypeKind::U64 => f.write_str("u64"),
+            TypeKind::I64 => f.write_str("i64"),
+            TypeKind::F64 => f.write_str("f64"),
+            TypeKind::Q16 => f.write_str("q16"),
+            TypeKind::Q32 => f.write_str("q32"),
             TypeKind::Pointer(inner) => write!(f, "*{}", self.table.display(*inner)),
             TypeKind::Function(signature) => {
                 let parameters = signature

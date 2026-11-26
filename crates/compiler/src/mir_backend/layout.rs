@@ -22,6 +22,9 @@ pub fn scalar(
         Some(U32) => (4, false, false),
         Some(I32) => (4, true, false),
         Some(F32) => (4, false, false),
+        Some(Q16) => (4, true, false),
+        Some(U64 | F64) => (8, false, false),
+        Some(I64 | Q32) => (8, true, false),
         Some(Pointer(_) | Function(_)) => (4, false, false),
         _ => {
             return Err(error(
@@ -32,7 +35,7 @@ pub fn scalar(
     };
     Ok(ScalarLayout {
         size,
-        alignment: size,
+        alignment: size.min(4),
         signed,
         boolean,
     })
@@ -59,8 +62,13 @@ pub fn abi(
     for ty in signature.parameters.iter().chain(&signature.returns) {
         data(types, *ty, span)?;
     }
-    let memory =
-        signature.returns.len() > 4 || signature.returns.iter().any(|t| aggregate(types, *t));
+    let memory = signature.returns.iter().any(|t| aggregate(types, *t))
+        || signature
+            .returns
+            .iter()
+            .map(|ty| words(types, *ty))
+            .sum::<u32>()
+            > 4;
     let mut return_offsets = Vec::new();
     let mut return_bytes = 0;
     if memory {
@@ -69,7 +77,11 @@ pub fn abi(
             return_bytes = align(return_bytes, d.alignment, span)?;
             return_offsets.push(return_bytes);
             return_bytes = return_bytes
-                .checked_add(if aggregate(types, *ty) { d.size } else { 4 })
+                .checked_add(if aggregate(types, *ty) {
+                    d.size
+                } else {
+                    d.size.max(4)
+                })
                 .ok_or_else(|| error(span, "return area overflow"))?;
         }
         return_bytes = align(return_bytes, 4, span)?;
@@ -81,7 +93,11 @@ pub fn abi(
             Argument::Stack((i as u32 - 6) * 4)
         }
     };
-    let extra = (signature.parameters.len() + usize::from(memory)).saturating_sub(6);
+    let argument_words = signature.parameters.iter().try_fold(0usize, |n, ty| {
+        n.checked_add(words(types, *ty) as usize)
+            .ok_or_else(|| error(span, "argument area too large"))
+    })?;
+    let extra = (argument_words + usize::from(memory)).saturating_sub(6);
     let bytes = u32::try_from(extra)
         .ok()
         .and_then(|n| n.checked_mul(4))
@@ -89,7 +105,7 @@ pub fn abi(
         .map(|n| n & !7)
         .ok_or_else(|| error(span, "argument area too large"))?;
     Ok(AbiPlan {
-        arguments: (0..signature.parameters.len())
+        arguments: (0..argument_words)
             .map(|i| word(i + usize::from(memory)))
             .collect(),
         stack_bytes: bytes,
@@ -106,6 +122,17 @@ pub struct DataLayout {
     pub alignment: u32,
     pub fields: Vec<u32>,
 }
+pub(super) fn words(types: &mir::TypeTable, ty: mir::TypeId) -> u32 {
+    if matches!(
+        types.underlying_kind(ty),
+        Some(mir::TypeKind::U64 | mir::TypeKind::I64 | mir::TypeKind::F64 | mir::TypeKind::Q32)
+    ) {
+        2
+    } else {
+        1
+    }
+}
+
 pub fn aggregate(types: &mir::TypeTable, ty: mir::TypeId) -> bool {
     matches!(
         types.underlying_kind(ty),

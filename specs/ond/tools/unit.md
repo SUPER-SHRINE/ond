@@ -64,9 +64,9 @@ source の選択と可視性は [Ond role 構文と可視性](../language/v1/rol
 compile 成果物の Contract は [Ond artifacts 仕様の版識別と互換条件](../artifacts.md#版識別と互換条件) に従う。\
 ONDX の形式、版識別、ロードおよび配置契約は [Ond artifacts 仕様](../artifacts.md) に従う。
 
-実行対象は Ond target `kagura-v1` とし、ABI は `ond-kagura-v1` とする。\
+実行対象は Ond target `kagura-v1` とし、ABI は `ond-kagura-v2` とする。\
 CPU と bus は [Kagura target README](../targets/kagura-v1/README.md) が参照する Kagura 規範仕様 1.0.0 に従う。\
-ABI 契約は [ond-kagura-v1 ABI 仕様](../targets/kagura-v1/abi.md) に従う。\
+ABI 契約は [ond-kagura-v2 ABI 仕様](../targets/kagura-v1/abi.md) に従う。\
 fault の意味分類とメモリ契約は [Kagura machine 仕様](../targets/kagura-v1/machine.md) に従う。\
 debug metadata の形式と lookup は §9 の外部規範を定義元とする。
 

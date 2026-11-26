@@ -58,6 +58,11 @@ fn generic_identity_is_stable_and_preserves_type_distinctions() {
         "func()",
         "func(u32)",
         "func()->u32",
+        "u64",
+        "i64",
+        "f64",
+        "q16",
+        "q32",
     ];
     let mut source = String::from(
         "package shared\ntype A u32\ntype B u32\ntype Node struct { Next:*Node; Wrapped:*Box[*Node] }\ntype Box[T] struct { Value:T }\ntype Pair[T,U] struct { Left:T; Right:U }\ntype Reader[T] struct { Value:T; Next:*Reader[T] }\n",
@@ -193,4 +198,28 @@ operator (plain:Plain) + (cell:Cell[Token])->u32 { return cell.Value.Value }
     };
     assert_eq!(symbols(&before).len(), 3);
     assert_eq!(symbols(&before), symbols(&after));
+}
+
+#[test]
+fn f64_and_struct_nested_function_arguments_have_distinct_generic_symbols() {
+    let compilation = compile_files(&[(
+        "main.ond",
+        r#"package main
+func Use[T](value:T)->T { return value }
+func main() {
+    var a:func(func(f64))->struct {}
+    var b:func(func(struct {})->f64)
+    _ = Use[func(func(f64))->struct {}](a)
+    _ = Use[func(func(struct {})->f64)](b)
+}
+"#,
+    )])
+    .unwrap();
+    let specializations = compilation.mir.packages[0]
+        .functions
+        .iter()
+        .filter(|function| function.name.contains("Use"))
+        .map(|function| &function.name)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(specializations.len(), 2, "{specializations:?}");
 }

@@ -69,7 +69,7 @@ pub fn compile_project_with_overrides(
 pub fn compile_loaded_project(loaded: LoadedProject) -> Result<Compilation, FrontendError> {
     let ast = ond::parse_project(&loaded)?;
     let hir = lower_to_hir(&loaded, &ast)?;
-    let mir = lower_to_mir(&hir)?;
+    let mir = lower_to_mir(&hir, false)?;
     mir::validate_project(&mir).map_err(|errors| {
         FrontendError::new(
             errors
@@ -140,7 +140,7 @@ pub fn compile_loaded_project_with_generation(
     let generation = generation.normalize(&hir).map_err(|message| {
         FrontendError::new(vec![Diagnostic::error(source::Span::synthetic(), message)])
     })?;
-    let mir = lower_to_mir(&hir)?;
+    let mir = lower_to_mir(&hir, true)?;
     mir::validate_project(&mir).map_err(|errors| {
         FrontendError::new(
             errors

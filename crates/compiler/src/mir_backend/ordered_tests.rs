@@ -1,6 +1,6 @@
 //! Observe actual Kagura bus accesses, not only the final aggregate value.
 use super::tests::{Fixture, machine};
-use kagura::{Bus, BusFault, DefaultBus};
+use kagura::{Bus, BusFault, DefaultBus, FaultCode};
 use ram::Ram;
 const BASE: u32 = 0x20000000;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,7 +71,10 @@ fn run(source: &str, fault: Option<Access>) -> (TraceBus, bool) {
         fault,
     };
     for _ in 0..200000 {
-        if cpu.step(&mut bus).is_err() {
+        if let Err(error) = cpu.step(&mut bus) {
+            if fault.is_some() {
+                assert_eq!(error.code(), FaultCode::BusFault);
+            }
             return (bus, true);
         }
         if bus.inner.read32(0xffff8040).unwrap() != 0xdeadbeef {
@@ -144,49 +147,37 @@ fn source_fault_never_starts_destination_and_write_fault_does_not_rollback() {
 }
 #[test]
 fn overlapping_aggregate_copy_uses_pre_write_snapshot() {
-    let (mut bus, fault) = run(
-        "package main\nfunc main(){var p=536870912 as *[3]u8;var q=536870913 as *[3]u8;*q=*p;}",
-        None,
-    );
-    assert!(!fault);
-    assert_eq!(
-        bus.trace,
-        vec![
-            Access {
+    for (offset, assignment) in [
+        (0, "*p=*p"),
+        (0, "var q=536870912 as *[3]u8;*q=*p"),
+        (1, "var q=536870913 as *[3]u8;*q=*p"),
+    ] {
+        let source =
+            format!("package main\nfunc main(){{var p=536870912 as *[3]u8;{assignment};}}");
+        let (mut bus, fault) = run(&source, None);
+        assert!(!fault);
+        let all: Vec<_> = (0..3)
+            .map(|offset| Access {
                 write: false,
-                offset: 0,
-                width: 1
-            },
-            Access {
-                write: false,
-                offset: 1,
-                width: 1
-            },
-            Access {
-                write: false,
-                offset: 2,
-                width: 1
-            },
-            Access {
+                offset,
+                width: 1,
+            })
+            .chain((offset..offset + 3).map(|offset| Access {
                 write: true,
-                offset: 1,
-                width: 1
-            },
-            Access {
-                write: true,
-                offset: 2,
-                width: 1
-            },
-            Access {
-                write: true,
-                offset: 3,
-                width: 1
-            }
-        ]
-    );
-    assert_eq!(bus.inner.read8(BASE + 1).unwrap(), 11);
-    assert_eq!(bus.inner.read8(BASE + 2).unwrap(), 0xcc);
-    assert_eq!(bus.inner.read8(BASE + 3).unwrap(), 1234u16 as u8);
+                offset,
+                width: 1,
+            }))
+            .collect();
+        assert_eq!(bus.trace, all, "{assignment}");
+        assert_eq!(bus.inner.read8(BASE + offset).unwrap(), 11);
+        assert_eq!(bus.inner.read8(BASE + offset + 1).unwrap(), 0xcc);
+        assert_eq!(bus.inner.read8(BASE + offset + 2).unwrap(), 1234u16 as u8);
+        for failing_access in [1, 4] {
+            let (bus, fault) = run(&source, Some(all[failing_access]));
+            assert!(fault, "{assignment}");
+            assert_eq!(bus.trace, all[..=failing_access], "{assignment}");
+        }
+    }
 }
 #[test]
 fn bool_load_normalizes_and_bool_store_uses_one_byte() {
@@ -251,4 +242,25 @@ fn nested_array_order_raw_offset_wrap_and_alignment_fault() {
         width: *w,
     });
     assert_eq!(bus.trace, reads.chain(writes).collect::<Vec<_>>());
+}
+
+#[test]
+fn wide_copy_observes_two_word_accesses_and_partial_fault_effects() {
+    let source = super::numeric_wide_tests::source("memory");
+    let all = [(false, 0), (false, 4), (true, 16), (true, 20)].map(|(write, offset)| Access {
+        write,
+        offset,
+        width: 4,
+    });
+    for (fault, count, low, high) in [
+        (None, 4, 0x04d2cc0b, 0xcccccc16),
+        (Some(all[1]), 2, 0xcccccccc, 0xcccccccc),
+        (Some(all[3]), 4, 0x04d2cc0b, 0xcccccccc),
+    ] {
+        let (mut bus, stopped) = run(source, fault);
+        assert_eq!(stopped, fault.is_some());
+        assert_eq!(bus.trace, all[..count]);
+        assert_eq!(bus.inner.read32(BASE + 16).unwrap(), low);
+        assert_eq!(bus.inner.read32(BASE + 20).unwrap(), high);
+    }
 }

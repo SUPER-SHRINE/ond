@@ -98,6 +98,11 @@ fn encode(output: &mut String, id: TypeId, types: &TypeTable, universe: &[TypePa
         TypeKind::U32 => output.push('u'),
         TypeKind::I32 => output.push('j'),
         TypeKind::F32 => output.push('r'),
+        TypeKind::U64 => output.push('k'),
+        TypeKind::I64 => output.push('l'),
+        TypeKind::F64 => output.push('m'),
+        TypeKind::Q16 => output.push('v'),
+        TypeKind::Q32 => output.push('w'),
         TypeKind::Pending | TypeKind::Defined { .. } => {
             unreachable!("pending and defined types must have a nominal name")
         }
