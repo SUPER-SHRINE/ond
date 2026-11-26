@@ -20,12 +20,11 @@ func main() {
 \
 例の`17 / 5`は`i32`の3です。
 
-## `f32`の除算
+## 浮動小数点と固定小数点の除算
 
-`f32`同士の除算も`/`で表します。\
-\
-整数の商の丸めとは異なる浮動小数点演算です。
+同じ浮動小数点型や同じ固定小数点型の値同士も、`/`で割れます。\
+結果の丸め方と除数がゼロのときの動作は型ごとに確認してください。
 
 この例の共通manifestとcompile/link手順は[最初のプログラム](../../../getting-started/first-program.md)を参照してください。
 
-ゼロ除算を含む整数の規則は[式仕様](../../../../../specs/ond/language/v1/expressions.md#integer-arithmetic)、`f32`は[浮動小数点演算](../../../../../specs/ond/language/v1/expressions.md#floating-point-arithmetic)、[固定小数点演算](../../../../../specs/ond/language/v1/expressions.md#fixed-point-arithmetic)を参照してください。
+型ごとの規則は[整数演算](../../../../../specs/ond/language/v1/expressions.md#integer-arithmetic)、[浮動小数点演算](../../../../../specs/ond/language/v1/expressions.md#floating-point-arithmetic)、[固定小数点演算](../../../../../specs/ond/language/v1/expressions.md#fixed-point-arithmetic)に定められています。

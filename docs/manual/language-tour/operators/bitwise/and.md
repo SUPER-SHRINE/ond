@@ -21,9 +21,7 @@ func main() {
 
 ## operand型
 
-両方のoperandは同じ整数型にします。\
-\
-bitwise演算に`bool`や`f32`は使いません。
+両辺の整数型をそろえると、`u64`や`i64`のビット演算にも使えます。
 
 この例の共通manifestとcompile/link手順は[最初のプログラム](../../../getting-started/first-program.md)を参照してください。
 
